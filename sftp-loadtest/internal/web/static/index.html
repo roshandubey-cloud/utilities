@@ -1,0 +1,1313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SFTP Load Test</title>
+<style>
+  /* ========================================================
+     Newspaper theme — modern 2026 data-desk aesthetic.
+     System-font stack only (no web-font fetch, no JS libs).
+     ------------------------------------------------------
+     Serif stack for masthead, section kickers, and metric
+     values (Iowan Old Style → Charter → Georgia → Times).
+     Sans for body and forms, mono for raw data.
+     ======================================================== */
+  :root {
+    --serif: "Iowan Old Style", "Apple Garamond", Charter, Georgia, "Times New Roman", serif;
+    --sans:  system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono:  ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+    --bg:        #f7f3ec;   /* newsprint cream */
+    --surface:   #fdfaf3;   /* page */
+    --surface-2: #efe9de;   /* pull-quote / muted panel */
+    --border:    #d9d1c0;   /* warm hairline */
+    --rule:      #1a1a1a;   /* strong rule (masthead) */
+    --text:      #16181c;   /* ink */
+    --muted:     #6c6a62;   /* slug line */
+    --accent:    #a32020;   /* classic red — used for "running" state + failures */
+    --accent-soft: #f5e6e6;
+    --ok:        #2f6b2f;
+    --warn:      #8a6a1e;
+    --err:       #a32020;
+    --slow:      #f5ead1;
+    --shadow: 0 0 0 transparent; /* newspaper = no soft shadows; rules do the work */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:        #121319;
+      --surface:   #15171e;
+      --surface-2: #1c1f27;
+      --border:    #2a2e38;
+      --rule:      #e7e4dc;
+      --text:      #e9e4d7;     /* warm off-white — not pure white */
+      --muted:     #a29c8e;
+      --accent:    #e06a6f;     /* warmer rose in dark mode */
+      --accent-soft: #2b1618;
+      --ok:        #6ecf8c;
+      --warn:      #e2c06b;
+      --err:       #e06a6f;
+      --slow:      #3a311c;
+      --shadow: 0 0 0 transparent;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+  body { font-family: var(--sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  .app { max-width: 1280px; margin: 0 auto; padding: 28px 30px 96px; }
+
+  /* ===================== MASTHEAD ===================== */
+  .masthead { border-top: 3px solid var(--rule); padding-top: 14px; margin-bottom: 22px; position: relative; }
+  .masthead::after {
+    content: ""; display: block; height: 1px; background: var(--rule);
+    margin-top: 10px; opacity: 0.85;
+  }
+  .masthead h1 {
+    font-family: var(--serif); font-weight: 700;
+    font-size: clamp(32px, 4.2vw, 56px); line-height: 0.95;
+    letter-spacing: -0.015em; margin: 0; text-align: center;
+    font-variant: small-caps;
+  }
+  .masthead .dek {
+    font-family: var(--serif); font-style: italic; font-size: 15px;
+    text-align: center; color: var(--muted); margin-top: 6px;
+  }
+  .masthead .meta {
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: var(--sans); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.14em; color: var(--muted); margin-top: 10px;
+  }
+  .masthead .meta .edition { font-weight: 600; color: var(--text); }
+  .masthead .meta .sep { margin: 0 6px; opacity: 0.5; }
+
+  /* ===================== GRID ===================== */
+  .grid { display: grid; grid-template-columns: minmax(0, 440px) minmax(0, 1fr); gap: 28px; }
+  @media (max-width: 960px) { .grid { grid-template-columns: 1fr; gap: 20px; } }
+
+  /* ===================== CARD / SECTION ===================== */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    margin-bottom: 20px; overflow: hidden;
+  }
+  .card > header {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 10px 14px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    font-family: var(--serif); font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.14em;
+    font-size: 12px; color: var(--text);
+  }
+  .card > header .toggle-label { display: flex; align-items: center; gap: 8px; flex: 1; cursor: pointer; user-select: none; }
+  .card > header input[type=checkbox] { accent-color: var(--accent); }
+  .card > header .pill {
+    margin-left: auto; font-family: var(--sans); font-weight: 500;
+    font-size: 10.5px; letter-spacing: 0.08em; color: var(--muted);
+    padding: 2px 0;
+  }
+  .card > header .pill::before { content: "— "; opacity: 0.6; }
+  .card > .body { padding: 14px 16px 18px; }
+  .card.off > .body { display: none; }
+  .card.off > header { opacity: 0.6; }
+
+  /* ===================== FORM ===================== */
+  label { display: block; font-family: var(--sans); font-size: 11px;
+    color: var(--muted); margin: 0 0 4px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.09em; }
+  input[type=text], input[type=number], textarea, select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 3px;
+    background: var(--surface); color: var(--text); font-size: 13px;
+    font-family: var(--mono); transition: border-color 0.12s, box-shadow 0.12s;
+  }
+  input:focus, textarea:focus, select:focus {
+    outline: none; border-color: var(--rule); box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+  textarea { min-height: 88px; resize: vertical; }
+  select { font-family: var(--sans); cursor: pointer; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+  .row + .row, .row + label, label + .row { margin-top: 12px; }
+  .hint { color: var(--muted); font-size: 12.5px; margin-top: 6px;
+    font-family: var(--serif); font-style: italic; line-height: 1.45; }
+  .hint code { background: var(--surface-2); padding: 1px 5px; border-radius: 2px;
+    font-size: 11.5px; font-family: var(--mono); font-style: normal; }
+  .hint b { font-style: normal; font-weight: 700; color: var(--text); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; align-items: center; }
+  .chip-btn {
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    padding: 2px 10px; border-radius: 999px; font-size: 11.5px; font-family: var(--mono);
+    cursor: pointer; transition: background 0.12s, border-color 0.12s, color 0.12s;
+  }
+  .chip-btn:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .chip-btn.del { color: var(--muted); padding: 2px 8px; font-family: var(--sans); }
+  /* Subtle visual cue that the field auto-masks when unfocused. */
+  textarea.csv-users:not(:focus) { background: var(--surface-2); }
+  textarea.csv-users:focus { background: var(--surface); }
+
+  /* ===================== BUTTONS ===================== */
+  .actions { display: flex; gap: 12px; align-items: center; padding: 18px 2px 0; flex-wrap: wrap; }
+  button {
+    font: inherit; cursor: pointer; border-radius: 2px; border: 1px solid var(--rule);
+    padding: 8px 18px; font-weight: 600; font-family: var(--sans);
+    letter-spacing: 0.05em; text-transform: uppercase; font-size: 12px;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  button.primary { background: var(--rule); color: var(--surface); }
+  button.primary:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
+  button.ghost { background: transparent; color: var(--text); }
+  button.ghost:hover:not(:disabled) { background: var(--surface-2); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  a.link {
+    color: var(--text); text-decoration: underline;
+    text-underline-offset: 3px; text-decoration-thickness: 1px;
+    font-family: var(--sans); font-size: 12px; text-transform: uppercase;
+    letter-spacing: 0.08em; font-weight: 600;
+  }
+  a.link:hover { color: var(--accent); }
+  #err { color: var(--err); margin: 10px 2px 0; font-size: 13px; min-height: 18px;
+    font-family: var(--serif); font-style: italic; }
+
+  /* ===================== STATS (data desk) ===================== */
+  .stats {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 0; border-top: 1px solid var(--border); border-left: 1px solid var(--border);
+  }
+  .stat {
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 4px;
+    border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .stat .k {
+    font-family: var(--sans); font-size: 10px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.12em; font-weight: 600;
+  }
+  .stat .v {
+    font-family: var(--serif); font-size: 26px; font-weight: 700;
+    font-variant-numeric: tabular-nums; line-height: 1.05; letter-spacing: -0.01em;
+  }
+  .stat.bad .v { color: var(--err); }
+  .stat.ok  .v { color: var(--ok); }
+
+  /* ===================== TABLES =====================
+     Row heights stay stable (nowrap), but columns auto-size to their content
+     and the container scrolls horizontally when the total width exceeds the
+     viewport. No ellipsis — every cell shows its full value; no header gets
+     truncated. Real tool, real data. */
+  table { border-collapse: separate; border-spacing: 0; font-size: 12px; min-width: 100%; }
+  th, td {
+    text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    white-space: nowrap;
+  }
+  th {
+    background: var(--surface-2); position: sticky; top: 0;
+    font-family: var(--sans); font-weight: 700; color: var(--muted);
+    z-index: 1; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    border-bottom: 2px solid var(--rule);
+    white-space: nowrap; /* never break header labels across lines */
+  }
+  .tbl-wrap {
+    max-height: 380px; overflow: auto;
+    border: 1px solid var(--border); background: var(--surface); min-height: 120px;
+  }
+  tr.slow { background: var(--slow); }
+  tbody tr:hover { background: var(--surface-2); }
+  .err-text { color: var(--err); font-weight: 600; }
+  .muted { color: var(--muted); }
+  .kind-large { background: var(--rule); color: var(--surface);
+    padding: 1px 7px; border-radius: 2px; font-size: 10.5px; font-weight: 700;
+    letter-spacing: 0.08em; font-family: var(--sans); }
+  .sched-tag {
+    display: inline-block; background: var(--accent-soft); color: var(--accent);
+    padding: 1px 8px; border-radius: 2px; font-size: 10.5px; font-weight: 700;
+    letter-spacing: 0.08em; font-family: var(--sans); margin-right: 6px;
+  }
+  .sched-banner {
+    border: 1px solid var(--accent); background: var(--accent-soft); color: var(--text);
+    padding: 10px 14px; margin-bottom: 14px; font-family: var(--sans); font-size: 13px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .sched-banner b { color: var(--accent); letter-spacing: 0.04em; }
+  .sched-banner a.link { font-size: 11px; }
+  .code-chip { display: inline-block; padding: 1px 6px; border-radius: 2px;
+    background: var(--surface-2); font-size: 11px; color: var(--muted); font-family: var(--mono); }
+
+  /* Uploads table — min-widths only, so cells expand to fit their values.
+     Horizontal scroll kicks in when the total row width exceeds the card.
+     Right-align numeric columns so the decimal points line up. */
+  #rec_tbl { min-width: 100%; }
+  #rec_tbl td:nth-child(6), #rec_tbl th:nth-child(6),      /* Size (KB) */
+  #rec_tbl td:nth-child(7), #rec_tbl th:nth-child(7),      /* Up MB/s */
+  #rec_tbl td:nth-child(10), #rec_tbl th:nth-child(10),    /* Proc Time (min) */
+  #rec_tbl td:nth-child(13), #rec_tbl th:nth-child(13),    /* DL Wait (s) */
+  #rec_tbl td:nth-child(14), #rec_tbl th:nth-child(14)     /* DL MB/s */
+    { text-align: right; font-variant-numeric: tabular-nums; }
+  #rec_tbl th:nth-child(3), #rec_tbl td:nth-child(3) { min-width: 260px; } /* File */
+  #rec_tbl th:nth-child(8), #rec_tbl td:nth-child(8) { min-width: 160px; } /* TrackID */
+
+  /* ===================== EMPTY / CHIPS ===================== */
+  .empty { display: flex; align-items: center; justify-content: center;
+    height: 100%; color: var(--muted); font-size: 13px; padding: 28px;
+    text-align: center; font-family: var(--serif); font-style: italic; }
+  .errors-line { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11.5px;
+    color: var(--muted); padding: 10px 2px 0; font-family: var(--mono); }
+  .errors-line .chip { background: var(--surface-2); border: 1px solid var(--border);
+    padding: 2px 9px; border-radius: 2px; }
+  .errors-line .chip b { color: var(--err); font-weight: 700; }
+
+  /* ===================== HOST CAPACITY STRIP =====================
+     Newspaper-style "fact box" sitting under the masthead. Static — what the
+     machine *can* do — separate from the live proc badge which shows what
+     the tool *is* doing right now. */
+  .host-strip {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+    margin-bottom: 22px;
+  }
+  .host-cell {
+    padding: 10px 14px; border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .host-cell:last-child { border-right: none; }
+  .host-cell .hk {
+    font-family: var(--sans); font-size: 10px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.12em; font-weight: 600;
+  }
+  .host-cell .hv {
+    font-family: var(--serif); font-size: 16px; font-weight: 700;
+    font-variant-numeric: tabular-nums; line-height: 1.15;
+  }
+  .host-cell .hv.warn { color: var(--warn); }
+  .host-cell .hv.bad  { color: var(--err); }
+
+  /* ===================== PROC BADGE ===================== */
+  .proc-badge {
+    position: fixed; bottom: 14px; right: 16px; z-index: 20;
+    background: var(--rule); color: var(--surface);
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.02em;
+    padding: 6px 14px; border-radius: 2px;
+    display: flex; gap: 14px; align-items: center;
+  }
+  .proc-badge .lbl { opacity: 0.55; text-transform: uppercase; letter-spacing: 0.1em; font-size: 9.5px; }
+  .proc-badge .hot { color: var(--accent); font-weight: 700; }
+  @media (max-width: 640px) { .proc-badge { display: none; } }
+
+  /* ===================== LIVE PILL ===================== */
+  #live_pill {
+    font-family: var(--sans); font-weight: 700; font-size: 10.5px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+  }
+  #live_pill.running { color: var(--accent); }
+  #live_pill.running::before {
+    content: ""; display: inline-block; width: 7px; height: 7px;
+    background: var(--accent); border-radius: 50%; margin-right: 6px;
+    vertical-align: 1px; animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.35 } }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="masthead">
+    <div class="meta" style="margin-bottom:8px">
+      <span><span class="edition">The Transfer Desk</span><span class="sep">·</span>Late Edition</span>
+      <span><span id="m_date">—</span><span class="sep">·</span><span id="m_clock">—</span></span>
+    </div>
+    <h1>SFTP Load Test</h1>
+    <p class="dek">Lightweight end-to-end throughput, processing-time, and error reporting — for the fastidious engineer.</p>
+  </header>
+
+  <!-- Host capacity strip — what this machine can actually do.
+       Static (one-shot at load + manual refresh) so it's not in the 2s poll. -->
+  <section class="host-strip">
+    <div class="host-cell"><span class="hk">Host</span><span class="hv" id="h_host">—</span></div>
+    <div class="host-cell"><span class="hk">OS</span><span class="hv" id="h_os">—</span></div>
+    <div class="host-cell"><span class="hk">CPU cores</span><span class="hv" id="h_cpu">—</span></div>
+    <div class="host-cell"><span class="hk">Total RAM</span><span class="hv" id="h_ram">—</span></div>
+    <div class="host-cell" title="Soft / hard limits. Each SSH stream uses one FD."><span class="hk">FD limit</span><span class="hv" id="h_fdlimit">—</span></div>
+    <div class="host-cell" title="Live network throughput observed by this tool (Mbps). Idle until a run is active. On Linux a NIC link-speed hint is appended in parentheses; macOS / Windows can't expose link speed cheaply, so only the observed value is shown."><span class="hk">Network throughput</span><span class="hv" id="h_net">—</span></div>
+  </section>
+
+  <div id="sched_banner" class="sched-banner" style="display:none">
+    <div><b>⏰ Scheduled run in progress</b> — <span id="sched_banner_text"></span></div>
+    <div><a class="link" id="sched_banner_csv" href="/api/report.csv">Download CSV</a></div>
+  </div>
+
+  <div class="proc-badge">
+    <span><span class="lbl">cpu</span> <span id="p_cpu">—</span>%</span>
+    <span><span class="lbl">heap</span> <span id="p_heap">—</span>MB</span>
+    <span><span class="lbl">sys</span> <span id="p_sys">—</span>MB</span>
+    <span><span class="lbl">gr</span> <span id="p_gr">—</span></span>
+    <span title="Open file descriptors / soft limit. Each SSH stream is one FD."><span class="lbl">fd</span> <span id="p_fd">—</span><span id="p_fdlim" style="opacity:0.6"></span></span>
+  </div>
+
+  <div class="grid">
+
+    <!-- ============ LEFT: CONFIG ============ -->
+    <div>
+
+      <section class="card" id="connCard">
+        <header><span class="toggle-label">Connection</span><span class="pill">required</span></header>
+        <div class="body">
+          <div class="row">
+            <div>
+              <label>Host</label>
+              <input id="host" type="text" placeholder="sftp.example.com" list="host_history" autocomplete="on">
+              <datalist id="host_history"></datalist>
+            </div>
+            <div>
+              <label>Port</label>
+              <input id="port" type="number" value="22" list="port_history" autocomplete="on">
+              <datalist id="port_history"></datalist>
+            </div>
+          </div>
+          <div class="chips" id="conn_chips"></div>
+          <div class="actions" style="padding:8px 0 0">
+            <button type="button" class="ghost" id="probeBtn">Test connection</button>
+            <span id="probe_result" class="hint" style="margin:0"></span>
+          </div>
+          <div style="margin-top:10px">
+            <label>Upload folder (remote)</label>
+            <input id="folder" type="text" placeholder="inbox">
+            <div class="chips">
+              <button type="button" class="chip-btn" data-fill="folder" data-value="inbox">inbox</button>
+            </div>
+            <div class="hint">Click the chip or type your own path.</div>
+          </div>
+          <div class="row">
+            <div><label>Parallel streams / user</label><input id="parallel" type="number" value="2" min="1"></div>
+            <div><label>Duration (hours)</label><input id="duration" type="number" value="1" step="0.25" min="0.01"></div>
+          </div>
+          <div class="row">
+            <div><label title="How often the tool re-lists each upload user's inbox (looking for #trackid renames) AND each download user's outbox (looking for files to pull). Lower = faster detection, more SFTP overhead.">Poll interval (sec)</label><input id="poll" type="number" value="3" min="1"></div>
+            <div><label>Track-ID timeout (min)</label><input id="timeout_min" type="number" value="10" min="1"></div>
+            <div><label title="Disable a user account after this many consecutive failed ops. 0 = off.">Disable user after (fails)</label><input id="max_fails" type="number" value="3" min="0"></div>
+          </div>
+          <div class="hint">
+            Set the track-ID timeout to however long your SFTP server might take to process a file. The tool polls patiently and records the <b>actual</b> processing time once the server renames the file; a file only gets the <code>TRACKID_TIMEOUT</code> error code if it never shows up before this limit. <b>Wall-clock cost:</b> after the upload phase ends, the run keeps draining for up to this much longer to give pending track-IDs time to resolve — a 4 h timeout means the run can stay "active" up to ~4 h past its scheduled end.
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="normalCard">
+        <header>
+          <label class="toggle-label">
+            <input type="checkbox" id="normal_enabled" checked data-toggles="normalCard">
+            Normal load
+          </label>
+          <span class="pill">small files, steady rate</span>
+        </header>
+        <div class="body">
+          <div class="row">
+            <div><label>Files per minute (total)</label><input id="fpm" type="number" value="60" min="1"></div>
+            <div><label>Min size (MB)</label><input id="nmin" type="number" value="1" min="1"></div>
+            <div><label>Max size (MB)</label><input id="nmax" type="number" value="5" min="1"></div>
+            <div><label>Content</label>
+              <select id="ncontent">
+                <option value="binary">binary</option>
+                <option value="ascii">ascii</option>
+                <option value="random">random (mix)</option>
+              </select>
+            </div>
+          </div>
+          <label style="margin-top:10px">Users (CSV) <span class="muted">— username,password,pattern1*,pattern2*,…</span></label>
+          <textarea class="csv-users" id="normal_users" placeholder="user1,pass1,invoice*,order*&#10;user2,pass2,report*.csv"></textarea>
+          <div class="hint">Filenames: the trailing <code>*</code> in a pattern is replaced with <code>&lt;nanos&gt;_&lt;rnd&gt;</code>. The original extension is preserved — <code>invoice*</code> → <code>invoice&lt;nanos&gt;_&lt;rnd&gt;.txt</code>; <code>report*.csv</code> → <code>report&lt;nanos&gt;_&lt;rnd&gt;.csv</code>. Passwords auto-reveal while you're editing the field and re-mask as soon as you click away.</div>
+        </div>
+      </section>
+
+      <section class="card off" id="largeCard">
+        <header>
+          <label class="toggle-label">
+            <input type="checkbox" id="large_enabled" data-toggles="largeCard">
+            Large-file load
+          </label>
+          <span class="pill">big files, low cadence</span>
+        </header>
+        <div class="body">
+          <div class="row">
+            <div><label>Min size</label><input id="lmin" type="number" value="100" min="1"></div>
+            <div><label>Max size</label><input id="lmax" type="number" value="500" min="1"></div>
+            <div><label>Unit</label>
+              <select id="lunit"><option>MB</option><option>GB</option></select>
+            </div>
+            <div><label>Every (minutes)</label><input id="interval" type="number" value="30" min="1"></div>
+          </div>
+          <label style="margin-top:10px">Users (CSV)</label>
+          <textarea class="csv-users" id="large_users" placeholder="user1,pass1,large*"></textarea>
+        </div>
+      </section>
+
+      <section class="card off" id="downloadCard">
+        <header>
+          <label class="toggle-label">
+            <input type="checkbox" id="download_enabled" data-toggles="downloadCard">
+            Download test (round-trip)
+          </label>
+          <span class="pill">outbox polling</span>
+        </header>
+        <div class="body">
+          <div class="row">
+            <div>
+              <label>Download folder (remote)</label>
+              <input id="dfolder" type="text" placeholder="outbox">
+              <div class="chips">
+                <button type="button" class="chip-btn" data-fill="dfolder" data-value="outbox">outbox</button>
+              </div>
+            </div>
+            <div><label>Parallel streams / user</label><input id="dparallel" type="number" value="2" min="1"></div>
+          </div>
+          <div class="hint">
+            Click a suggestion or type your own. Leave blank to reuse the upload folder.
+          </div>
+          <div class="hint">
+            <b>How it works:</b> each download user lists its own <code>folder</code> on every poll tick and pulls <i>every</i> filename it sees ending in <code>#&lt;trackid&gt;</code>. Each download is attributed back to the originating upload row by basename — no pre-configured upload→download mapping is required on the tool side.
+          </div>
+          <div class="hint">
+            <b>Server requirements:</b> for downloads to work, your SFTP server must (a) append a <code>#&lt;trackid&gt;</code> suffix to each processed file, and (b) place the processed file in the download user's <code>folder</code>. Without that server-side routing this card will record zero downloads.
+          </div>
+          <label style="margin-top:10px">Download users (CSV)</label>
+          <textarea class="csv-users" id="download_users" placeholder="dl1,pwd1,*&#10;dl2,pwd2,*"></textarea>
+        </div>
+      </section>
+
+      <div class="actions">
+        <button class="primary" id="startBtn">Start run</button>
+        <button class="ghost" id="stopBtn" disabled>Stop</button>
+        <a id="csvBtn" class="link" href="/api/report.csv">Download CSV</a>
+      </div>
+      <div id="err"></div>
+
+      <!-- ============ SCHEDULING & CONFIG I/O ============ -->
+      <section class="card" style="margin-top:18px">
+        <header><span class="toggle-label">Schedule &amp; config</span><span class="pill">save, share, run later</span></header>
+        <div class="body">
+          <div class="actions" style="padding:0 0 10px">
+            <button type="button" class="ghost" id="exportBtn">Export config</button>
+            <button type="button" class="ghost" id="importBtn">Import config</button>
+            <button type="button" class="primary" id="importRunBtn">Import &amp; Run now</button>
+            <input type="file" id="importFile" accept="application/json,.json" style="display:none">
+          </div>
+          <div class="hint">
+            <b>Export</b> saves everything in this form (connection, normal, large, download, users, passwords) to a JSON file you can share or re-use.
+            <b>Import</b> loads that JSON back into the form (you click Start run yourself).
+            <b>Import &amp; Run now</b> loads the JSON and immediately starts the run — ideal for CLI-style repeatable tests.
+          </div>
+
+          <div class="row" style="margin-top:14px">
+            <div style="flex:2">
+              <label>Schedule run at</label>
+              <input id="sched_at" type="datetime-local" step="60">
+            </div>
+            <div style="flex:3">
+              <label>Note (optional)</label>
+              <input id="sched_note" type="text" placeholder="nightly soak against prod-sftp-1">
+            </div>
+          </div>
+          <div class="actions" style="padding:8px 0 0">
+            <button type="button" class="ghost" id="scheduleBtn">Schedule this config</button>
+          </div>
+          <div class="hint">
+            The server checks for due schedules every 15 seconds. If another run is active when a schedule is due, firing waits until that run ends. Schedules survive server restarts (persisted as JSON on disk).
+          </div>
+
+          <div style="margin-top:14px">
+            <label>Pending schedules</label>
+            <div class="tbl-wrap" style="max-height:180px"><table>
+              <thead><tr><th style="width:180px">ID</th><th style="width:150px">Fires at</th><th>Note</th><th style="width:90px"></th></tr></thead>
+              <tbody id="sched_body"></tbody>
+            </table></div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ============ RIGHT: RESULTS ============ -->
+    <div>
+
+      <section class="card">
+        <header><span class="toggle-label">Live metrics</span><span class="pill" id="live_pill">idle</span></header>
+        <div class="body">
+          <div class="stats">
+            <div class="stat"><div class="k">Elapsed</div><div class="v" id="m_elapsed">—</div></div>
+            <div class="stat"><div class="k">Files</div><div class="v" id="m_files">0</div></div>
+            <div class="stat"><div class="k">MB sent</div><div class="v" id="m_mb">0</div></div>
+            <div class="stat"><div class="k">Overall MB/s</div><div class="v" id="m_overall">0</div></div>
+            <div class="stat"><div class="k">Last-min MB/s</div><div class="v" id="m_last">0</div></div>
+            <div class="stat"><div class="k">Baseline MB/s</div><div class="v" id="m_base">0</div></div>
+            <div class="stat"><div class="k">Pending track-IDs</div><div class="v" id="m_pending">0</div></div>
+            <div class="stat"><div class="k">Slowdowns</div><div class="v" id="m_slow">0</div></div>
+            <div class="stat" title="Ticks where all parallel slots were busy"><div class="k">Skipped</div><div class="v" id="m_skip">0</div></div>
+            <div class="stat"><div class="k">Downloads</div><div class="v" id="m_dcomp">0</div></div>
+            <div class="stat" title="Files a download user pulled from its outbox that were left over from a previous run — not errors, just leftovers. Already included in the Downloads count."><div class="k">Leftover (prior runs)</div><div class="v" id="m_dorph">0</div></div>
+            <div class="stat bad"><div class="k">Failed files</div><div class="v" id="m_failf">0</div></div>
+            <div class="stat bad"><div class="k">Disabled users</div><div class="v" id="m_disabled">0</div></div>
+          </div>
+          <div class="errors-line" id="err_chips"></div>
+          <div class="errors-line" id="disabled_chips"></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <header><span class="toggle-label">Previous runs</span><span class="pill">up to 10 in memory + disk</span></header>
+        <div class="body">
+          <div class="hint" style="margin:0 0 8px">Click <b>View</b> to pin the display to a prior run; <b>CSV</b> downloads that run's full report.</div>
+          <button id="liveBtn" class="ghost" style="margin-bottom:10px">Live (newest run)</button>
+          <div class="tbl-wrap" style="max-height:180px"><table>
+            <thead><tr><th style="width:170px">Run ID</th><th>Started</th><th style="width:80px">Status</th><th style="width:60px">Files</th><th style="width:90px">Ovr MB/s</th><th style="width:150px"></th></tr></thead>
+            <tbody id="runs_body"></tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <header><span class="toggle-label">Slowdown events</span><span class="pill">&gt; 30% drop vs baseline</span></header>
+        <div class="body">
+          <div class="tbl-wrap"><table>
+            <thead><tr><th style="width:80px">At</th><th style="width:60px">Files</th><th style="width:70px">MB</th><th style="width:80px">Win MB/s</th><th style="width:80px">Baseline</th><th style="width:60px">Drop</th><th>Files in this minute</th></tr></thead>
+            <tbody id="slow_body"></tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <header><span class="toggle-label">Recent uploads</span><span class="pill">last 200</span></header>
+        <div class="body">
+          <div class="hint" style="margin:0 0 8px">MB/s is always truthful: the per-file rate when timing is reliable (≥ 1 MiB &amp; ≥ 100 ms), otherwise the minute-window rate, with a <code>·w</code> / <code>·o</code> marker.</div>
+          <div class="tbl-wrap"><table id="rec_tbl">
+            <thead><tr>
+              <th>User</th><th>Kind</th><th>File</th><th>Up Start</th><th>Up End</th><th>Size (KB)</th><th>Up MB/s</th>
+              <th>TrackID</th><th>DL User</th>
+              <th title="Minutes from upload completion to file availability in the destination outbox">Proc Time (m)</th>
+              <th>DL Start</th><th>DL End</th><th>DL Wait (s)</th><th>DL MB/s</th>
+            </tr></thead>
+            <tbody id="rec_body"></tbody>
+          </table></div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- helpers ----------
+const $ = (id) => document.getElementById(id);
+const fmt = {
+  mb:   (b) => (b / (1024 * 1024)).toFixed(2),
+  num:  (n, d=2) => (n || 0).toFixed(d),
+  time: (s) => s ? new Date(s).toLocaleTimeString() : '',
+};
+
+// ---------- quick-pick chips (folder presets + recent connections) ----------
+// Any button with data-fill="<input-id>" data-value="<value>" writes that value
+// into the input and fires a change event so persistence + validation trigger.
+document.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('.chip-btn');
+  if (!btn) return;
+  if (btn.dataset.fill) {
+    const el = $(btn.dataset.fill);
+    if (el) {
+      el.value = btn.dataset.value;
+      el.dispatchEvent(new Event('change'));
+      el.focus();
+    }
+  } else if (btn.dataset.removeConn) {
+    removeConn(btn.dataset.removeConn);
+  }
+});
+
+// ---------- connection history (host:port, last 8) ----------
+const CONN_KEY = 'sftp-loadtest-conn-history-v1';
+const CONN_MAX = 8;
+
+function readConnHistory() {
+  try { return JSON.parse(localStorage.getItem(CONN_KEY) || '[]'); } catch { return []; }
+}
+function writeConnHistory(list) {
+  try { localStorage.setItem(CONN_KEY, JSON.stringify(list.slice(0, CONN_MAX))); } catch {}
+}
+function rememberConn(host, port) {
+  if (!host) return;
+  const key = `${host}:${port}`;
+  const list = readConnHistory().filter(e => `${e.host}:${e.port}` !== key);
+  list.unshift({ host, port });
+  writeConnHistory(list);
+  renderConnHistory();
+}
+function removeConn(key) {
+  const list = readConnHistory().filter(e => `${e.host}:${e.port}` !== key);
+  writeConnHistory(list);
+  renderConnHistory();
+}
+function renderConnHistory() {
+  const list = readConnHistory();
+  // populate the native autocomplete datalists (host + port)
+  const hostDL = $('host_history');
+  const portDL = $('port_history');
+  hostDL.innerHTML = '';
+  portDL.innerHTML = '';
+  const seenHosts = new Set(), seenPorts = new Set();
+  list.forEach(e => {
+    if (!seenHosts.has(e.host)) { seenHosts.add(e.host); hostDL.insertAdjacentHTML('beforeend', `<option value="${e.host}">`); }
+    const p = String(e.port);
+    if (!seenPorts.has(p)) { seenPorts.add(p); portDL.insertAdjacentHTML('beforeend', `<option value="${p}">`); }
+  });
+  // render the clickable chip row under the host/port fields
+  const chipHost = $('conn_chips');
+  chipHost.innerHTML = '';
+  if (list.length === 0) {
+    chipHost.innerHTML = '<span class="hint" style="margin:0">No recent hosts yet — the last 8 you run against will appear here.</span>';
+    return;
+  }
+  chipHost.insertAdjacentHTML('beforeend', '<span class="hint" style="margin:0 4px 0 0">Recent:</span>');
+  list.forEach(e => {
+    const label = `${e.host}:${e.port}`;
+    const row = document.createElement('span');
+    row.style.display = 'inline-flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '2px';
+    row.innerHTML =
+      `<button type="button" class="chip-btn" title="Use ${label}" data-use-host="${e.host}" data-use-port="${e.port}">${label}</button>` +
+      `<button type="button" class="chip-btn del" title="Remove" data-remove-conn="${label}">×</button>`;
+    chipHost.appendChild(row);
+  });
+  chipHost.querySelectorAll('[data-use-host]').forEach(b => {
+    b.addEventListener('click', () => {
+      $('host').value = b.dataset.useHost;
+      $('port').value = b.dataset.usePort;
+      $('host').dispatchEvent(new Event('change'));
+      $('port').dispatchEvent(new Event('change'));
+    });
+  });
+}
+
+// ---------- CSV password masking ----------
+// Focus/blur model: the textarea is always editable. While it has focus
+// (user is typing/pasting) it displays raw content. The moment focus
+// leaves it, the raw value is captured to dataset.raw and the visible
+// content is replaced with a masked version (password column → ••••••••).
+// Form submission and localStorage always read the raw value, never the
+// masked display — so nothing downstream sees the mask.
+const CSV_FIELDS = ['normal_users', 'large_users', 'download_users'];
+
+function maskCsv(raw) {
+  return (raw || '').split('\n').map(line => {
+    if (!line.trim()) return line;
+    const parts = line.split(',');
+    if (parts.length < 2) return line; // malformed row — show as-is
+    const pw = parts[1] || '';
+    // Fixed-width mask so line lengths don't leak password length.
+    parts[1] = pw ? '••••••••' : '';
+    return parts.join(',');
+  }).join('\n');
+}
+
+function getCsvRaw(fieldId) {
+  const el = $(fieldId);
+  if (!el) return '';
+  // If the user is actively editing, el.value is the raw they just typed.
+  // Otherwise dataset.raw is the authoritative copy captured on last blur.
+  return (el.dataset.editing === '1') ? el.value : (el.dataset.raw || '');
+}
+
+function setCsvRaw(fieldId, raw) {
+  const el = $(fieldId);
+  if (!el) return;
+  el.dataset.raw = raw || '';
+  if (el.dataset.editing !== '1') el.value = maskCsv(raw);
+}
+
+document.querySelectorAll('textarea.csv-users').forEach(ta => {
+  ta.addEventListener('focus', () => {
+    // Reveal raw content so the user can read/paste/edit without fighting mask chars.
+    ta.value = ta.dataset.raw || '';
+    ta.dataset.editing = '1';
+  });
+  ta.addEventListener('blur', () => {
+    // Capture whatever they typed as the new raw, then re-mask the display.
+    ta.dataset.raw = ta.value;
+    ta.value = maskCsv(ta.value);
+    ta.dataset.editing = '0';
+    saveConfig();
+  });
+});
+
+// ---------- test connection ----------
+// Validates host/port reachability before a real run. If a user CSV is
+// present, also validates SSH/SFTP/auth and (if upload-folder is set) that
+// the folder is listable. Picks the first user from normal users CSV;
+// falls back to the first download user; falls back to TCP-only.
+async function probeConnection() {
+  const out = $('probe_result');
+  out.textContent = 'Testing…';
+  out.style.color = 'var(--muted)';
+  const host = $('host').value.trim();
+  const port = parseInt($('port').value) || 0;
+  if (!host || !port) {
+    out.textContent = 'Enter host and port first.';
+    out.style.color = 'var(--err)';
+    return;
+  }
+  // First user from whichever CSV is populated.
+  function firstUser(csv) {
+    for (const line of (csv || '').split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const parts = trimmed.split(',');
+      if (parts.length >= 2) return { user: parts[0].trim(), pass: parts[1] };
+    }
+    return null;
+  }
+  const cred = firstUser(getCsvRaw('normal_users')) || firstUser(getCsvRaw('download_users'));
+  const folder = $('folder').value.trim();
+  const body = { host, port };
+  if (cred) { body.username = cred.user; body.password = cred.pass; body.folder = folder; }
+  try {
+    const res = await fetch('/api/probe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const r = await res.json();
+    if (r.ok) {
+      let msg = `✓ ${cred ? 'authenticated as ' + cred.user : 'reachable'} — `;
+      const t = [];
+      if (r.tcp_ms !== undefined)      t.push(`tcp ${r.tcp_ms} ms`);
+      if (r.ssh_sftp_ms !== undefined) t.push(`ssh+sftp ${r.ssh_sftp_ms} ms`);
+      if (r.list_ms !== undefined)     t.push(`list ${r.list_ms} ms`);
+      msg += t.join(' · ');
+      if (r.note) msg += ` — ${r.note}`;
+      out.textContent = msg;
+      out.style.color = 'var(--ok)';
+    } else {
+      out.textContent = `✗ failed at ${r.stage || '?'}: ${r.error || 'unknown error'}`;
+      out.style.color = 'var(--err)';
+    }
+  } catch (e) {
+    out.textContent = '✗ probe error: ' + e.message;
+    out.style.color = 'var(--err)';
+  }
+}
+$('probeBtn').addEventListener('click', probeConnection);
+
+// ---------- conditional panels ----------
+// Every checkbox with data-toggles on a card flips the card's "off" class,
+// which hides the body via CSS. Works without layout jumps and fits the
+// "lightweight" theme — no JS animations.
+document.querySelectorAll('input[data-toggles]').forEach(cb => {
+  const target = document.getElementById(cb.dataset.toggles);
+  const sync = () => target.classList.toggle('off', !cb.checked);
+  cb.addEventListener('change', sync);
+  sync();
+});
+
+// ---------- config persistence (localStorage) ----------
+const CFG_KEYS = ['host','port','folder','parallel','duration','poll','timeout_min','max_fails',
+  'fpm','nmin','nmax','ncontent','normal_users',
+  'lmin','lmax','lunit','interval','large_users',
+  'dfolder','dparallel','download_users'];
+const TOGGLES = ['normal_enabled','large_enabled','download_enabled'];
+const LS_KEY = 'sftp-loadtest-config-v1';
+
+function restoreConfig() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    CFG_KEYS.forEach(k => {
+      if (saved[k] === undefined || !$(k)) return;
+      if (CSV_FIELDS.includes(k)) setCsvRaw(k, saved[k]);   // seed masked view from saved raw
+      else $(k).value = saved[k];
+    });
+    TOGGLES.forEach(k => {
+      if (saved[k] !== undefined && $(k)) {
+        $(k).checked = !!saved[k];
+        $(k).dispatchEvent(new Event('change'));
+      }
+    });
+  } catch {}
+}
+function saveConfig() {
+  const out = {};
+  CFG_KEYS.forEach(k => {
+    const el = $(k); if (!el) return;
+    out[k] = CSV_FIELDS.includes(k) ? getCsvRaw(k) : el.value;
+  });
+  TOGGLES.forEach(k => { const el = $(k); if (el) out[k] = el.checked; });
+  try { localStorage.setItem(LS_KEY, JSON.stringify(out)); } catch {}
+}
+CFG_KEYS.concat(TOGGLES).forEach(k => { const el = $(k); if (el) el.addEventListener('change', saveConfig); });
+restoreConfig();
+
+// ---------- start / stop ----------
+async function start() {
+  $('err').textContent = '';
+  saveConfig();
+  const body = buildRequestBody();
+  try {
+    const res = await fetch('/api/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(await res.text());
+    rememberConn(body.host, body.port);
+    $('startBtn').disabled = true;
+    $('stopBtn').disabled = false;
+  } catch (e) { $('err').textContent = e.message; }
+}
+async function stop() { await fetch('/api/stop', { method: 'POST' }); }
+
+$('startBtn').addEventListener('click', start);
+$('stopBtn').addEventListener('click', stop);
+
+// ---------- speed source tagging ----------
+// MB/s must never be blank or misleading. When per-file timing is unreliable
+// (< 1 MiB OR < 100 ms — swamped by SFTP handshake), substitute the minute
+// bucket rate, then the overall rate, with a superscript tag so the source
+// is visible.
+const MIN_BYTES = 1048576, MIN_DUR_MS = 100;
+function effSpeed(bytes, startIso, endIso, perFileMbps, metrics) {
+  const start = startIso ? new Date(startIso).getTime() : 0;
+  const end = endIso ? new Date(endIso).getTime() : 0;
+  if (!start || !end) return { mbps: 0, src: 'none' };
+  const dur = end - start;
+  if (bytes >= MIN_BYTES && dur >= MIN_DUR_MS) return { mbps: perFileMbps, src: 'file' };
+  const minute = Math.floor(start / 60000);
+  const bucket = (metrics.per_minute || []).find(b => b.minute === minute);
+  if (bucket && bucket.mbps > 0) return { mbps: bucket.mbps, src: 'window' };
+  if (metrics.overall_mbps > 0) return { mbps: metrics.overall_mbps, src: 'overall' };
+  return { mbps: perFileMbps || 0, src: 'file' };
+}
+function fmtSpeed(info) {
+  const v = (info.mbps || 0).toFixed(2);
+  if (info.src === 'file' || info.src === 'none') return v;
+  return v + `<sup class="muted" title="substituted from ${info.src} rate">·${info.src[0]}</sup>`;
+}
+
+// ---------- runs list (right pane header) ----------
+let pinnedRun = null;
+async function pollRuns() {
+  try {
+    const { runs } = await (await fetch('/api/runs')).json();
+    const tb = $('runs_body');
+    tb.innerHTML = '';
+    if (!runs || runs.length === 0) {
+      tb.innerHTML = `<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">No runs yet.</td></tr>`;
+      return;
+    }
+    runs.forEach(r => {
+      const tr = document.createElement('tr');
+      const started = r.started_at ? new Date(r.started_at).toLocaleString() : '';
+      const pinned = pinnedRun === r.id;
+      const viewBtn = pinned
+        ? `<button disabled>Viewing</button>`
+        : `<button class="ghost" data-view="${r.id}">View</button>`;
+      const sbadge = (r.started_by === 'schedule') ? `<span class="sched-tag" title="fired automatically by the scheduler">⏰ SCHED</span>` : '';
+      tr.innerHTML = `<td>${sbadge}${r.id}</td><td>${started}</td><td>${r.active ? '<b style="color:var(--accent)">running</b>' : 'stopped'}</td><td>${r.total_files || 0}</td><td>${(r.overall_mbps || 0).toFixed(2)}</td><td>${viewBtn} <a class="link" href="/api/report.csv?run=${encodeURIComponent(r.id)}">CSV</a></td>`;
+      tb.appendChild(tr);
+    });
+    tb.querySelectorAll('[data-view]').forEach(btn => {
+      btn.addEventListener('click', () => { pinnedRun = btn.dataset.view; poll(); pollRuns(); });
+    });
+  } catch {}
+}
+$('liveBtn').addEventListener('click', () => { pinnedRun = null; poll(); pollRuns(); });
+
+// ---------- main status poll ----------
+async function poll() {
+  const url = pinnedRun ? `/api/status?run=${encodeURIComponent(pinnedRun)}` : '/api/status';
+  try {
+    const s = await (await fetch(url)).json();
+
+    // proc badge
+    if (s.proc) {
+      $('p_cpu').textContent = (s.proc.cpu_percent || 0).toFixed(1);
+      $('p_heap').textContent = (s.proc.heap_mb || 0).toFixed(1);
+      $('p_sys').textContent = (s.proc.sys_mb || 0).toFixed(1);
+      $('p_gr').textContent = s.proc.goroutines || 0;
+      $('p_cpu').className = (s.proc.cpu_percent > 70) ? 'hot' : '';
+      // FD pressure: turn the chip yellow at 70% of the soft limit, red at 90%.
+      const fd = s.proc.fd_in_use;
+      if (fd === undefined || fd < 0) {
+        $('p_fd').textContent = '—';
+        $('p_fdlim').textContent = '';
+        $('p_fd').className = '';
+      } else {
+        $('p_fd').textContent = fd;
+        $('p_fdlim').textContent = hostFDLimit ? `/${hostFDLimit}` : '';
+        const ratio = hostFDLimit ? fd / hostFDLimit : 0;
+        $('p_fd').className = ratio > 0.9 ? 'hot' : (ratio > 0.7 ? 'hot' : '');
+        // Mirror onto the host strip when in pressure
+        const cell = $('h_fdlimit');
+        if (cell) cell.className = 'hv ' + (ratio > 0.9 ? 'bad' : (ratio > 0.7 ? 'warn' : ''));
+      }
+    }
+
+    if (!s.metrics) {
+      $('live_pill').textContent = 'idle';
+      $('live_pill').classList.remove('running');
+      $('sched_banner').style.display = 'none';
+      // Reset network cell to idle when no metrics
+      const link = window.__linkMbps || 0;
+      $('h_net').textContent = link ? `${formatLink(link)} link · idle` : 'idle';
+      window.__hadNet = false;
+      return;
+    }
+    const m = s.metrics;
+    // Live network throughput in the host strip — most useful "bandwidth"
+    // signal for a load-test tool. Compare against your NIC nominal rate.
+    {
+      const obs = m.overall_mbps || 0;
+      const link = window.__linkMbps || 0;
+      const obsTxt = formatThroughput(obs);
+      $('h_net').textContent = link ? `${obsTxt} (link: ${formatLink(link)})` : obsTxt;
+      window.__hadNet = true;
+    }
+    $('live_pill').textContent = s.active ? 'running' : 'stopped';
+    $('live_pill').classList.toggle('running', !!s.active);
+
+    // Scheduler banner: surface a scheduled run regardless of pin state, so
+    // the user never misses a background-fired run (and can grab its CSV).
+    const bn = $('sched_banner');
+    if (s.active && s.started_by === 'schedule') {
+      $('sched_banner_text').textContent = `${s.run_id} — started ${new Date(s.started_at).toLocaleString()}`;
+      $('sched_banner_csv').href = `/api/report.csv?run=${encodeURIComponent(s.run_id)}`;
+      bn.style.display = 'flex';
+    } else {
+      bn.style.display = 'none';
+    }
+    // Also keep the top "Download CSV" button pointing at the current run so
+    // scheduled runs have a one-click report download once they finish.
+    if (s.run_id) $('csvBtn').href = `/api/report.csv?run=${encodeURIComponent(s.run_id)}`;
+
+    $('m_elapsed').textContent = m.elapsed || '—';
+    $('m_files').textContent = m.total_files || 0;
+    $('m_mb').textContent = fmt.mb(m.total_bytes || 0);
+    $('m_overall').textContent = fmt.num(m.overall_mbps);
+    $('m_last').textContent = fmt.num(m.last_minute_mbps);
+    $('m_base').textContent = fmt.num(m.baseline_mbps);
+    $('m_pending').textContent = s.pending_trackids || 0;
+    $('m_slow').textContent = (m.slowdowns || []).length;
+    $('m_skip').textContent = s.dispatch_skips || 0;
+    $('m_dcomp').textContent = s.download_completed || 0;
+    $('m_dorph').textContent = s.download_orphans || 0;
+    $('m_failf').textContent = s.failed_files || 0;
+
+    // error-code chips
+    const ec = s.errors_by_code || {};
+    const chips = $('err_chips');
+    chips.innerHTML = '';
+    const codes = Object.keys(ec);
+    if (codes.length === 0) {
+      chips.innerHTML = '';
+    } else {
+      codes.sort().forEach(code => {
+        const c = document.createElement('span');
+        c.className = 'chip';
+        c.innerHTML = `${code} <b>${ec[code]}</b>`;
+        chips.appendChild(c);
+      });
+    }
+
+    // disabled-users chips (one per user taken out of rotation this run)
+    const du = s.disabled_users || [];
+    $('m_disabled').textContent = du.length;
+    const dchips = $('disabled_chips');
+    dchips.innerHTML = '';
+    du.forEach(d => {
+      const c = document.createElement('span');
+      c.className = 'chip';
+      c.title = `${d.kind} user "${d.user}" — ${d.total_failed} total fails, last=${d.last_code}`;
+      c.innerHTML = `<b>⛔ ${d.user}</b> (${d.kind}, ${d.last_code})`;
+      dchips.appendChild(c);
+    });
+
+    // slowdown table
+    const sb = $('slow_body');
+    sb.innerHTML = '';
+    const enriched = s.slowdowns_enriched || [];
+    const src = enriched.length ? enriched : (m.slowdowns || []);
+    if (src.length === 0) {
+      sb.innerHTML = `<tr><td colspan="7" class="muted" style="text-align:center;padding:16px">No slowdowns detected.</td></tr>`;
+    } else {
+      src.forEach(sd => {
+        const tr = document.createElement('tr'); tr.className = 'slow';
+        const files = sd.files || [];
+        const summary = files.length
+          ? files.map(f => `${f.filename}${f.kind === 'large' ? ' (LARGE)' : ''}${f.track_id ? ' → ' + f.track_id : ' → ⏳'}`).join('<br>')
+          : '<span class="muted">no files</span>';
+        tr.innerHTML = `<td>${fmt.time(sd.at)}</td><td>${sd.files_so_far}</td><td>${fmt.mb(sd.bytes_so_far)}</td><td>${fmt.num(sd.window_mbps)}</td><td>${fmt.num(sd.baseline_mbps)}</td><td>${fmt.num((sd.drop_pct || 0) * 100, 1)}%</td><td style="font-size:11px;white-space:normal">${summary}</td>`;
+        sb.appendChild(tr);
+      });
+    }
+
+    // recent uploads
+    const rb = $('rec_body');
+    rb.innerHTML = '';
+    const recs = s.records || [];
+    if (recs.length === 0) {
+      rb.innerHTML = `<tr><td colspan="14" class="muted" style="text-align:center;padding:16px">${s.active ? 'Warming up…' : 'Start a run to see activity here.'}</td></tr>`;
+    } else {
+      recs.slice().reverse().forEach(r => {
+        const tr = document.createElement('tr');
+        const errTag = r.Error ? `<span class="err-text" title="${r.Error}">${(r.ErrorCode || 'ERR')}</span>` : '';
+        const derrTag = r.DownloadError ? `<span class="err-text" title="${r.DownloadError}">dl</span>` : '';
+        const kindBadge = r.Kind === 'large' ? '<span class="kind-large">LARGE</span>' : (r.Kind || 'normal');
+        const waitSec = r.DownloadWait ? (r.DownloadWait / 1e9).toFixed(2) : '';
+        const procMin = (r.TrackIDWait && r.TrackIDWait > 0) ? (r.TrackIDWait / 60e9).toFixed(2) : '';
+        const upDur = new Date(r.EndTime || 0).getTime() - new Date(r.StartTime || 0).getTime();
+        const up = effSpeed(r.SizeBytes, r.StartTime, r.EndTime, r.SpeedMBps, m);
+        const dl = effSpeed(r.DownloadSizeBytes, r.DownloadStartTime, r.DownloadEndTime, r.DownloadSpeedMBps, m);
+        tr.innerHTML =
+          `<td title="${r.User}">${r.User}</td>`+
+          `<td>${kindBadge}</td>`+
+          `<td title="${r.Filename}">${r.Filename}</td>`+
+          `<td>${fmt.time(r.StartTime)}</td>`+
+          `<td>${fmt.time(r.EndTime)}</td>`+
+          `<td>${(r.SizeBytes/1024).toFixed(1)}</td>`+
+          `<td>${fmtSpeed(up)}</td>`+
+          `<td title="${r.TrackID || ''}">${r.TrackID || ''} ${errTag}</td>`+
+          `<td>${r.DownloadUser || ''}</td>`+
+          `<td>${procMin}</td>`+
+          `<td>${fmt.time(r.DownloadStartTime)}</td>`+
+          `<td>${fmt.time(r.DownloadEndTime)}</td>`+
+          `<td>${waitSec}</td>`+
+          `<td>${fmtSpeed(dl)} ${derrTag}</td>`;
+        rb.appendChild(tr);
+      });
+    }
+
+    if (!s.active) { $('startBtn').disabled = false; $('stopBtn').disabled = true; }
+  } catch {}
+}
+
+// ---------- build startReq body ----------
+// Shared by the Start Run button, the Schedule button, and Export — every
+// path produces exactly the same shape the /api/start endpoint expects.
+function buildRequestBody() {
+  return {
+    host: $('host').value.trim(),
+    port: parseInt($('port').value) || 22,
+    upload_folder: $('folder').value.trim(),
+    parallel_streams: parseInt($('parallel').value) || 1,
+    duration_hours: parseFloat($('duration').value) || 1,
+    poll_seconds: parseInt($('poll').value) || 3,
+    track_id_timeout_seconds: (parseInt($('timeout_min').value) || 10) * 60,
+    max_consecutive_failures: parseInt($('max_fails').value) || 0,
+    normal_enabled: $('normal_enabled').checked,
+    files_per_minute: parseInt($('fpm').value) || 0,
+    normal_min_mb: parseInt($('nmin').value) || 1,
+    normal_max_mb: parseInt($('nmax').value) || 1,
+    normal_content_type: $('ncontent').value || 'binary',
+    normal_users_csv: getCsvRaw('normal_users'),
+    large_enabled: $('large_enabled').checked,
+    large_min: parseInt($('lmin').value) || 1,
+    large_max: parseInt($('lmax').value) || 1,
+    large_unit: $('lunit').value || 'MB',
+    interval_minutes: parseInt($('interval').value) || 0,
+    large_users_csv: getCsvRaw('large_users'),
+    download_enabled: $('download_enabled').checked,
+    download_folder: $('dfolder').value.trim(),
+    download_parallel_streams: parseInt($('dparallel').value) || 1,
+    download_users_csv: getCsvRaw('download_users'),
+  };
+}
+
+// ---------- export / import full config ----------
+// Everything on the form goes to a JSON file (with passwords — that's the
+// point). Import accepts the same shape and only touches fields that are
+// present, so partial configs layer cleanly on top of defaults.
+function exportConfig() {
+  const payload = {
+    version: 1,
+    exported_at: new Date().toISOString(),
+    config: buildRequestBody(),
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'sftp-loadtest-config.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 0);
+}
+
+// Maps a config key from the JSON payload back onto the right input+type.
+// Null-safe: missing keys leave the current value untouched.
+function importConfigPayload(cfg) {
+  const strSet = (id, v) => { const el = $(id); if (el && v !== undefined && v !== null) el.value = String(v); };
+  const chkSet = (id, v) => {
+    const el = $(id);
+    if (el && v !== undefined && v !== null) {
+      el.checked = !!v;
+      el.dispatchEvent(new Event('change'));
+    }
+  };
+  strSet('host', cfg.host);
+  strSet('port', cfg.port);
+  strSet('folder', cfg.upload_folder);
+  strSet('parallel', cfg.parallel_streams);
+  strSet('duration', cfg.duration_hours);
+  strSet('poll', cfg.poll_seconds);
+  if (cfg.track_id_timeout_seconds !== undefined) {
+    $('timeout_min').value = Math.max(1, Math.round(cfg.track_id_timeout_seconds / 60));
+  }
+  strSet('max_fails', cfg.max_consecutive_failures);
+  chkSet('normal_enabled', cfg.normal_enabled);
+  strSet('fpm', cfg.files_per_minute);
+  strSet('nmin', cfg.normal_min_mb);
+  strSet('nmax', cfg.normal_max_mb);
+  strSet('ncontent', cfg.normal_content_type);
+  if (cfg.normal_users_csv !== undefined) setCsvRaw('normal_users', cfg.normal_users_csv);
+  chkSet('large_enabled', cfg.large_enabled);
+  strSet('lmin', cfg.large_min);
+  strSet('lmax', cfg.large_max);
+  strSet('lunit', cfg.large_unit);
+  strSet('interval', cfg.interval_minutes);
+  if (cfg.large_users_csv !== undefined) setCsvRaw('large_users', cfg.large_users_csv);
+  chkSet('download_enabled', cfg.download_enabled);
+  strSet('dfolder', cfg.download_folder);
+  strSet('dparallel', cfg.download_parallel_streams);
+  if (cfg.download_users_csv !== undefined) setCsvRaw('download_users', cfg.download_users_csv);
+  saveConfig();
+}
+
+// Single file input, dual-purpose: "fill only" vs "fill + run immediately".
+// The clicked button stashes its mode before opening the native picker.
+let importMode = 'fill'; // 'fill' | 'run'
+$('exportBtn').addEventListener('click', exportConfig);
+$('importBtn').addEventListener('click', () => { importMode = 'fill'; $('importFile').click(); });
+$('importRunBtn').addEventListener('click', () => { importMode = 'run'; $('importFile').click(); });
+$('importFile').addEventListener('change', async (ev) => {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  const wantRun = importMode === 'run';
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    // Accept either "{config: {...}}" wrapper or a bare config object.
+    const cfg = (parsed && typeof parsed === 'object' && parsed.config) ? parsed.config : parsed;
+    importConfigPayload(cfg);
+    $('err').textContent = '';
+    if (wantRun) {
+      // start() reads straight from the form (which we just populated), posts
+      // /api/start, and lights up Stop/Download CSV like a normal manual run.
+      await start();
+    }
+  } catch (e) {
+    $('err').textContent = 'Import failed: ' + e.message;
+  } finally {
+    ev.target.value = ''; // allow re-importing the same file
+    importMode = 'fill';
+  }
+});
+
+// ---------- scheduling ----------
+async function scheduleRun() {
+  $('err').textContent = '';
+  const runAt = $('sched_at').value;
+  if (!runAt) { $('err').textContent = 'Pick a date & time to schedule.'; return; }
+  // datetime-local is wall-clock in the BROWSER's timezone with no offset.
+  // Convert to a fully-qualified UTC ISO so the server doesn't reinterpret
+  // it in its own local TZ — critical when the UI runs on a laptop and the
+  // tool runs on a server in a different timezone.
+  const utcISO = new Date(runAt).toISOString();
+  const body = { run_at: utcISO, note: $('sched_note').value.trim(), config: buildRequestBody() };
+  try {
+    const res = await fetch('/api/schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(await res.text());
+    $('sched_note').value = '';
+    pollSchedules();
+  } catch (e) { $('err').textContent = e.message; }
+}
+async function cancelSchedule(id) {
+  try {
+    await fetch('/api/schedule/cancel?id=' + encodeURIComponent(id), { method: 'POST' });
+    pollSchedules();
+  } catch {}
+}
+async function pollSchedules() {
+  try {
+    const { schedules } = await (await fetch('/api/schedules')).json();
+    const tb = $('sched_body');
+    tb.innerHTML = '';
+    if (!schedules || schedules.length === 0) {
+      tb.innerHTML = `<tr><td colspan="4" class="muted" style="text-align:center;padding:14px">No schedules pending.</td></tr>`;
+      return;
+    }
+    schedules.forEach(s => {
+      const tr = document.createElement('tr');
+      const when = new Date(s.run_at).toLocaleString();
+      tr.innerHTML = `<td title="${s.id}">${s.id}</td><td>${when}</td><td title="${s.note || ''}">${s.note || ''}</td><td><button class="ghost" data-cancel="${s.id}">Cancel</button></td>`;
+      tb.appendChild(tr);
+    });
+    tb.querySelectorAll('[data-cancel]').forEach(b => b.addEventListener('click', () => cancelSchedule(b.dataset.cancel)));
+  } catch {}
+}
+$('scheduleBtn').addEventListener('click', scheduleRun);
+
+// Pretty-print a link rate. /sys/class/net/<n>/speed gives megabits/sec.
+function formatLink(mbps) {
+  if (!mbps) return '';
+  return mbps >= 1000 ? `${(mbps/1000).toFixed(1)} Gbps` : `${mbps} Mbps`;
+}
+// Pretty-print observed throughput as Mbps so it lines up with how NICs
+// and ISPs are rated. Internal value is MB/s; ×8 to get megabits/sec.
+function formatThroughput(mbps_bytes) {
+  return `${(mbps_bytes * 8).toFixed(0)} Mbps`;
+}
+
+// ---------- one-shot host capacity snapshot ----------
+// Fetched at page load. Refreshed every 60s so testers see fdlimit / RAM
+// / NIC info change if their environment shifts (rare, but cheap to do).
+let hostFDLimit = 0; // remembered for the live FD chip in the proc badge
+async function loadHost() {
+  try {
+    const h = await (await fetch('/api/host')).json();
+    $('h_host').textContent = h.hostname || '—';
+    $('h_os').textContent   = `${h.os || '?'}/${h.arch || '?'}`;
+    $('h_cpu').textContent  = h.num_cpu || '—';
+    $('h_ram').textContent  = h.total_ram_mb ? (h.total_ram_mb >= 1024 ? (h.total_ram_mb/1024).toFixed(1)+' GB' : h.total_ram_mb+' MB') : '—';
+    // RLIM_INFINITY (max int64) on macOS means "no limit" — render as such
+    // and treat as unlimited for the proc-badge pressure calc.
+    const INF = 9223372036854775807;
+    const fmtLim = v => (!v ? '—' : (v >= INF / 2 ? '∞' : v.toLocaleString()));
+    if (h.fd_limit_soft) {
+      hostFDLimit = (h.fd_limit_soft >= INF / 2) ? 0 : h.fd_limit_soft;
+      $('h_fdlimit').textContent = `${fmtLim(h.fd_limit_soft)} / ${fmtLim(h.fd_limit_hard)}`;
+    } else {
+      $('h_fdlimit').textContent = '—';
+    }
+    // The Network cell is fed by the live /api/status poll below — it shows
+    // observed throughput, which is the only honest "bandwidth" answer for
+    // this tool. Capture the link-speed hint (Linux only) so the live
+    // formatter can show "245 Mbps observed of 1 Gbps link" when known.
+    let bestLinkMbps = 0;
+    for (const n of (h.interfaces || [])) {
+      if (n.speed_mbps && n.speed_mbps > bestLinkMbps) bestLinkMbps = n.speed_mbps;
+    }
+    window.__linkMbps = bestLinkMbps;
+    if (!window.__hadNet) {
+      $('h_net').textContent = bestLinkMbps ? `${formatLink(bestLinkMbps)} link · idle` : 'idle';
+    }
+  } catch {}
+}
+loadHost();
+setInterval(loadHost, 60000);
+
+// Masthead clock/date — updated every 30s. Keeps the newspaper feel without
+// re-rendering on every poll.
+function paintMasthead() {
+  const now = new Date();
+  const fmt = now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const hm  = now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const dEl = $('m_date'), cEl = $('m_clock');
+  if (dEl) dEl.textContent = fmt;
+  if (cEl) cEl.textContent = hm;
+}
+paintMasthead();
+setInterval(paintMasthead, 30000);
+
+renderConnHistory();
+setInterval(poll, 2000);
+setInterval(pollRuns, 3000);
+setInterval(pollSchedules, 5000);
+poll();
+pollRuns();
+pollSchedules();
+</script>
+</body>
+</html>

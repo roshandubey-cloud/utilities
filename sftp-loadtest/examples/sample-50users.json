@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "exported_at": "2026-04-25T16:15:51Z",
+  "config": {
+    "host": "sftp.example.com",
+    "port": 22,
+    "upload_folder": "inbox",
+    "parallel_streams": 4,
+    "duration_hours": 1,
+    "poll_seconds": 3,
+    "track_id_timeout_seconds": 600,
+    "max_consecutive_failures": 3,
+    "normal_enabled": true,
+    "files_per_minute": 600,
+    "normal_min_mb": 1,
+    "normal_max_mb": 5,
+    "normal_content_type": "binary",
+    "normal_users_csv": "up1,pw1,invoice*,order*,report*,edi*,payroll*\nup2,pw2,manifest*,claim*,po*,asn*,stmt*\nup3,pw3,ack*,shipment*,inventory*,tax*,credit*\nup4,pw4,debit*,quote*,forecast*,delivery*,shipnotice*\nup5,pw5,invoice*,order*,report*,edi*,payroll*\nup6,pw6,manifest*,claim*,po*,asn*,stmt*\nup7,pw7,ack*,shipment*,inventory*,tax*,credit*\nup8,pw8,debit*,quote*,forecast*,delivery*,shipnotice*\nup9,pw9,invoice*,order*,report*,edi*,payroll*\nup10,pw10,manifest*,claim*,po*,asn*,stmt*\nup11,pw11,ack*,shipment*,inventory*,tax*,credit*\nup12,pw12,debit*,quote*,forecast*,delivery*,shipnotice*\nup13,pw13,invoice*,order*,report*,edi*,payroll*\nup14,pw14,manifest*,claim*,po*,asn*,stmt*\nup15,pw15,ack*,shipment*,inventory*,tax*,credit*\nup16,pw16,debit*,quote*,forecast*,delivery*,shipnotice*\nup17,pw17,invoice*,order*,report*,edi*,payroll*\nup18,pw18,manifest*,claim*,po*,asn*,stmt*\nup19,pw19,ack*,shipment*,inventory*,tax*,credit*\nup20,pw20,debit*,quote*,forecast*,delivery*,shipnotice*\nup21,pw21,invoice*,order*,report*,edi*,payroll*\nup22,pw22,manifest*,claim*,po*,asn*,stmt*\nup23,pw23,ack*,shipment*,inventory*,tax*,credit*\nup24,pw24,debit*,quote*,forecast*,delivery*,shipnotice*\nup25,pw25,invoice*,order*,report*,edi*,payroll*\nup26,pw26,manifest*,claim*,po*,asn*,stmt*\nup27,pw27,ack*,shipment*,inventory*,tax*,credit*\nup28,pw28,debit*,quote*,forecast*,delivery*,shipnotice*\nup29,pw29,invoice*,order*,report*,edi*,payroll*\nup30,pw30,manifest*,claim*,po*,asn*,stmt*\nup31,pw31,ack*,shipment*,inventory*,tax*,credit*\nup32,pw32,debit*,quote*,forecast*,delivery*,shipnotice*\nup33,pw33,invoice*,order*,report*,edi*,payroll*\nup34,pw34,manifest*,claim*,po*,asn*,stmt*\nup35,pw35,ack*,shipment*,inventory*,tax*,credit*\nup36,pw36,debit*,quote*,forecast*,delivery*,shipnotice*\nup37,pw37,invoice*,order*,report*,edi*,payroll*\nup38,pw38,manifest*,claim*,po*,asn*,stmt*\nup39,pw39,ack*,shipment*,inventory*,tax*,credit*\nup40,pw40,debit*,quote*,forecast*,delivery*,shipnotice*\nup41,pw41,invoice*,order*,report*,edi*,payroll*\nup42,pw42,manifest*,claim*,po*,asn*,stmt*\nup43,pw43,ack*,shipment*,inventory*,tax*,credit*\nup44,pw44,debit*,quote*,forecast*,delivery*,shipnotice*\nup45,pw45,invoice*,order*,report*,edi*,payroll*\nup46,pw46,manifest*,claim*,po*,asn*,stmt*\nup47,pw47,ack*,shipment*,inventory*,tax*,credit*\nup48,pw48,debit*,quote*,forecast*,delivery*,shipnotice*\nup49,pw49,invoice*,order*,report*,edi*,payroll*\nup50,pw50,manifest*,claim*,po*,asn*,stmt*\n",
+    "large_enabled": true,
+    "large_min": 100,
+    "large_max": 500,
+    "large_unit": "MB",
+    "interval_minutes": 30,
+    "large_users_csv": "lup1,lpw1,largebatch*,largeexport*\nlup2,lpw2,largereport*,largebackup*\nlup3,lpw3,bulkimport*,bulkdump*\nlup4,lpw4,archive*,snapshot*\nlup5,lpw5,nightlybatch*,weekend_dump*\nlup6,lpw6,largebatch*,largeexport*\nlup7,lpw7,largereport*,largebackup*\nlup8,lpw8,bulkimport*,bulkdump*\nlup9,lpw9,archive*,snapshot*\nlup10,lpw10,nightlybatch*,weekend_dump*\n",
+    "download_enabled": true,
+    "download_folder": "outbox",
+    "download_parallel_streams": 2,
+    "download_users_csv": "dl1,dpw1,*\ndl2,dpw2,*\ndl3,dpw3,*\ndl4,dpw4,*\ndl5,dpw5,*\ndl6,dpw6,*\ndl7,dpw7,*\ndl8,dpw8,*\ndl9,dpw9,*\ndl10,dpw10,*\ndl11,dpw11,*\ndl12,dpw12,*\ndl13,dpw13,*\ndl14,dpw14,*\ndl15,dpw15,*\ndl16,dpw16,*\ndl17,dpw17,*\ndl18,dpw18,*\ndl19,dpw19,*\ndl20,dpw20,*\ndl21,dpw21,*\ndl22,dpw22,*\ndl23,dpw23,*\ndl24,dpw24,*\ndl25,dpw25,*\ndl26,dpw26,*\ndl27,dpw27,*\ndl28,dpw28,*\ndl29,dpw29,*\ndl30,dpw30,*\ndl31,dpw31,*\ndl32,dpw32,*\ndl33,dpw33,*\ndl34,dpw34,*\ndl35,dpw35,*\ndl36,dpw36,*\ndl37,dpw37,*\ndl38,dpw38,*\ndl39,dpw39,*\ndl40,dpw40,*\ndl41,dpw41,*\ndl42,dpw42,*\ndl43,dpw43,*\ndl44,dpw44,*\ndl45,dpw45,*\ndl46,dpw46,*\ndl47,dpw47,*\ndl48,dpw48,*\ndl49,dpw49,*\ndl50,dpw50,*\n"
+  }
+}

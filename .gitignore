@@ -1,0 +1,28 @@
+# Compiled binaries — never commit
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+sftp-loadtest-mac-*
+sftp-loadtest-linux-*
+sftp-loadtest-windows-*
+mockserver
+mockserver-*
+
+# Release archives
+*.zip
+*.tar.gz
+
+# Runtime state — created by the tool when it runs
+**/reports/
+**/schedules/
+*.csv
+*.csv.tmp
+
+# Editor / OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
