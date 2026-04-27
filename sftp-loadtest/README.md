@@ -28,21 +28,39 @@ hiccups.
 
 ### Pre-built binaries
 
-Download the right zip from the [latest release](https://github.com/roshandubey-cloud/utilities/releases) (or build from source — see below).
+Direct downloads (always resolve to the **latest** release — bookmark-stable):
+
+| Platform | Download |
+|---|---|
+| macOS (Apple Silicon + Intel) | [sftp-loadtest-mac.zip](https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-mac.zip) |
+| Linux (amd64 + arm64) | [sftp-loadtest-linux.zip](https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-linux.zip) |
+| Windows (amd64) | [sftp-loadtest-windows.zip](https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-windows.zip) |
+
+All releases: [github.com/roshandubey-cloud/utilities/releases](https://github.com/roshandubey-cloud/utilities/releases/latest)
 
 ```sh
 # macOS (Apple Silicon)
+curl -LO https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-mac.zip
+unzip sftp-loadtest-mac.zip
 xattr -cr ./sftp-loadtest-mac-apple-silicon
 chmod +x  ./sftp-loadtest-mac-apple-silicon
-./sftp-loadtest-mac-apple-silicon
+./sftp-loadtest-mac-apple-silicon -known-hosts ~/.ssh/known_hosts
 
 # Linux
+curl -LO https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-linux.zip
+unzip sftp-loadtest-linux.zip
 chmod +x ./sftp-loadtest-linux-amd64
-./sftp-loadtest-linux-amd64
+./sftp-loadtest-linux-amd64 -known-hosts ~/.ssh/known_hosts
 
-# Windows
-.\sftp-loadtest-windows-amd64.exe
+# Windows (PowerShell)
+Invoke-WebRequest https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-windows.zip -OutFile sftp-loadtest-windows.zip
+Expand-Archive sftp-loadtest-windows.zip
+.\sftp-loadtest-windows\sftp-loadtest-windows-amd64.exe -known-hosts $env:USERPROFILE\.ssh\known_hosts
 ```
+
+> **Note:** SSH host-key verification is now mandatory. Pass either
+> `-known-hosts <path>` (recommended) or `-insecure-host-key` (lab use only).
+> See [docs/security.md](docs/security.md) for the full security model.
 
 You'll see:
 ```

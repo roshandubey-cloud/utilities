@@ -12,7 +12,7 @@ Tested on Ubuntu 22.04 / 24.04, Debian 12, RHEL 9, Fedora 40, Amazon Linux 2023.
 ```sh
 # 1. Download + extract
 cd /tmp
-curl -LO https://github.com/roshandubey-cloud/utilities/releases/download/v0.1.0/sftp-loadtest-linux.zip
+curl -LO https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-linux.zip
 unzip sftp-loadtest-linux.zip
 
 # 2. Install the binary system-wide
