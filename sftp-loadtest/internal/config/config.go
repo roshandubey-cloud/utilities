@@ -68,6 +68,22 @@ type UserCreds struct {
 	Patterns []string
 }
 
+// String implements fmt.Stringer with the password masked so that a stray
+// `%v` or `%+v` on a UserCreds (or a slice of them) never leaks credentials
+// into a log line. The actual password is still readable via .Password for
+// the SSH client; this only changes default formatting.
+func (u UserCreds) String() string {
+	mask := ""
+	if u.Password != "" {
+		mask = "***"
+	}
+	return fmt.Sprintf("{User:%s Password:%s Patterns:%v}", u.Username, mask, u.Patterns)
+}
+
+// GoString likewise masks the password so `%#v` formatting (used by some
+// debuggers and structured loggers) is also safe.
+func (u UserCreds) GoString() string { return u.String() }
+
 func ParseUsersCSV(r io.Reader) ([]UserCreds, error) {
 	reader := csv.NewReader(r)
 	reader.FieldsPerRecord = -1

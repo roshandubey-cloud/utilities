@@ -201,7 +201,7 @@ func (e *errCounters) snapshot() map[string]int64 {
 // With streaming enabled during the run, the CSV file is already mostly
 // populated — this just finalizes the tail.
 func sealAllAndWriteMeta(r *Run, reportsDir string) error {
-	if err := os.MkdirAll(reportsDir, 0o755); err != nil {
+	if err := os.MkdirAll(reportsDir, 0o700); err != nil {
 		return fmt.Errorf("mkdir reports dir: %w", err)
 	}
 	snap := r.Metrics.Snapshot()
@@ -447,7 +447,7 @@ func StartWithPersist(parent context.Context, cfg *config.RunConfig, reportsDir 
 	// Open the streaming CSV writer up front so records are sealed to disk
 	// as they finalize. Keeps RAM flat on long runs.
 	if reportsDir != "" {
-		if err := os.MkdirAll(reportsDir, 0o755); err != nil {
+		if err := os.MkdirAll(reportsDir, 0o700); err != nil {
 			cancel()
 			return nil, fmt.Errorf("mkdir reports dir: %w", err)
 		}

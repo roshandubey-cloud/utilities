@@ -489,10 +489,25 @@
             <button type="button" class="primary" id="importRunBtn">Import &amp; Run now</button>
             <input type="file" id="importFile" accept="application/json,.json" style="display:none">
           </div>
+          <div class="hint" style="margin-bottom:10px">
+            <label style="display:inline-flex; align-items:center; gap:6px; margin-right:14px">
+              <input type="checkbox" id="export_with_passwords"> Include passwords in export (off by default — exports get password columns blanked)
+            </label>
+          </div>
           <div class="hint">
-            <b>Export</b> saves everything in this form (connection, normal, large, download, users, passwords) to a JSON file you can share or re-use.
+            <b>Export</b> saves the form to a JSON file. Passwords are stripped unless the checkbox above is set.
             <b>Import</b> loads that JSON back into the form (you click Start run yourself).
             <b>Import &amp; Run now</b> loads the JSON and immediately starts the run — ideal for CLI-style repeatable tests.
+          </div>
+
+          <div class="actions" style="padding:10px 0 0">
+            <label style="display:inline-flex; align-items:center; gap:6px; margin-right:14px; font-size:13px">
+              <input type="checkbox" id="save_passwords"> Save passwords in this browser
+            </label>
+            <button type="button" class="ghost" id="clearCredsBtn">Clear stored credentials</button>
+          </div>
+          <div class="hint" style="margin-top:6px">
+            With the checkbox <b>off</b> (default), the form remembers everything <i>except</i> passwords across reloads — you'll re-enter them each time. With it on, passwords are kept in <code>localStorage</code> on this machine. <b>Clear stored credentials</b> wipes them immediately.
           </div>
 
           <div class="row" style="margin-top:14px">
@@ -600,6 +615,19 @@ const fmt = {
   num:  (n, d=2) => (n || 0).toFixed(d),
   time: (s) => s ? new Date(s).toLocaleTimeString() : '',
 };
+
+// apiFetch is the single entry point for every server call. It always sends
+// X-Requested-With (which the server's CSRFGuard middleware requires on state-
+// changing requests) and Accept: application/json so the browser doesn't get
+// surprised by an HTML error page mid-parse. Use this for /api/* calls only.
+async function apiFetch(url, init) {
+  init = init || {};
+  init.headers = Object.assign({
+    'X-Requested-With': 'sftp-loadtest',
+    'Accept': 'application/json',
+  }, init.headers || {});
+  return fetch(url, init);
+}
 
 // ---------- quick-pick chips (folder presets + recent connections) ----------
 // Any button with data-fill="<input-id>" data-value="<value>" writes that value
@@ -766,7 +794,7 @@ async function probeConnection() {
   const body = { host, port };
   if (cred) { body.username = cred.user; body.password = cred.pass; body.folder = folder; }
   try {
-    const res = await fetch('/api/probe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const res = await apiFetch('/api/probe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const r = await res.json();
     if (r.ok) {
       let msg = `✓ ${cred ? 'authenticated as ' + cred.user : 'reachable'} — `;
@@ -807,6 +835,31 @@ const CFG_KEYS = ['host','port','folder','parallel','duration','poll','timeout_m
   'dfolder','dparallel','download_users'];
 const TOGGLES = ['normal_enabled','large_enabled','download_enabled'];
 const LS_KEY = 'sftp-loadtest-config-v1';
+const SAVE_PWD_KEY = 'sftp-loadtest-save-passwords-v1';
+
+// stripPasswordsFromCSV blanks out the password column (position 1) on every
+// row of a user CSV. Format is "user,pass,pat1*,pat2*,..." — we keep the
+// surrounding shape so an imported file (or a rejoined-after-clear UI) still
+// loads cleanly; the operator just has to retype the passwords.
+function stripPasswordsFromCSV(raw) {
+  if (!raw) return raw;
+  return raw.split('\n').map(line => {
+    if (!line.trim()) return line;
+    const cols = line.split(',');
+    if (cols.length >= 2) cols[1] = '';
+    return cols.join(',');
+  }).join('\n');
+}
+
+function shouldSavePasswords() {
+  try { return localStorage.getItem(SAVE_PWD_KEY) === '1'; } catch { return false; }
+}
+function setSavePasswords(on) {
+  try { localStorage.setItem(SAVE_PWD_KEY, on ? '1' : '0'); } catch {}
+  // Re-save the current form so the new setting takes effect immediately —
+  // turning the toggle off should erase any stored passwords on the next save.
+  saveConfig();
+}
 
 function restoreConfig() {
   try {
@@ -823,16 +876,40 @@ function restoreConfig() {
       }
     });
   } catch {}
+  // Reflect the persisted save-passwords toggle into the UI on load.
+  const cb = $('save_passwords');
+  if (cb) cb.checked = shouldSavePasswords();
 }
 function saveConfig() {
   const out = {};
+  const keepPwd = shouldSavePasswords();
   CFG_KEYS.forEach(k => {
     const el = $(k); if (!el) return;
-    out[k] = CSV_FIELDS.includes(k) ? getCsvRaw(k) : el.value;
+    if (CSV_FIELDS.includes(k)) {
+      const raw = getCsvRaw(k);
+      out[k] = keepPwd ? raw : stripPasswordsFromCSV(raw);
+    } else {
+      out[k] = el.value;
+    }
   });
   TOGGLES.forEach(k => { const el = $(k); if (el) out[k] = el.checked; });
   try { localStorage.setItem(LS_KEY, JSON.stringify(out)); } catch {}
 }
+
+// clearStoredCredentials wipes localStorage entries that hold or could hold
+// passwords, and blanks the password column in every CSV textarea on screen.
+// Connection history (host:port only) is preserved.
+function clearStoredCredentials() {
+  if (!confirm('Clear all saved passwords from this browser? Hostnames and other config are kept.')) return;
+  try { localStorage.removeItem(LS_KEY); } catch {}
+  CSV_FIELDS.forEach(id => {
+    const stripped = stripPasswordsFromCSV(getCsvRaw(id));
+    setCsvRaw(id, stripped);
+  });
+  saveConfig();
+  alert('Saved passwords cleared. Hosts and connection history kept.');
+}
+
 CFG_KEYS.concat(TOGGLES).forEach(k => { const el = $(k); if (el) el.addEventListener('change', saveConfig); });
 restoreConfig();
 
@@ -842,14 +919,14 @@ async function start() {
   saveConfig();
   const body = buildRequestBody();
   try {
-    const res = await fetch('/api/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const res = await apiFetch('/api/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(await res.text());
     rememberConn(body.host, body.port);
     $('startBtn').disabled = true;
     $('stopBtn').disabled = false;
   } catch (e) { $('err').textContent = e.message; }
 }
-async function stop() { await fetch('/api/stop', { method: 'POST' }); }
+async function stop() { await apiFetch('/api/stop', { method: 'POST' }); }
 
 $('startBtn').addEventListener('click', start);
 $('stopBtn').addEventListener('click', stop);
@@ -882,7 +959,7 @@ function fmtSpeed(info) {
 let pinnedRun = null;
 async function pollRuns() {
   try {
-    const { runs } = await (await fetch('/api/runs')).json();
+    const { runs } = await (await apiFetch('/api/runs')).json();
     const tb = $('runs_body');
     tb.innerHTML = '';
     if (!runs || runs.length === 0) {
@@ -911,7 +988,7 @@ $('liveBtn').addEventListener('click', () => { pinnedRun = null; poll(); pollRun
 async function poll() {
   const url = pinnedRun ? `/api/status?run=${encodeURIComponent(pinnedRun)}` : '/api/status';
   try {
-    const s = await (await fetch(url)).json();
+    const s = await (await apiFetch(url)).json();
 
     // proc badge
     if (s.proc) {
@@ -1108,19 +1185,31 @@ function buildRequestBody() {
 }
 
 // ---------- export / import full config ----------
-// Everything on the form goes to a JSON file (with passwords — that's the
-// point). Import accepts the same shape and only touches fields that are
-// present, so partial configs layer cleanly on top of defaults.
+// By default the exported JSON has password columns blanked out so configs
+// can be shared/checked-in safely. The "Include passwords in export" checkbox
+// opts in for cases where the operator deliberately wants the credentials in
+// the file (e.g. for an automated runner). A second confirm() guards the
+// non-default path.
 function exportConfig() {
+  const cfg = buildRequestBody();
+  const includePwd = $('export_with_passwords') && $('export_with_passwords').checked;
+  if (!includePwd) {
+    cfg.normal_users_csv   = stripPasswordsFromCSV(cfg.normal_users_csv);
+    cfg.large_users_csv    = stripPasswordsFromCSV(cfg.large_users_csv);
+    cfg.download_users_csv = stripPasswordsFromCSV(cfg.download_users_csv);
+  } else if (!confirm('Export will include plaintext passwords. Continue?')) {
+    return;
+  }
   const payload = {
     version: 1,
     exported_at: new Date().toISOString(),
-    config: buildRequestBody(),
+    passwords_included: !!includePwd,
+    config: cfg,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'sftp-loadtest-config.json';
+  a.download = includePwd ? 'sftp-loadtest-config-with-passwords.json' : 'sftp-loadtest-config.json';
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 0);
 }
@@ -1171,6 +1260,8 @@ let importMode = 'fill'; // 'fill' | 'run'
 $('exportBtn').addEventListener('click', exportConfig);
 $('importBtn').addEventListener('click', () => { importMode = 'fill'; $('importFile').click(); });
 $('importRunBtn').addEventListener('click', () => { importMode = 'run'; $('importFile').click(); });
+if ($('save_passwords')) $('save_passwords').addEventListener('change', (ev) => setSavePasswords(!!ev.target.checked));
+if ($('clearCredsBtn')) $('clearCredsBtn').addEventListener('click', clearStoredCredentials);
 $('importFile').addEventListener('change', async (ev) => {
   const file = ev.target.files && ev.target.files[0];
   if (!file) return;
@@ -1207,7 +1298,7 @@ async function scheduleRun() {
   const utcISO = new Date(runAt).toISOString();
   const body = { run_at: utcISO, note: $('sched_note').value.trim(), config: buildRequestBody() };
   try {
-    const res = await fetch('/api/schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const res = await apiFetch('/api/schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(await res.text());
     $('sched_note').value = '';
     pollSchedules();
@@ -1215,13 +1306,13 @@ async function scheduleRun() {
 }
 async function cancelSchedule(id) {
   try {
-    await fetch('/api/schedule/cancel?id=' + encodeURIComponent(id), { method: 'POST' });
+    await apiFetch('/api/schedule/cancel?id=' + encodeURIComponent(id), { method: 'POST' });
     pollSchedules();
   } catch {}
 }
 async function pollSchedules() {
   try {
-    const { schedules } = await (await fetch('/api/schedules')).json();
+    const { schedules } = await (await apiFetch('/api/schedules')).json();
     const tb = $('sched_body');
     tb.innerHTML = '';
     if (!schedules || schedules.length === 0) {
@@ -1256,7 +1347,7 @@ function formatThroughput(mbps_bytes) {
 let hostFDLimit = 0; // remembered for the live FD chip in the proc badge
 async function loadHost() {
   try {
-    const h = await (await fetch('/api/host')).json();
+    const h = await (await apiFetch('/api/host')).json();
     $('h_host').textContent = h.hostname || '—';
     $('h_os').textContent   = `${h.os || '?'}/${h.arch || '?'}`;
     $('h_cpu').textContent  = h.num_cpu || '—';

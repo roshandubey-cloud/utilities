@@ -437,7 +437,9 @@ type CSVStreamWriter struct {
 // header is written lazily on the first row so an empty run leaves an empty
 // file (nothing to serve yet).
 func NewCSVStreamWriter(path string) (*CSVStreamWriter, error) {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	// 0o600: CSV may contain credentials in error strings (e.g. an SSH error
+	// echoed in Error/DownloadError). Owner-only on shared hosts.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return nil, err
 	}
