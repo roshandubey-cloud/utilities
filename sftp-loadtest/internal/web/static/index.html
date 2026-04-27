@@ -365,8 +365,11 @@
           <div class="chips" id="conn_chips"></div>
           <div class="actions" style="padding:8px 0 0">
             <button type="button" class="ghost" id="probeBtn">Test connection</button>
-            <span id="probe_result" class="hint" style="margin:0"></span>
+            <label style="display:inline-flex;align-items:center;gap:6px;margin:0 0 0 12px;text-transform:none;letter-spacing:0;font-size:12.5px;color:var(--muted);font-weight:400;cursor:pointer" title="On first connect, capture this server's host key into known_hosts. Subsequent connects to the same server are silent. A CHANGED key for an already-known server is always refused (MITM signal).">
+              <input type="checkbox" id="probe_tofu"> Auto-add server key on first connect (TOFU)
+            </label>
           </div>
+          <div id="probe_result" class="hint" style="margin:6px 0 0"></div>
           <div style="margin-top:10px">
             <label>Upload folder (remote)</label>
             <input id="folder" type="text" placeholder="inbox">
@@ -791,8 +794,10 @@ async function probeConnection() {
   }
   const cred = firstUser(getCsvRaw('normal_users')) || firstUser(getCsvRaw('download_users'));
   const folder = $('folder').value.trim();
+  const tofu = $('probe_tofu') && $('probe_tofu').checked;
   const body = { host, port };
   if (cred) { body.username = cred.user; body.password = cred.pass; body.folder = folder; }
+  if (tofu) { body.trust_on_first_use = true; }
   try {
     const res = await apiFetch('/api/probe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const r = await res.json();
@@ -804,11 +809,18 @@ async function probeConnection() {
       if (r.list_ms !== undefined)     t.push(`list ${r.list_ms} ms`);
       msg += t.join(' · ');
       if (r.note) msg += ` — ${r.note}`;
+      // If TOFU just captured a new key, surface its fingerprint loudly so
+      // the operator can verify it out-of-band before running real load.
+      if (r.captured_fingerprint) {
+        msg += `\n  added new host key for ${r.captured_for_host || host}: ${r.captured_fingerprint}`;
+      }
       out.textContent = msg;
       out.style.color = 'var(--ok)';
+      out.style.whiteSpace = 'pre-wrap';
     } else {
       out.textContent = `✗ failed at ${r.stage || '?'}: ${r.error || 'unknown error'}`;
       out.style.color = 'var(--err)';
+      out.style.whiteSpace = 'pre-wrap';
     }
   } catch (e) {
     out.textContent = '✗ probe error: ' + e.message;

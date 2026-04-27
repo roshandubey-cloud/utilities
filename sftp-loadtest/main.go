@@ -89,6 +89,11 @@ func main() {
 
 	srv := web.NewServer(absDir, absSchedules)
 	defer srv.Shutdown()
+	// Tell the probe handler where the known_hosts file lives — that's the
+	// only place TOFU will append to. When the operator launched in
+	// -insecure-host-key mode, this stays empty and the probe handler
+	// refuses TOFU requests with a clear error.
+	srv.SetKnownHostsPath(*knownHosts)
 	handler := srv.Routes()
 
 	if *debug {

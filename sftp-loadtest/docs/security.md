@@ -30,6 +30,35 @@ because production tools should fail closed only when an operator opts in.
 The tool **refuses to start** without one of `-known-hosts` or
 `-insecure-host-key` so the SSH MITM exposure can never be silent.
 
+### Trust-On-First-Use (TOFU) for SFTP host keys
+
+The **Test connection** button in the UI has a checkbox labelled
+*"Auto-add server key on first connect (TOFU)"*. When ticked, the probe
+handler does this:
+
+| Situation | Behaviour |
+|---|---|
+| Server is **unknown** in `known_hosts` | The presented key is appended to the file; the SHA-256 fingerprint is shown in the UI for out-of-band verification. |
+| Server is **known**, key matches | Silent success. The checkbox state is irrelevant — known servers never re-prompt. |
+| Server is **known**, key **changed** | **Refused loudly** regardless of the checkbox. The error names the `known_hosts` file so the operator can investigate. The file is **not** modified. |
+
+TOFU is only available when the tool was launched with `-known-hosts <path>`.
+In `-insecure-host-key` mode the checkbox produces a clear error since
+there's no file to write to.
+
+After a successful capture, the process-wide host-key callback is reloaded
+so any subsequent `/api/start` (and any in-flight run that reconnects via
+the pool) immediately sees the new entry without a daemon restart.
+
+**Security trade-off:** TOFU pins the key on first connect. If an attacker
+is MITM-ing your SSH session at that exact moment, you pin their key. The
+window is small in practice; for environments where it matters, populate
+`known_hosts` out-of-band on a trusted network and don't tick the box:
+
+```sh
+ssh-keyscan -H sftp.example.com >> ~/.ssh/known_hosts
+```
+
 ## Dependencies
 
 The `security/baseline-hardening` branch updates:

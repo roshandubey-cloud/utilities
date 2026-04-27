@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -32,13 +33,14 @@ var staticFS embed.FS
 const maxRetainedRuns = 10
 
 type Server struct {
-	mu         sync.Mutex
-	runs       map[string]*runner.Run
-	order      []string // chronological, index 0 = oldest
-	procMon    *proc.Monitor
-	reportsDir string
-	schedules  *scheduleStore // nil if -schedules-dir wasn't provided
-	stopCh     chan struct{}  // closed on shutdown to stop background tickers
+	mu             sync.Mutex
+	runs           map[string]*runner.Run
+	order          []string // chronological, index 0 = oldest
+	procMon        *proc.Monitor
+	reportsDir     string
+	schedules      *scheduleStore // nil if -schedules-dir wasn't provided
+	stopCh         chan struct{}  // closed on shutdown to stop background tickers
+	knownHostsPath string         // set by main.go from -known-hosts; "" = TOFU disabled
 }
 
 // NewServer constructs the HTTP server. schedulesDir may be empty, in which
@@ -60,6 +62,22 @@ func NewServer(reportsDir, schedulesDir string) *Server {
 // Shutdown stops background tickers. Call before exiting.
 func (s *Server) Shutdown() { close(s.stopCh) }
 
+// SetKnownHostsPath records the path the operator passed via -known-hosts so
+// the probe handler can offer Trust-On-First-Use enrollment. Pass "" when
+// the operator launched in -insecure-host-key mode — TOFU isn't meaningful
+// there and the probe handler will reject TOFU requests with a clear error.
+func (s *Server) SetKnownHostsPath(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.knownHostsPath = path
+}
+
+func (s *Server) getKnownHostsPath() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.knownHostsPath
+}
+
 // startedAt is recorded once at construction for the /healthz uptime field.
 var processStart = time.Now()
 
@@ -77,11 +95,17 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Host     string `json:"host"`
-		Port     int    `json:"port"`
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Folder   string `json:"folder"`
+		Host             string `json:"host"`
+		Port             int    `json:"port"`
+		Username         string `json:"username"`
+		Password         string `json:"password"`
+		Folder           string `json:"folder"`
+		// TrustOnFirstUse, when true, instructs the probe to ADD this server's
+		// host key to the known_hosts file if it isn't there yet. A key that's
+		// already known and matches is silently accepted. A key that's already
+		// known and DIFFERENT is refused (MITM signal). Requires the server
+		// was launched with -known-hosts <path>.
+		TrustOnFirstUse  bool `json:"trust_on_first_use"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -118,10 +142,33 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Stage 2 + 3 — SSH handshake + SFTP subsystem. sftpx.Dial does both
-	// in one shot and uses a 15 s connect timeout.
+	// Stage 2 + 3 — SSH handshake + SFTP subsystem. If the caller asked for
+	// TOFU, build a per-call host-key callback that auto-appends unknown
+	// keys; otherwise fall through to the process-wide callback (set by
+	// main.go from -known-hosts / -insecure-host-key).
 	t1 := time.Now()
-	c, err := sftpx.Dial(req.Host, req.Port, req.Username, req.Password)
+	var dialOpts sftpx.DialOpts
+	var capturedFP string
+	if req.TrustOnFirstUse {
+		khPath := s.getKnownHostsPath()
+		if khPath == "" {
+			out["stage"] = "ssh_or_sftp"
+			out["error"] = "trust_on_first_use requires the server to have been launched with -known-hosts <path>"
+			writeJSON(w, out)
+			return
+		}
+		cb, cberr := sftpx.TOFUCallback(khPath, func(host, fp string) {
+			capturedFP = fp
+		})
+		if cberr != nil {
+			out["stage"] = "ssh_or_sftp"
+			out["error"] = "tofu setup: " + cberr.Error()
+			writeJSON(w, out)
+			return
+		}
+		dialOpts.HostKeyCallback = cb
+	}
+	c, err := sftpx.DialWithOpts(req.Host, req.Port, req.Username, req.Password, dialOpts)
 	if err != nil {
 		out["stage"] = "ssh_or_sftp"
 		out["error"] = err.Error()
@@ -131,6 +178,16 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 	}
 	out["ssh_sftp_ms"] = time.Since(t1).Milliseconds()
 	defer c.Close()
+	if capturedFP != "" {
+		out["captured_fingerprint"] = capturedFP
+		out["captured_for_host"] = req.Host
+		// The process-wide host-key callback was loaded once at startup from
+		// the known_hosts file. We just appended a new entry — reload so the
+		// next /api/start (and every existing run's reconnect) sees it.
+		if err := sftpx.UseKnownHosts(s.getKnownHostsPath()); err != nil {
+			log.Printf("reload known_hosts after TOFU: %v", err)
+		}
+	}
 
 	// Stage 4 — optional folder list. Validates the remote path exists +
 	// the user can read it. Common configuration mistake to catch early.
