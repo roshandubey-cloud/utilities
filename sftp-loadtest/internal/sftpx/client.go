@@ -70,6 +70,78 @@ func currentCallback() ssh.HostKeyCallback {
 	return cb
 }
 
+// TOFUCallback returns a host-key callback that verifies against the given
+// known_hosts file *and* — only when the host is unrecognized — appends the
+// presented key and accepts. A KEY MISMATCH for an already-known host is
+// always refused; TOFU only handles "not seen yet", never "key changed".
+//
+// This implements the OpenSSH `StrictHostKeyChecking=accept-new` model. The
+// captured callback is invoked with (hostname, sha256-fingerprint) for any
+// freshly-added key so the caller can surface it (e.g. in the probe response)
+// for the operator to verify out-of-band.
+//
+// The known_hosts file is created (mode 0o600) if it doesn't exist. Returns
+// an error only if the path can't be created or the existing file is
+// malformed enough that even strict checking can't be initialised.
+func TOFUCallback(path string, captured func(host, fingerprint string)) (ssh.HostKeyCallback, error) {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		if err := os.WriteFile(path, []byte{}, 0o600); err != nil {
+			return nil, fmt.Errorf("create known_hosts %s: %w", path, err)
+		}
+	}
+	strict, err := knownhosts.New(path)
+	if err != nil {
+		return nil, fmt.Errorf("load known_hosts %s: %w", path, err)
+	}
+	var mu sync.Mutex // serialises appends so concurrent first-time dials don't race the file
+	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		// Try strict verification first. On a successful match this is the only
+		// thing that runs — already-known servers are silent, no re-prompt.
+		strictErr := strict(hostname, remote, key)
+		if strictErr == nil {
+			return nil
+		}
+		var keErr *knownhosts.KeyError
+		if errors.As(strictErr, &keErr) {
+			if len(keErr.Want) > 0 {
+				// Host known + a different key seen. NEVER auto-fix — this is
+				// the MITM signal we want to be loud about.
+				return fmt.Errorf("host key for %s has changed since the last connection — possible MITM, refusing (delete the offending line in %s only after verifying the new key out-of-band): %w",
+					hostname, path, strictErr)
+			}
+			// Host not seen before. Append + accept.
+			mu.Lock()
+			defer mu.Unlock()
+			line := knownhosts.Line([]string{knownhosts.Normalize(hostname)}, key) + "\n"
+			f, ferr := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+			if ferr != nil {
+				return fmt.Errorf("append %s to %s: %w", knownhosts.Normalize(hostname), path, ferr)
+			}
+			if _, werr := f.WriteString(line); werr != nil {
+				f.Close()
+				return fmt.Errorf("write %s: %w", path, werr)
+			}
+			if cerr := f.Close(); cerr != nil {
+				return fmt.Errorf("close %s: %w", path, cerr)
+			}
+			if captured != nil {
+				captured(hostname, ssh.FingerprintSHA256(key))
+			}
+			return nil
+		}
+		return strictErr
+	}, nil
+}
+
+// DialOpts customises a single Dial call. A zero value uses the
+// process-wide host-key callback (the one main.go installs at startup).
+type DialOpts struct {
+	// HostKeyCallback, if set, is used instead of the process-wide callback
+	// for this one connection. Used by /api/probe in TOFU mode so the probe
+	// can capture a new server's key without affecting in-flight runs.
+	HostKeyCallback ssh.HostKeyCallback
+}
+
 // keepaliveInterval is how often we send an out-of-band keepalive request
 // to the SSH server. 30 s is comfortably below every common idle-timeout
 // (sshd defaults to 120 s, load balancers often enforce 60 s) but far enough
@@ -84,10 +156,20 @@ type Client struct {
 }
 
 func Dial(host string, port int, user, pass string) (*Client, error) {
+	return DialWithOpts(host, port, user, pass, DialOpts{})
+}
+
+// DialWithOpts is the same as Dial but lets the caller override the
+// host-key callback for this single connection (used by /api/probe TOFU).
+func DialWithOpts(host string, port int, user, pass string, opts DialOpts) (*Client, error) {
+	cb := opts.HostKeyCallback
+	if cb == nil {
+		cb = currentCallback()
+	}
 	cfg := &ssh.ClientConfig{
 		User:            user,
 		Auth:            []ssh.AuthMethod{ssh.Password(pass)},
-		HostKeyCallback: currentCallback(),
+		HostKeyCallback: cb,
 		Timeout:         15 * time.Second,
 	}
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
