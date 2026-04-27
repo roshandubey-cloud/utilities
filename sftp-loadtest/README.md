@@ -62,6 +62,11 @@ go build -o sftp-loadtest .
 
 Requires **Go 1.21+**.
 
+### Run as a service (Linux, boots with the OS)
+
+For long-lived deployments — auto-start at boot, restart on crash, log to
+journald — see [docs/systemd.md](docs/systemd.md).
+
 ## Command-line flags
 
 | Flag | Default | Purpose |
