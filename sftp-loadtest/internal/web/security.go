@@ -1,0 +1,207 @@
+package web
+
+import (
+	"crypto/subtle"
+	"net"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+)
+
+// SecurityHeaders adds a baseline of headers that the OWASP scanners check
+// for. STS is only sent when TLS is in use (browsers ignore HSTS over HTTP
+// anyway, but advertising it on plaintext is a downgrade-attack vector).
+//
+// CSP is intentionally permissive of inline scripts because the embedded UI
+// uses inline event handlers; tightening this requires refactoring the JS
+// out of index.html into a separate file. Tracking that as a follow-up.
+func SecurityHeaders(next http.Handler, tls bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; "+
+				"script-src 'self' 'unsafe-inline'; "+
+				"style-src 'self' 'unsafe-inline'; "+
+				"img-src 'self' data:; "+
+				"connect-src 'self'; "+
+				"form-action 'self'; "+
+				"frame-ancestors 'none'; "+
+				"base-uri 'self'")
+		if tls {
+			h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// bodySizeLimits caps the request body for each JSON endpoint. Limits are per
+// endpoint so a config blob (with large user CSVs) gets generous headroom but
+// a probe call doesn't.
+var bodySizeLimits = map[string]int64{
+	"/api/start":           2 << 20, // 2 MiB — accommodates large user CSV
+	"/api/schedule":        2 << 20,
+	"/api/probe":           8 << 10, // 8 KiB
+	"/api/stop":            1 << 10, // 1 KiB (empty body in practice)
+	"/api/schedule/cancel": 1 << 10,
+}
+
+// BodySizeLimit caps r.Body via http.MaxBytesReader before the handler reads
+// it. For any path not in bodySizeLimits, a permissive default (1 MiB) is
+// applied — protects unknown future endpoints from accidental unbounded reads.
+func BodySizeLimit(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
+			limit, ok := bodySizeLimits[r.URL.Path]
+			if !ok {
+				limit = 1 << 20
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// BasicAuth wraps next with HTTP Basic-auth using a constant-time comparison
+// against the configured user/pass.
+func BasicAuth(next http.Handler, user, pass string) http.Handler {
+	expectedUser := []byte(user)
+	expectedPass := []byte(pass)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Allow /healthz unauthenticated so probes/load balancers still work.
+		if r.URL.Path == "/healthz" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		u, p, ok := r.BasicAuth()
+		if !ok {
+			w.Header().Set("WWW-Authenticate", `Basic realm="sftp-loadtest"`)
+			http.Error(w, "auth required", http.StatusUnauthorized)
+			return
+		}
+		userOK := subtle.ConstantTimeCompare([]byte(u), expectedUser) == 1
+		passOK := subtle.ConstantTimeCompare([]byte(p), expectedPass) == 1
+		if !userOK || !passOK {
+			w.Header().Set("WWW-Authenticate", `Basic realm="sftp-loadtest"`)
+			http.Error(w, "bad credentials", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// CSRFGuard requires the X-Requested-With header on every state-changing
+// request. Browsers can't set custom headers cross-origin without a CORS
+// preflight — and we don't reply to preflights — so a malicious page can't
+// forge our POSTs even if the user is authenticated. Cheap, effective.
+func CSRFGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			next.ServeHTTP(w, r)
+			return
+		}
+		if r.Header.Get("X-Requested-With") != "sftp-loadtest" {
+			http.Error(w, "missing X-Requested-With header (CSRF guard)", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// rateLimitedPaths is the set of endpoints that get a per-IP bucket. Other
+// paths are unlimited — read-only status polling at 2 s intervals is cheap.
+var rateLimitedPaths = map[string]bool{
+	"/api/start":           true,
+	"/api/probe":           true,
+	"/api/schedule":        true,
+	"/api/schedule/cancel": true,
+	"/api/stop":            true,
+}
+
+type tokenBucket struct {
+	tokens   float64
+	last     time.Time
+	capacity float64
+	refill   float64 // tokens per second
+}
+
+func (b *tokenBucket) allow() bool {
+	now := time.Now()
+	if !b.last.IsZero() {
+		b.tokens += b.refill * now.Sub(b.last).Seconds()
+		if b.tokens > b.capacity {
+			b.tokens = b.capacity
+		}
+	} else {
+		b.tokens = b.capacity
+	}
+	b.last = now
+	if b.tokens >= 1 {
+		b.tokens--
+		return true
+	}
+	return false
+}
+
+// RateLimit applies a simple token-bucket per (client-IP, path) pair to the
+// expensive endpoints. Defaults: capacity 10, refill 1 token/s — fast enough
+// for legitimate UI use, slow enough to make /api/probe useless as a brute-
+// force amplifier. Buckets are evicted lazily after 10 minutes of idleness so
+// the map doesn't grow forever.
+func RateLimit(next http.Handler) http.Handler {
+	var (
+		mu      sync.Mutex
+		buckets = map[string]*tokenBucket{}
+	)
+	go func() {
+		t := time.NewTicker(10 * time.Minute)
+		defer t.Stop()
+		for range t.C {
+			mu.Lock()
+			cutoff := time.Now().Add(-10 * time.Minute)
+			for k, b := range buckets {
+				if b.last.Before(cutoff) {
+					delete(buckets, k)
+				}
+			}
+			mu.Unlock()
+		}
+	}()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !rateLimitedPaths[r.URL.Path] {
+			next.ServeHTTP(w, r)
+			return
+		}
+		ip, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			ip = r.RemoteAddr
+		}
+		// Honor X-Forwarded-For only if it looks like one, since this server is
+		// expected to sit behind a tunnel/reverse-proxy in many deployments.
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			if i := strings.IndexByte(xff, ','); i >= 0 {
+				xff = xff[:i]
+			}
+			ip = strings.TrimSpace(xff)
+		}
+		key := ip + "|" + r.URL.Path
+		mu.Lock()
+		b := buckets[key]
+		if b == nil {
+			b = &tokenBucket{capacity: 10, refill: 1.0}
+			buckets[key] = b
+		}
+		ok := b.allow()
+		mu.Unlock()
+		if !ok {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}

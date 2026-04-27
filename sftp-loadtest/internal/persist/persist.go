@@ -47,13 +47,16 @@ func MetaPath(dir, id string) string {
 	return filepath.Join(dir, sanitize(id)+".json")
 }
 
-// WriteMeta writes the RunMeta JSON atomically (temp file + rename).
+// WriteMeta writes the RunMeta JSON atomically (temp file + rename). Files
+// land at 0o600 and the directory at 0o700 because the metadata can include
+// disabled-user lists and (transitively) anything the run wants to surface;
+// keep it owner-only on shared hosts.
 func WriteMeta(dir string, m RunMeta) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("mkdir reports dir: %w", err)
 	}
 	tmp := MetaPath(dir, m.ID) + ".tmp"
-	f, err := os.Create(tmp)
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}

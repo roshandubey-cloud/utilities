@@ -1,6 +1,7 @@
 package sftpx
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -11,7 +12,63 @@ import (
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
+
+// HostKeyMode controls how SSH host keys are checked when dialing the SFTP
+// server. The package-level variables let main.go install a process-wide
+// callback at startup so the rest of the codebase doesn't need to know how
+// host-key verification was configured.
+var (
+	hostKeyCallback ssh.HostKeyCallback
+	hostKeyMu       sync.RWMutex
+)
+
+// SetHostKeyCallback installs the host-key verification callback used by all
+// subsequent Dial() calls. Pass nil to revert to the default secure-by-failure
+// behavior (refuse every connection).
+func SetHostKeyCallback(cb ssh.HostKeyCallback) {
+	hostKeyMu.Lock()
+	defer hostKeyMu.Unlock()
+	hostKeyCallback = cb
+}
+
+// UseKnownHosts loads the OpenSSH-format known_hosts file and installs a
+// strict-checking callback. Returns an error if the file is missing or
+// malformed. This is the recommended production setup.
+func UseKnownHosts(path string) error {
+	cb, err := knownhosts.New(path)
+	if err != nil {
+		return fmt.Errorf("load known_hosts %s: %w", path, err)
+	}
+	SetHostKeyCallback(cb)
+	return nil
+}
+
+// AllowAnyHostKey installs the explicitly-insecure callback. Intended only for
+// throwaway lab tests against ephemeral SFTP servers; emits a warning to the
+// caller-supplied logger so it can never be silent.
+func AllowAnyHostKey(warn func(format string, args ...any)) {
+	if warn != nil {
+		warn("WARNING: SSH host-key verification disabled (--insecure-host-key). " +
+			"This SFTP load tester is now vulnerable to man-in-the-middle attacks. " +
+			"Use -known-hosts <path> in any environment that touches real credentials.")
+	}
+	SetHostKeyCallback(ssh.InsecureIgnoreHostKey())
+}
+
+// currentCallback returns the installed callback or a refuse-all fallback.
+func currentCallback() ssh.HostKeyCallback {
+	hostKeyMu.RLock()
+	cb := hostKeyCallback
+	hostKeyMu.RUnlock()
+	if cb == nil {
+		return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+			return errors.New("host-key verification not configured: pass -known-hosts <path> or -insecure-host-key")
+		}
+	}
+	return cb
+}
 
 // keepaliveInterval is how often we send an out-of-band keepalive request
 // to the SSH server. 30 s is comfortably below every common idle-timeout
@@ -30,7 +87,7 @@ func Dial(host string, port int, user, pass string) (*Client, error) {
 	cfg := &ssh.ClientConfig{
 		User:            user,
 		Auth:            []ssh.AuthMethod{ssh.Password(pass)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: currentCallback(),
 		Timeout:         15 * time.Second,
 	}
 	addr := net.JoinHostPort(host, strconv.Itoa(port))

@@ -63,15 +63,16 @@ func sanitizeID(id string) string {
 func (ss *scheduleStore) save(s Schedule) error {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
-	if err := os.MkdirAll(ss.dir, 0o755); err != nil {
+	if err := os.MkdirAll(ss.dir, 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
+	// 0o600: schedule JSON includes the full RunConfig — passwords and all.
 	tmp := ss.path(s.ID) + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, ss.path(s.ID))

@@ -26,3 +26,9 @@ mockserver-*
 .vscode/
 *.swp
 *~
+
+# Local-only Go workspace + vendored dep sources used to build behind a network
+# block. Not committed; CI / network-connected hosts run `go mod tidy` instead.
+go.work
+go.work.sum
+**/third_party/
