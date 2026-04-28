@@ -307,6 +307,13 @@ func sealAllAndWriteMeta(r *Run, reportsDir string) error {
 		return EffectiveSpeedMBps(bytes, startTime, dur, snap)
 	}
 	slowMins := r.SlowdownMinutes()
+	// If downloads were enabled but never matched the upload row before
+	// teardown, stamp the row's download_error so the empty download_user
+	// column has an explanation instead of looking like a missing field.
+	downloadStalled := 0
+	if r.Cfg != nil && r.Cfg.Download != nil {
+		downloadStalled = r.Report.StampPendingDownloads("DOWNLOAD_TIMEOUT_LOCAL")
+	}
 	// Seal everything left — the "is final" predicate returns true for all.
 	if _, err := r.Report.FlushFinalized(func(*report.FileRecord) bool { return true }, slowMins, eff); err != nil {
 		log.Printf("final flush: %v", err)
@@ -336,6 +343,7 @@ func sealAllAndWriteMeta(r *Run, reportsDir string) error {
 		FailedFiles:    failed,
 		SucceededFiles: snap.TotalFiles - failed,
 		DispatchSkips:  r.DispatchSkips.Load(),
+		DownloadStalled: int64(downloadStalled),
 	}
 	// Fold in the host-stats peaks captured by sampleHostStats.
 	meta.PeakCPUPercent = float64(r.peakCPUMicroPct.Load()) / 1e6
@@ -408,6 +416,7 @@ func appendCSVAnalysis(path string, m persist.RunMeta) error {
 	b.WriteString(fmt.Sprintf("# total_files,%d\n", m.TotalFiles))
 	b.WriteString(fmt.Sprintf("# failed_files,%d\n", m.FailedFiles))
 	b.WriteString(fmt.Sprintf("# dispatch_skips,%d\n", m.DispatchSkips))
+	b.WriteString(fmt.Sprintf("# download_stalled,%d\n", m.DownloadStalled))
 	b.WriteString(fmt.Sprintf("# overall_mbps,%.3f\n", m.OverallMBps))
 	b.WriteString(fmt.Sprintf("# peak_window_mbps,%.3f\n", m.PeakWindowMBps))
 	b.WriteString(fmt.Sprintf("# peak_cpu_percent,%.1f\n", m.PeakCPUPercent))
@@ -792,14 +801,33 @@ func (r *Run) isRecordFinal(rec *report.FileRecord) bool {
 	if !rec.DownloadEndTime.IsZero() {
 		return true
 	}
-	// Give downloads a grace window after the trackid landed. PollInterval
-	// × 4 covers the expected round-trip; beyond that we assume it's not
-	// coming and seal the row with whatever state it has.
-	grace := r.Cfg.PollInterval * 4
-	if grace < 20*time.Second {
-		grace = 20 * time.Second
+	// Give downloads a generous grace window after the trackid landed.
+	// At high fpm the outbox queues files and a worker may need many
+	// poll-tick cycles before it gets to a particular file. The old 20 s
+	// grace caused rows to seal with download_user empty whenever the
+	// outbox depth exceeded a couple of files, which was the most common
+	// case in real runs.
+	//
+	// New grace = max(TrackIDTimeout, 2 min, PollInterval × 20). Beyond that
+	// we treat the download as locally timed-out and seal with an explicit
+	// error code so it's visible in the CSV instead of a silently empty row.
+	grace := r.Cfg.TrackIDTimeout
+	if floor := r.Cfg.PollInterval * 20; floor > grace {
+		grace = floor
 	}
-	return !rec.TrackIDAt.IsZero() && time.Since(rec.TrackIDAt) > grace
+	if grace < 2*time.Minute {
+		grace = 2 * time.Minute
+	}
+	if !rec.TrackIDAt.IsZero() && time.Since(rec.TrackIDAt) > grace {
+		// Stamp the row so the operator sees WHY download_user is blank.
+		// Mutation is safe here: isRecordFinal is called under the Store
+		// lock by FlushFinalized.
+		if rec.DownloadError == "" {
+			rec.DownloadError = "DOWNLOAD_TIMEOUT_LOCAL"
+		}
+		return true
+	}
+	return false
 }
 
 // streamFlusher is the background goroutine that seals finalized records

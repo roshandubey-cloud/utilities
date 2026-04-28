@@ -320,6 +320,37 @@ func (s *Store) FlushFinalized(isFinal func(*FileRecord) bool, slowdownMins map[
 	return flushed, nil
 }
 
+// StampPendingDownloads marks every still-live record that completed an
+// upload (TrackID set) but never received a matching download with the
+// given error code. Returns the number of rows stamped. Used by the seal
+// path so a CSV row with empty download_user is never silently emitted —
+// readers can grep download_error for the timeout code instead.
+func (s *Store) StampPendingDownloads(errCode string) int {
+	if s == nil || errCode == "" {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stamped := 0
+	for _, r := range s.records {
+		if r == nil {
+			continue
+		}
+		if r.TrackID == "" {
+			continue
+		}
+		if !r.DownloadEndTime.IsZero() {
+			continue
+		}
+		if r.DownloadError != "" {
+			continue
+		}
+		r.DownloadError = errCode
+		stamped++
+	}
+	return stamped
+}
+
 // WriteRemainingCSV serializes every still-live record through a one-shot
 // csv.Writer. Used by the teardown path when the streaming file needs a
 // final batch appended, and by the live-download path to tack the in-memory

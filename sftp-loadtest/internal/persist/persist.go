@@ -46,6 +46,14 @@ type RunMeta struct {
 	// can't sustain its requested workload.
 	DispatchSkips int64 `json:"dispatch_skips"`
 
+	// DownloadStalled counts upload rows whose matching download never
+	// arrived from the server before teardown. These rows are stamped with
+	// download_error=DOWNLOAD_TIMEOUT_LOCAL in the CSV. Non-zero usually
+	// means downloads couldn't keep up with the upload rate (raise
+	// download.parallel_streams or add download users) or that server-side
+	// routing didn't deliver the file to any download user's outbox.
+	DownloadStalled int64 `json:"download_stalled,omitempty"`
+
 	// Local-host capacity peaks captured during the run by a 2-second
 	// sampler. Persisted so the analysis trailer in the CSV and the
 	// Previous-runs UI can tell the operator whether the bottleneck was

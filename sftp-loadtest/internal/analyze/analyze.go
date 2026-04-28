@@ -117,6 +117,27 @@ func Suggest(m persist.RunMeta) []persist.Suggestion {
 		}
 	}
 
+	// --- Downloads never arrived -----------------------------------------
+	if m.DownloadStalled > 0 && total > 0 {
+		stallPct := float64(m.DownloadStalled) / float64(total) * 100.0
+		sev := SeverityWarn
+		if stallPct >= 25 {
+			sev = SeverityCritical
+		}
+		out = append(out, persist.Suggestion{
+			Severity: sev,
+			Title:    fmt.Sprintf("Downloads stalled — %.1f%% of uploads never matched a download.", stallPct),
+			Detail: fmt.Sprintf(
+				"%d of %d upload rows show download_error=DOWNLOAD_TIMEOUT_LOCAL. The download workers either could not keep up with the upload rate, or the server never routed the file to any download user's outbox.",
+				m.DownloadStalled, total,
+			),
+			Action: fmt.Sprintf(
+				"Raise download.parallel_streams (currently %d), add more download users (currently %d), or verify server-side routing places the file in an outbox the test reads from.",
+				m.DownloadParallelStreams, m.DownloadUsers,
+			),
+		})
+	}
+
 	// --- File-descriptor pressure -----------------------------------------
 	if m.PeakFDInUse > 0 && m.PeakFDInUse >= 800 {
 		sev := SeverityWarn
