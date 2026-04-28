@@ -7,6 +7,7 @@ import { mountMasthead } from './masthead.js';
 import { mountHostBar } from './host.js';
 import { mountHeroRun } from './runs.js';
 import { mountConnectionCard } from './connection.js';
+import { mountRecords } from './records.js';
 
 initTheme();
 
@@ -15,4 +16,5 @@ document.addEventListener('DOMContentLoaded', () => {
   mountHostBar('[data-component="host-bar"]');
   mountHeroRun('[data-component="hero-run"]');
   mountConnectionCard('[data-component="connection"]');
+  mountRecords('[data-component="records"]');
 });

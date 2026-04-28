@@ -735,6 +735,193 @@
 
 
 /* ============================================================================
+   RECORDS TABLE — 6 high-signal columns (User, Kind, File, Size, Mbps,
+   Status) with row-expand for the timing detail. Replaces the legacy
+   14-column "Recent uploads" card.
+   ============================================================================ */
+
+.records-panel { /* uses .panel base */ }
+
+.rec-live-dot {
+  width: 8px; height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--text-tertiary);
+}
+.rec-live-dot[data-state="running"] {
+  background: var(--success);
+  animation: status-pulse 2s ease-in-out infinite;
+}
+
+.records-tbl-wrap {
+  position: relative;
+  max-height: 480px;
+  overflow: auto;
+  border-radius: 0 0 var(--r-3) var(--r-3);
+}
+.records-tbl {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--fs-12);
+}
+.records-tbl thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-2);
+  font-family: var(--font-sans);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-tertiary);
+  padding: var(--sp-2) var(--sp-3);
+  text-align: left;
+  border-bottom: var(--bw-1) solid var(--border-weak);
+  white-space: nowrap;
+}
+.records-tbl tbody td {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: var(--bw-1) solid var(--border-weak);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+.records-tbl tbody tr:hover td { background: var(--action-hover); }
+.records-tbl tbody tr:last-child td { border-bottom: 0; }
+
+.rec-col-user   { width: 80px; }
+.rec-col-kind   { width: 32px; text-align: center; }
+.rec-col-file   { /* flex */ }
+.rec-col-num    { width: 80px; text-align: right; }
+.rec-col-status { width: 160px; text-align: right; }
+
+.rec-cell { white-space: nowrap; }
+.rec-cell.rec-num { font-variant-numeric: tabular-nums; text-align: right; font-family: var(--font-mono); }
+.rec-cell.rec-kind { text-align: center; }
+.rec-cell.rec-file {
+  font-family: var(--font-mono);
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rec-cell.rec-status {
+  text-align: right;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-1);
+  width: 100%;
+}
+
+.rec-kind-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-2);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+  font-family: var(--font-sans);
+}
+.rec-kind-badge.rec-kind-normal { background: var(--surface-2); color: var(--text-secondary); border: var(--bw-1) solid var(--border-weak); }
+.rec-kind-badge.rec-kind-large  { background: var(--info-bg-soft); color: var(--info-fg-soft); border: var(--bw-1) solid var(--info-border); }
+
+.rec-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 1px var(--sp-2);
+  height: 20px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-medium);
+  font-family: var(--font-sans);
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
+  color: var(--text-secondary);
+}
+.rec-status-pill .rec-status-dot {
+  width: 6px; height: 6px;
+  border-radius: var(--r-pill);
+  background: currentColor;
+  flex-shrink: 0;
+}
+.rec-status-ok      { color: var(--success-fg-soft); background: var(--success-bg-soft); border-color: var(--success-border); }
+.rec-status-partial { color: var(--info-fg-soft);    background: var(--info-bg-soft);    border-color: var(--info-border); }
+.rec-status-pending { color: var(--warning-fg-soft); background: var(--warning-bg-soft); border-color: var(--warning-border); }
+.rec-status-warn    { color: var(--warning-fg-soft); background: var(--warning-bg-soft); border-color: var(--warning-border); }
+.rec-status-error   { color: var(--danger-fg-soft);  background: var(--danger-bg-soft);  border-color: var(--danger-border); }
+
+.rec-expand-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--r-2);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+.rec-expand-btn:hover { background: var(--action-hover); color: var(--text-primary); }
+.rec-expand-btn:focus-visible { box-shadow: var(--focus-ring-strong); }
+
+/* Detail row — full-width content, breaks the column grid via colspan. */
+.rec-detail-row td {
+  padding: 0 !important;
+  background: var(--surface-2);
+  border-bottom: var(--bw-1) solid var(--border-weak) !important;
+}
+.rec-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+}
+.rec-detail-section {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(110px, auto) 1fr;
+  gap: var(--sp-1) var(--sp-2);
+  align-items: baseline;
+}
+.rec-detail-section dt {
+  color: var(--text-tertiary);
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  font-weight: var(--fw-semibold);
+}
+.rec-detail-section dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-12);
+}
+.rec-detail-section.rec-detail-error dt { color: var(--danger-fg-soft); }
+.rec-detail-section.rec-detail-error dd { color: var(--danger-fg-soft); }
+.rec-detail-section dd .body-small { color: var(--text-tertiary); margin-left: var(--sp-1); }
+
+.records-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-8) var(--sp-4);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+.records-empty[hidden] { display: none; }
+.records-empty .hero-empty-icon { width: 48px; height: 48px; }
+
+
+/* ============================================================================
    HERO RUN — the load-test surface.
    Layout: action row (title + subtitle + Start CTA) on top, subtle "last run"
    strip footer below. The hero is the ACTION; the most recent run is shown

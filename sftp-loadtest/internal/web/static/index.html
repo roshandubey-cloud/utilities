@@ -445,6 +445,52 @@
       </div>
     </section>
 
+    <!-- LIVE ACTIVITY — 6-column records table with row-expand for the
+         timing detail. Replaces the legacy 14-column "Recent uploads" card,
+         which is hidden via legacy-overrides.css. -->
+    <section class="panel records-panel" data-component="records" id="activity">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <div class="panel-title row-tight">
+            <span class="rec-live-dot" data-role="live-dot" data-state="idle" aria-hidden="true"></span>
+            Live activity
+          </div>
+          <div class="panel-subtitle" data-role="count">No activity yet</div>
+        </div>
+        <div class="panel-actions">
+          <span class="body-small" style="color:var(--text-tertiary)">Click any row for timing detail</span>
+        </div>
+      </div>
+      <div class="panel-body" style="padding:0;gap:0">
+        <div class="records-tbl-wrap">
+          <table class="records-tbl">
+            <thead>
+              <tr>
+                <th class="rec-col-user">User</th>
+                <th class="rec-col-kind">Kind</th>
+                <th class="rec-col-file">File</th>
+                <th class="rec-col-num">Size</th>
+                <th class="rec-col-num">Mbps</th>
+                <th class="rec-col-status">Status</th>
+              </tr>
+            </thead>
+            <tbody data-role="rows"></tbody>
+          </table>
+          <div class="records-empty" data-role="empty">
+            <div class="hero-empty-icon" aria-hidden="true">
+              <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="10" y="14" width="44" height="36" rx="2"/>
+                <path d="M10 22h44"/>
+                <path d="M18 30h28" opacity="0.5"/>
+                <path d="M18 38h20" opacity="0.5"/>
+              </svg>
+            </div>
+            <div class="body-secondary">Per-file activity will stream here once a run starts.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- LEGACY MARKER — landing target for the masthead "Schedules & reports"
          link and the hero "Start a new load test" CTA. Phase 2-4 will migrate
          the cards below into the new design system. -->

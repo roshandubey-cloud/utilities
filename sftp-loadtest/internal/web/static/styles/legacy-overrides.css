@@ -273,6 +273,10 @@ button {
 .card textarea.csv-users:not(:focus) { background: var(--input-bg-disabled); }
 .card textarea.csv-users:focus { background: var(--input-bg); }
 
+/* Hide the legacy "Recent uploads" 14-column table — replaced by the new
+   .records-panel component above the legacy banner (Phase 3.2). */
+.card:has(#rec_tbl) { display: none !important; }
+
 
 /* ============================================================================
    BUTTONS — drop uppercase + tracked. Map .primary / .ghost to new variants.
