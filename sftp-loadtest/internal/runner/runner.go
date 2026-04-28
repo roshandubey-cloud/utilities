@@ -13,10 +13,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/analyze"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/config"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/generator"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/metrics"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/persist"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/proc"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/report"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/sftpx"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/trackid"
@@ -219,6 +221,79 @@ func (e *errCounters) snapshot() map[string]int64 {
 	return out
 }
 
+// sampleHostStats runs as a goroutine for the duration of a run. Every 2s
+// it reads proc/runtime metrics and updates the peak/avg accumulators on
+// the Run. Cheap (single ReadMemStats + dirent scan), so 2s gives a useful
+// resolution without any meaningful overhead.
+func (r *Run) sampleHostStats(ctx context.Context) {
+	mon := proc.New()
+	r.hostNumCPU.Store(int64(mon.Sample().NumCPU)) // first call seeds CPU delta — discard reading
+	t := time.NewTicker(2 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		s := mon.Sample()
+		// CPU peak / running average.
+		cpuMicro := int64(s.CPUPercent * 1e6)
+		for {
+			cur := r.peakCPUMicroPct.Load()
+			if cpuMicro <= cur || r.peakCPUMicroPct.CompareAndSwap(cur, cpuMicro) {
+				break
+			}
+		}
+		r.cpuSamplesSum.Add(cpuMicro)
+		r.cpuSamplesCount.Add(1)
+
+		// FD-in-use peak (skip on platforms that report -1).
+		if s.FDInUse > 0 {
+			for {
+				cur := r.peakFDInUse.Load()
+				if s.FDInUse <= cur || r.peakFDInUse.CompareAndSwap(cur, s.FDInUse) {
+					break
+				}
+			}
+		}
+
+		// Goroutines peak.
+		gs := int64(s.Goroutines)
+		for {
+			cur := r.peakGoroutines.Load()
+			if gs <= cur || r.peakGoroutines.CompareAndSwap(cur, gs) {
+				break
+			}
+		}
+
+		// Heap peak (KB resolution is plenty for "is it 50 MB or 5 GB?").
+		hk := int64(s.HeapMB * 1024)
+		for {
+			cur := r.peakHeapKB.Load()
+			if hk <= cur || r.peakHeapKB.CompareAndSwap(cur, hk) {
+				break
+			}
+		}
+
+		// Live throughput peak from the metrics engine. Read the latest
+		// per-minute bucket — it represents the most recent minute's rate.
+		if r.Metrics != nil {
+			snap := r.Metrics.Snapshot()
+			if n := len(snap.PerMinute); n > 0 {
+				w := snap.PerMinute[n-1].MBps
+				wk := int64(w * 1024)
+				for {
+					cur := r.peakWindowKBps.Load()
+					if wk <= cur || r.peakWindowKBps.CompareAndSwap(cur, wk) {
+						break
+					}
+				}
+			}
+		}
+	}
+}
+
 // sealAllAndWriteMeta drains every still-live record into the stream CSV,
 // closes the stream, and writes the run metadata JSON. Called on teardown.
 // With streaming enabled during the run, the CSV file is already mostly
@@ -262,6 +337,16 @@ func sealAllAndWriteMeta(r *Run, reportsDir string) error {
 		SucceededFiles: snap.TotalFiles - failed,
 		DispatchSkips:  r.DispatchSkips.Load(),
 	}
+	// Fold in the host-stats peaks captured by sampleHostStats.
+	meta.PeakCPUPercent = float64(r.peakCPUMicroPct.Load()) / 1e6
+	if n := r.cpuSamplesCount.Load(); n > 0 {
+		meta.AvgCPUPercent = float64(r.cpuSamplesSum.Load()) / float64(n) / 1e6
+	}
+	meta.PeakFDInUse = r.peakFDInUse.Load()
+	meta.PeakGoroutines = int(r.peakGoroutines.Load())
+	meta.PeakHeapMB = float64(r.peakHeapKB.Load()) / 1024.0
+	meta.PeakWindowMBps = float64(r.peakWindowKBps.Load()) / 1024.0
+	meta.NumCPU = int(r.hostNumCPU.Load())
 	// Capture workload-shape from the live config so the Previous-runs
 	// overview tells the user what was attempted, not just what finished.
 	if r.Cfg != nil {
@@ -288,7 +373,68 @@ func sealAllAndWriteMeta(r *Run, reportsDir string) error {
 			LastAt:      d.LastAt,
 		})
 	}
+	// Run the analyzer against the now-fully-populated meta. The result is
+	// what the CSV trailer and the Previous-runs UI both render — keeping
+	// the narrative identical across consumers.
+	meta.Suggestions = analyze.Suggest(meta)
+	// Append a human-readable analysis block to the CSV so an operator
+	// reading the report in Excel sees the diagnosis right after the data.
+	if reportStreamPath := persist.CSVPath(reportsDir, meta.ID); reportStreamPath != "" {
+		if err := appendCSVAnalysis(reportStreamPath, meta); err != nil {
+			log.Printf("csv analysis trailer: %v", err)
+		}
+	}
 	return persist.WriteMeta(reportsDir, meta)
+}
+
+// appendCSVAnalysis writes the run-summary + suggestions block at the end
+// of the CSV file. A blank line separates it from the data rows so simple
+// consumers (pandas read_csv, etc.) can stop at the first empty record;
+// human readers see the analysis right where they need it.
+func appendCSVAnalysis(path string, m persist.RunMeta) error {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		// CSV may not exist if the run had zero rows — that's fine.
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	defer f.Close()
+	var b strings.Builder
+	b.WriteString("\n")
+	b.WriteString("# RUN ANALYSIS\n")
+	b.WriteString(fmt.Sprintf("# run_id,%s\n", m.ID))
+	b.WriteString(fmt.Sprintf("# total_files,%d\n", m.TotalFiles))
+	b.WriteString(fmt.Sprintf("# failed_files,%d\n", m.FailedFiles))
+	b.WriteString(fmt.Sprintf("# dispatch_skips,%d\n", m.DispatchSkips))
+	b.WriteString(fmt.Sprintf("# overall_mbps,%.3f\n", m.OverallMBps))
+	b.WriteString(fmt.Sprintf("# peak_window_mbps,%.3f\n", m.PeakWindowMBps))
+	b.WriteString(fmt.Sprintf("# peak_cpu_percent,%.1f\n", m.PeakCPUPercent))
+	b.WriteString(fmt.Sprintf("# avg_cpu_percent,%.1f\n", m.AvgCPUPercent))
+	b.WriteString(fmt.Sprintf("# peak_fd_in_use,%d\n", m.PeakFDInUse))
+	b.WriteString(fmt.Sprintf("# peak_goroutines,%d\n", m.PeakGoroutines))
+	b.WriteString(fmt.Sprintf("# peak_heap_mb,%.1f\n", m.PeakHeapMB))
+	b.WriteString(fmt.Sprintf("# num_cpu,%d\n", m.NumCPU))
+	b.WriteString(fmt.Sprintf("# parallel_streams,%d\n", m.ParallelStreams))
+	b.WriteString(fmt.Sprintf("# files_per_minute,%d\n", m.FilesPerMinute))
+	b.WriteString(fmt.Sprintf("# upload_users,%d\n", m.UploadUsers))
+	if len(m.Suggestions) == 0 {
+		b.WriteString("# suggestions,(none — run hit its target without stress)\n")
+	} else {
+		b.WriteString("# SUGGESTIONS\n")
+		for i, s := range m.Suggestions {
+			b.WriteString(fmt.Sprintf("# [%s] %d. %s\n", strings.ToUpper(s.Severity), i+1, s.Title))
+			if s.Detail != "" {
+				b.WriteString(fmt.Sprintf("#     %s\n", s.Detail))
+			}
+			if s.Action != "" {
+				b.WriteString(fmt.Sprintf("#     -> %s\n", s.Action))
+			}
+		}
+	}
+	_, err = f.WriteString(b.String())
+	return err
 }
 
 // pickSize returns a random int64 in [minB, maxB]. When min==max it returns min.
@@ -330,6 +476,19 @@ type Run struct {
 	// DispatchSkips counts ticks where the semaphore was full and we had to
 	// skip an upload. Surfaces capacity bottlenecks to the UI.
 	DispatchSkips atomic.Int64
+
+	// Host-stats peaks captured by sampleHostStats every 2s while the run
+	// is active. The seal path reads these to populate RunMeta and feed
+	// the analyzer. Stored as int64 / atomic.Int64 (encode floats via
+	// math.Float64bits) so the sampler is lock-free.
+	peakCPUMicroPct atomic.Int64 // peak CPU% × 1e6
+	cpuSamplesSum   atomic.Int64 // sum of CPU% × 1e6 across samples
+	cpuSamplesCount atomic.Int64
+	peakFDInUse     atomic.Int64
+	peakGoroutines  atomic.Int64
+	peakHeapKB      atomic.Int64 // peak HeapMB × 1024
+	peakWindowKBps  atomic.Int64 // peak window MB/s × 1024
+	hostNumCPU      atomic.Int64
 
 	// Failure counters — visible to the UI via /api/status so operators don't
 	// have to scan the record tail to see error health.
@@ -551,6 +710,10 @@ func StartWithPersist(parent context.Context, cfg *config.RunConfig, reportsDir 
 	// after Stop is clicked and continue to resolve pending track-ids.
 	go r.Watcher.Run(ctx)
 	go r.consumeTrackIDs()
+	// Host-stats sampler — captures peak CPU/FD/goroutines/throughput so
+	// the seal-time analyzer can tell the operator whether the local box
+	// or the network was the bottleneck.
+	go r.sampleHostStats(ctx)
 
 	// Background flusher: every 5s, move finalized records from memory to
 	// the streaming CSV on disk. "Finalized" = failed, or (trackid resolved

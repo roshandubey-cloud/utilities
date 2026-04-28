@@ -715,6 +715,14 @@ func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request) {
 				"files_per_minute":          m.FilesPerMinute,
 				"download_enabled":          m.DownloadEnabled,
 				"dispatch_skips":            m.DispatchSkips,
+				"peak_cpu_percent":          m.PeakCPUPercent,
+				"avg_cpu_percent":           m.AvgCPUPercent,
+				"peak_fd_in_use":            m.PeakFDInUse,
+				"peak_goroutines":           m.PeakGoroutines,
+				"peak_heap_mb":              m.PeakHeapMB,
+				"peak_window_mbps":          m.PeakWindowMBps,
+				"num_cpu":                   m.NumCPU,
+				"suggestions":               m.Suggestions,
 				"source":                    "disk",
 			})
 		}

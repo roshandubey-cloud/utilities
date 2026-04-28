@@ -1220,6 +1220,60 @@
 .ceiling-banner-text .mono { color: var(--text-secondary); }
 
 
+/* ============================================================================
+   RUN ANALYSIS — host-capacity peaks + analyzer suggestions, rendered
+   inside each Previous-runs card so the operator sees the diagnosis next
+   to the run that produced it.
+   ============================================================================ */
+
+.runs-history-analysis {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: var(--bw-1) dashed var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.runs-history-infra {
+  color: var(--text-secondary);
+}
+.runs-history-suggestions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.runs-history-suggestion {
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-2);
+  border-left: 3px solid var(--border-subtle);
+  background: var(--surface-2);
+}
+.runs-history-suggestion-title {
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+.runs-history-suggestion-detail,
+.runs-history-suggestion-action {
+  margin-top: 2px;
+  color: var(--text-secondary);
+}
+.runs-history-suggestion-action strong { color: var(--text-primary); }
+.runs-history-sev-critical {
+  border-left-color: var(--danger);
+  background: var(--danger-bg-soft);
+}
+.runs-history-sev-warn {
+  border-left-color: var(--warning);
+  background: var(--warning-bg-soft);
+}
+.runs-history-sev-info {
+  border-left-color: var(--accent);
+}
+
+
 /* Pattern chips — flexible layout per row, wraps as more patterns added. */
 .users-editor-patterns {
   display: flex;

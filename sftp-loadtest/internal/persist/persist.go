@@ -46,7 +46,34 @@ type RunMeta struct {
 	// can't sustain its requested workload.
 	DispatchSkips int64 `json:"dispatch_skips"`
 
-	Disabled    []DisabledUser `json:"disabled,omitempty"`
+	// Local-host capacity peaks captured during the run by a 2-second
+	// sampler. Persisted so the analysis trailer in the CSV and the
+	// Previous-runs UI can tell the operator whether the bottleneck was
+	// the local box (CPU, FDs) or somewhere else (network, server).
+	PeakCPUPercent float64 `json:"peak_cpu_percent,omitempty"`
+	AvgCPUPercent  float64 `json:"avg_cpu_percent,omitempty"`
+	PeakFDInUse    int64   `json:"peak_fd_in_use,omitempty"`
+	PeakGoroutines int     `json:"peak_goroutines,omitempty"`
+	PeakHeapMB     float64 `json:"peak_heap_mb,omitempty"`
+	PeakWindowMBps float64 `json:"peak_window_mbps,omitempty"`
+	NumCPU         int     `json:"num_cpu,omitempty"`
+
+	// Suggestions is the analyst's narrative for this run — what slowed it
+	// down and what to change next time. Generated at seal time by the
+	// internal/analyze package and embedded so the CSV and UI render
+	// the exact same advice.
+	Suggestions []Suggestion `json:"suggestions,omitempty"`
+
+	Disabled []DisabledUser `json:"disabled,omitempty"`
+}
+
+// Suggestion is one finding the analyzer produced. Severity drives sort
+// order and UI colour; Action is the concrete config change to try next.
+type Suggestion struct {
+	Severity string `json:"severity"` // "critical" | "warn" | "info"
+	Title    string `json:"title"`
+	Detail   string `json:"detail"`
+	Action   string `json:"action,omitempty"`
 }
 
 // DisabledUser is one row in RunMeta.Disabled.

@@ -123,7 +123,45 @@ function rowMarkup(r) {
                <div class="body-small">disabled</div>`}
         </div>
       </div>
+      ${analysisMarkup(r)}
     </article>`;
+}
+
+// Renders the host-capacity line + the analyzer's suggestions.
+// Hidden entirely when the run pre-dates the analyzer (no peak fields persisted).
+function analysisMarkup(r) {
+  const hasInfra = (r.peak_cpu_percent != null) || (r.peak_window_mbps != null) || (r.num_cpu != null);
+  const suggestions = Array.isArray(r.suggestions) ? r.suggestions : [];
+  if (!hasInfra && suggestions.length === 0) return '';
+  const infraBits = [];
+  if (r.peak_cpu_percent != null && r.num_cpu) {
+    infraBits.push(`CPU peak ${Number(r.peak_cpu_percent).toFixed(0)}% / ${r.num_cpu} cores`);
+  } else if (r.peak_cpu_percent != null) {
+    infraBits.push(`CPU peak ${Number(r.peak_cpu_percent).toFixed(0)}%`);
+  }
+  if (r.peak_window_mbps != null && Number(r.peak_window_mbps) > 0) {
+    infraBits.push(`net peak ${Number(r.peak_window_mbps).toFixed(1)} MB/s`);
+  }
+  if (r.peak_fd_in_use != null && Number(r.peak_fd_in_use) > 0) {
+    infraBits.push(`FD peak ${Number(r.peak_fd_in_use)}`);
+  }
+  if (r.peak_heap_mb != null && Number(r.peak_heap_mb) > 0) {
+    infraBits.push(`heap ${Number(r.peak_heap_mb).toFixed(0)} MiB`);
+  }
+  const infraLine = infraBits.length
+    ? `<div class="runs-history-infra body-small">Local host: ${escapeHTML(infraBits.join(' · '))}</div>`
+    : '';
+  const sugList = suggestions.length
+    ? `<ul class="runs-history-suggestions">
+         ${suggestions.map(s => `
+           <li class="runs-history-suggestion runs-history-sev-${escapeAttr(s.severity || 'info')}">
+             <div class="runs-history-suggestion-title">${escapeHTML(s.title || '')}</div>
+             ${s.detail ? `<div class="runs-history-suggestion-detail body-small">${escapeHTML(s.detail)}</div>` : ''}
+             ${s.action ? `<div class="runs-history-suggestion-action body-small"><strong>Try:</strong> ${escapeHTML(s.action)}</div>` : ''}
+           </li>`).join('')}
+       </ul>`
+    : '';
+  return `<div class="runs-history-analysis">${infraLine}${sugList}</div>`;
 }
 
 // ---------- formatters ----------
