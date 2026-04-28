@@ -116,6 +116,14 @@ func main() {
 		if !isLoopback(host) {
 			log.Fatalf("-debug refuses to mount /debug/pprof on non-loopback bind address %q (re-run with -addr 127.0.0.1:%s)", host, port)
 		}
+		// Loopback alone is not enough — on a shared dev box every local
+		// user can reach 127.0.0.1, so the heap dump (and the SSH
+		// passwords it contains) would still be readable. Require Basic
+		// auth credentials so pprof access has at least the same gate as
+		// the rest of the API.
+		if !authEnabled {
+			log.Fatalf("-debug requires -auth-user and -auth-pass to be set; the heap dump contains plaintext SFTP passwords and must be authenticated even on loopback")
+		}
 		mux := http.NewServeMux()
 		mux.Handle("/", handler)
 		mux.HandleFunc("/debug/pprof/", pprof.Index)

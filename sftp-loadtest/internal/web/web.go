@@ -290,23 +290,21 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, hostinfo.Snapshot())
 }
 
-// /healthz — cheap liveness probe. Always 200 while the HTTP server is up.
-// Includes uptime + whether a run is active so orchestrators can tell the
-// difference between "idle but alive" and "executing a test".
-// handleHealth answers liveness probes. Returns minimal "ok" payload by
+// handleHealth answers liveness probes. Returns minimal {"status":"ok"} by
 // default so the unauthenticated endpoint cannot be used to fingerprint
-// uptime or detect when a run is active. When ?detail=1 is passed AND the
-// caller has cleared BasicAuth (or auth is disabled), additional fields
-// are returned for in-cluster monitoring agents that explicitly opt in.
+// uptime or detect when a run is active. When ?detail=1 is passed the
+// BasicAuth middleware enforces credentials before this handler runs (see
+// security.go), so reaching here with detail=1 means the caller is
+// authenticated (or auth is disabled by config).
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	active := s.activeRun()
-	out := map[string]any{
-		"status":     "ok",
-		"uptime_sec": int64(time.Since(processStart).Seconds()),
-		"active_run": active != nil,
-	}
-	if active != nil {
-		out["active_run_id"] = active.ID
+	out := map[string]any{"status": "ok"}
+	if r.URL.Query().Get("detail") == "1" {
+		active := s.activeRun()
+		out["uptime_sec"] = int64(time.Since(processStart).Seconds())
+		out["active_run"] = active != nil
+		if active != nil {
+			out["active_run_id"] = active.ID
+		}
 	}
 	writeJSON(w, out)
 }

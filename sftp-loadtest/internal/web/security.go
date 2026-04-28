@@ -14,9 +14,12 @@ import (
 // for. STS is only sent when TLS is in use (browsers ignore HSTS over HTTP
 // anyway, but advertising it on plaintext is a downgrade-attack vector).
 //
-// CSP is intentionally permissive of inline scripts because the embedded UI
-// uses inline event handlers; tightening this requires refactoring the JS
-// out of index.html into a separate file. Tracking that as a follow-up.
+// CSP: script-src is now strict 'self' — every script in the bundle is a
+// served file under /js/. Inline <script> blocks would break and that's the
+// point: any future XSS that injects an inline script will be blocked by
+// the browser. style-src keeps 'unsafe-inline' because the legacy markup
+// still has style="..." attributes; those are far lower risk than script
+// execution and removing them is a separate cosmetic refactor.
 func SecurityHeaders(next http.Handler, tls bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -25,7 +28,7 @@ func SecurityHeaders(next http.Handler, tls bool) http.Handler {
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Content-Security-Policy",
 			"default-src 'self'; "+
-				"script-src 'self' 'unsafe-inline'; "+
+				"script-src 'self'; "+
 				"style-src 'self' 'unsafe-inline'; "+
 				"img-src 'self' data:; "+
 				"connect-src 'self'; "+
@@ -72,8 +75,11 @@ func BasicAuth(next http.Handler, user, pass string) http.Handler {
 	expectedUser := []byte(user)
 	expectedPass := []byte(pass)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Allow /healthz unauthenticated so probes/load balancers still work.
-		if r.URL.Path == "/healthz" {
+		// Allow /healthz unauthenticated so probes/load balancers still
+		// work. The verbose /healthz?detail=1 form is auth-gated so an
+		// unauthenticated caller can't fingerprint uptime or detect that
+		// a run is active.
+		if r.URL.Path == "/healthz" && r.URL.Query().Get("detail") != "1" {
 			next.ServeHTTP(w, r)
 			return
 		}
