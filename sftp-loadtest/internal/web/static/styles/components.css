@@ -922,6 +922,148 @@
 
 
 /* ============================================================================
+   USERS EDITOR — structured row editor that replaces the legacy CSV textarea.
+   Each row: user · pass+show · patterns · remove. Hidden textarea sibling
+   holds the serialised CSV for legacy buildRequestBody() compatibility.
+   ============================================================================ */
+
+.users-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.users-editor-table { display: flex; flex-direction: column; gap: var(--sp-1); }
+
+.users-editor-head,
+.users-editor-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(140px, 1.2fr) minmax(140px, 1.4fr) 28px;
+  gap: var(--sp-2);
+  align-items: center;
+}
+.users-editor-head {
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-tertiary);
+  font-weight: var(--fw-semibold);
+  padding: var(--sp-1) var(--sp-1);
+}
+.users-editor-head .label-hint {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-tertiary);
+  font-weight: var(--fw-regular);
+  margin-left: var(--sp-1);
+}
+
+.users-editor-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.users-editor-input {
+  /* uses .input but slightly tighter for grid rows */
+  height: 28px !important;
+  padding: 0 var(--sp-2) !important;
+  font-size: var(--fs-12) !important;
+}
+
+.users-editor-pass-wrap {
+  position: relative;
+  display: flex;
+}
+.users-editor-pass {
+  width: 100%;
+  padding-right: 28px !important;
+  font-family: var(--font-mono);
+  letter-spacing: 0.05em;
+}
+.users-editor-eye {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 28px;
+  width: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--r-2);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+.users-editor-eye:hover { background: var(--action-hover); color: var(--text-primary); }
+.users-editor-eye:focus-visible { box-shadow: var(--focus-ring-strong); }
+
+.users-editor-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: var(--r-2);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+.users-editor-remove:hover { background: var(--danger-bg-soft); color: var(--danger-fg-soft); }
+.users-editor-remove:focus-visible { box-shadow: var(--focus-ring-strong); }
+
+.users-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-top: var(--sp-1);
+  border-top: var(--bw-1) solid var(--border-weak);
+  margin-top: var(--sp-1);
+}
+.users-editor-meta {
+  margin-left: auto;
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  font-weight: var(--fw-medium);
+}
+
+.users-editor-paste {
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.users-editor-paste[hidden] { display: none; }
+
+@media (max-width: 720px) {
+  .users-editor-head { display: none; }
+  .users-editor-row {
+    grid-template-columns: 1fr 28px;
+    grid-template-areas:
+      "user remove"
+      "pass remove"
+      "patterns remove";
+    gap: var(--sp-1);
+    padding: var(--sp-2);
+    background: var(--surface-2);
+    border-radius: var(--r-2);
+  }
+  .users-editor-row > [data-field="user"]     { grid-area: user; }
+  .users-editor-row > .users-editor-pass-wrap { grid-area: pass; }
+  .users-editor-row > [data-field="patterns"] { grid-area: patterns; }
+  .users-editor-row > .users-editor-remove    { grid-area: remove; align-self: start; }
+}
+
+
+/* ============================================================================
    HERO RUN — the load-test surface.
    Layout: action row (title + subtitle + Start CTA) on top, subtle "last run"
    strip footer below. The hero is the ACTION; the most recent run is shown

@@ -8,6 +8,7 @@ import { mountHostBar } from './host.js';
 import { mountHeroRun } from './runs.js';
 import { mountConnectionCard } from './connection.js';
 import { mountRecords } from './records.js';
+import { mountUsersEditors } from './users-editor.js';
 
 initTheme();
 
@@ -17,4 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
   mountHeroRun('[data-component="hero-run"]');
   mountConnectionCard('[data-component="connection"]');
   mountRecords('[data-component="records"]');
+  // Replace each legacy CSV textarea with a structured row editor. Run after
+  // a microtask so any inline scripts that touch the textareas finish first.
+  setTimeout(mountUsersEditors, 0);
 });
