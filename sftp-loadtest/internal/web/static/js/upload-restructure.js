@@ -81,6 +81,36 @@ export function mountUploadRestructure() {
     });
   }
 
+  // ---- 2b. Surface the run-mechanics inputs that lived in the hidden
+  //          connCard (parallel-streams-per-user, duration, poll interval,
+  //          track-id timeout, disable-after-fails). Without this, those
+  //          critical run-level options were unreachable from the new UI. ----
+  const connCard = document.getElementById('connCard');
+  if (connCard && body) {
+    const connBody = connCard.querySelector('.body');
+    if (connBody) {
+      const RUN_FIELD_IDS = ['parallel', 'duration', 'poll', 'timeout_min', 'max_fails'];
+      const rowsToMove = [];
+      connBody.querySelectorAll('.row').forEach((row) => {
+        if (RUN_FIELD_IDS.some((id) => row.querySelector('#' + id))) {
+          rowsToMove.push(row);
+        }
+      });
+      if (rowsToMove.length > 0) {
+        const group = document.createElement('div');
+        group.className = 'upload-run-mechanics';
+        const heading = document.createElement('div');
+        heading.className = 'upload-run-mechanics-heading';
+        heading.innerHTML =
+          '<div class="eyebrow">Run mechanics</div>' +
+          '<div class="help">Per-user parallelism, total duration, polling cadence, track-id timeout, and the consecutive-failure threshold that disables a user.</div>';
+        group.appendChild(heading);
+        rowsToMove.forEach((row) => group.appendChild(row));
+        body.appendChild(group);
+      }
+    }
+  }
+
   // ---- 3. Reparent largeCard body into upload card as Advanced section ----
   if (largeCard && body) {
     const largeBody = largeCard.querySelector('.body');

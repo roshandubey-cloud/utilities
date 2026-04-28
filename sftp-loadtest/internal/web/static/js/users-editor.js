@@ -1,16 +1,17 @@
 // users-editor.js — structured row editor for SFTP user CSVs.
 //
-// Each row owns:
-//   - one username
-//   - one password (with show/hide eye)
-//   - N file patterns, expressed as chips (Enter/comma to add, × to remove,
-//     Backspace on empty input deletes the previous chip)
+// Layout per editor:
+//   1. One sample row (pattern chips, password eye) — light-styled when
+//      blank to read as optional. Most operators paste a CSV; the row is
+//      a one-off entry path or a starting template.
+//   2. Always-visible paste textarea — typing or pasting into it parses
+//      every line on each keystroke and replaces the rows above. No
+//      explicit "Append rows / Replace all" buttons.
+//   3. + Add user / Show N more users / counter.
 //
-// Mounts in front of every legacy `textarea.csv-users`, hides the textarea,
-// and serialises every change back into it as `user,pass,p1,p2,…,pn` per
-// line. Legacy buildRequestBody() / saveConfig() / probe() keep working
-// unchanged because the textarea is the source of truth for downstream code;
-// the editor is the source of truth for the user.
+// The legacy `textarea.csv-users` stays hidden as the serialisation buffer
+// — buildRequestBody() / saveConfig() / probe still read it — and the row
+// form / paste textarea push their state into it on every change.
 
 const PATTERN_DEFAULT = '*';
 
@@ -35,12 +36,10 @@ function initOne(textarea) {
   let rows = parseCSV(textarea.dataset.raw || textarea.value || '');
   if (rows.length === 0) rows.push(blankRow());
 
-  const visible = new Set(); // password show/hide, by row index
-  let pasteMode = false;
-  // Default to compact mode whenever there is more than one row. The vast
-  // majority of operators paste a CSV; showing every saved row inline buries
-  // the rest of the form. One sample row + "Show N more" stays out of the way.
+  const visible = new Set();
   let compactMode = rows.length > 1;
+  let suppressPasteSync = false; // guard against re-parse loops when we
+                                 // populate the paste textarea ourselves
 
   function syncToTextarea() {
     const csv = rows
@@ -56,9 +55,17 @@ function initOne(textarea) {
     textarea.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  function isSampleRow(r) {
+    return !r.user.trim() && !r.pass && (
+      r.patterns.length === 0 ||
+      (r.patterns.length === 1 && r.patterns[0] === PATTERN_DEFAULT)
+    );
+  }
+
   function render() {
     const visibleRows = (compactMode && rows.length > 1) ? rows.slice(0, 1) : rows;
     const hiddenCount = rows.length - visibleRows.length;
+
     host.innerHTML = `
       <div class="users-editor-table" role="grid" aria-label="SFTP users">
         <div class="users-editor-head">
@@ -68,25 +75,24 @@ function initOne(textarea) {
           <span class="sr-only">Remove</span>
         </div>
         <div class="users-editor-rows">
-          ${visibleRows.map((r, i) => rowHTML(r, i, visible.has(i))).join('')}
+          ${visibleRows.map((r, i) => rowHTML(r, i, visible.has(i), rows.length === 1 && isSampleRow(r))).join('')}
         </div>
         ${hiddenCount > 0 ? `
           <button type="button" class="users-editor-expand" data-action="expand">
             Show ${hiddenCount} more user${hiddenCount === 1 ? '' : 's'}
           </button>` : ''}
       </div>
+
+      <div class="users-editor-paste-zone">
+        <label class="label users-editor-paste-label" for="${textarea.id}_paste">
+          Or paste / bulk-edit CSV — one user per line: <span class="mono">user,pass,pattern1,pattern2,…</span>
+        </label>
+        <textarea id="${textarea.id}_paste" class="textarea users-editor-paste-textarea" rows="3" spellcheck="false" placeholder="up1,p,invoice*&#10;up2,p,quote*,statement*">${escapeHTML(currentCSV(rows))}</textarea>
+      </div>
+
       <div class="users-editor-actions">
         <button type="button" class="btn btn-sm btn-secondary" data-action="add">+ Add user</button>
-        <button type="button" class="btn btn-sm btn-ghost" data-action="paste-toggle" aria-expanded="${pasteMode}">${pasteMode ? 'Hide CSV paste' : 'Paste CSV…'}</button>
         <span class="users-editor-meta">${countLabel(rows)}</span>
-      </div>
-      <div class="users-editor-paste" data-role="paste" ${pasteMode ? '' : 'hidden'}>
-        <label class="label" for="${textarea.id}_paste">Paste CSV — one user per line: <span class="mono">user,pass,pattern1,pattern2,…</span></label>
-        <textarea id="${textarea.id}_paste" class="textarea" rows="4" placeholder="up1,p,invoice*,order*&#10;up2,p,quote*"></textarea>
-        <div class="row-tight" style="margin-top:var(--sp-2)">
-          <button type="button" class="btn btn-sm btn-secondary" data-action="paste-append">Append rows</button>
-          <button type="button" class="btn btn-sm btn-ghost" data-action="paste-replace">Replace all</button>
-        </div>
       </div>`;
     wireEvents();
   }
@@ -97,12 +103,15 @@ function initOne(textarea) {
 
       rowEl.querySelector('[data-field="user"]').addEventListener('input', (e) => {
         rows[i].user = e.target.value;
+        rowEl.classList.toggle('is-sample', rows.length === 1 && isSampleRow(rows[i]));
         syncToTextarea();
-        updateMeta();
+        updatePasteAndMeta();
       });
       rowEl.querySelector('[data-field="pass"]').addEventListener('input', (e) => {
         rows[i].pass = e.target.value;
+        rowEl.classList.toggle('is-sample', rows.length === 1 && isSampleRow(rows[i]));
         syncToTextarea();
+        updatePasteAndMeta();
       });
       rowEl.querySelector('[data-action="toggle-pass"]').addEventListener('click', (ev) => {
         ev.preventDefault();
@@ -124,7 +133,6 @@ function initOne(textarea) {
         render();
       });
 
-      // Pattern chips — one × per chip
       rowEl.querySelectorAll('[data-action="remove-pattern"]').forEach((btn) => {
         btn.addEventListener('click', (ev) => {
           ev.preventDefault();
@@ -133,13 +141,10 @@ function initOne(textarea) {
           if (rows[i].patterns.length === 0) rows[i].patterns.push(PATTERN_DEFAULT);
           syncToTextarea();
           render();
-          // Restore focus to the row's input so adding next pattern is fast.
-          const next = host.querySelector(`[data-row="${i}"] [data-field="pattern-input"]`);
-          if (next) next.focus();
+          host.querySelector(`[data-row="${i}"] [data-field="pattern-input"]`)?.focus();
         });
       });
 
-      // Pattern input — Enter / comma adds chip; Backspace on empty removes last
       const patInput = rowEl.querySelector('[data-field="pattern-input"]');
       if (patInput) {
         patInput.addEventListener('keydown', (ev) => {
@@ -151,8 +156,7 @@ function initOne(textarea) {
               rows[i].patterns.pop();
               syncToTextarea();
               render();
-              const refocus = host.querySelector(`[data-row="${i}"] [data-field="pattern-input"]`);
-              if (refocus) refocus.focus();
+              host.querySelector(`[data-row="${i}"] [data-field="pattern-input"]`)?.focus();
             }
           }
         });
@@ -165,10 +169,9 @@ function initOne(textarea) {
     host.querySelector('[data-action="add"]').addEventListener('click', (ev) => {
       ev.preventDefault();
       rows.push(blankRow());
-      compactMode = false; // adding a row → user is configuring, expand the list
+      compactMode = false;
       render();
-      const last = host.querySelector('.users-editor-rows .users-editor-row:last-child [data-field="user"]');
-      if (last) last.focus();
+      host.querySelector('.users-editor-rows .users-editor-row:last-child [data-field="user"]')?.focus();
     });
 
     host.querySelector('[data-action="expand"]')?.addEventListener('click', (ev) => {
@@ -177,44 +180,46 @@ function initOne(textarea) {
       render();
     });
 
-    host.querySelector('[data-action="paste-toggle"]').addEventListener('click', (ev) => {
-      ev.preventDefault();
-      pasteMode = !pasteMode;
-      render();
-      if (pasteMode) host.querySelector(`#${textarea.id}_paste`)?.focus();
-    });
+    // Paste-zone textarea: typing / pasting parses every line on each
+    // keystroke and replaces the row state. No explicit append/replace
+    // button — what you see in the textarea is what's saved.
+    const pasteEl = host.querySelector('.users-editor-paste-textarea');
+    if (pasteEl) {
+      pasteEl.addEventListener('input', () => {
+        if (suppressPasteSync) return;
+        const fresh = parseCSV(pasteEl.value || '');
+        rows = fresh.length > 0 ? fresh : [blankRow()];
+        compactMode = rows.length > 1;
+        visible.clear();
+        syncToTextarea();
+        render();
+        // Restore focus + caret on the paste textarea after re-render.
+        const newPaste = host.querySelector('.users-editor-paste-textarea');
+        if (newPaste) {
+          newPaste.focus();
+          newPaste.setSelectionRange(newPaste.value.length, newPaste.value.length);
+        }
+      });
+    }
+  }
 
-    host.querySelector('[data-action="paste-append"]')?.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      const ta = host.querySelector(`#${textarea.id}_paste`);
-      const fresh = parseCSV(ta.value || '');
-      if (fresh.length === 0) return;
-      while (rows.length && !rows[rows.length - 1].user && !rows[rows.length - 1].pass) rows.pop();
-      rows.push(...fresh);
-      pasteMode = false;
-      syncToTextarea();
-      render();
-    });
-    host.querySelector('[data-action="paste-replace"]')?.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      const ta = host.querySelector(`#${textarea.id}_paste`);
-      const fresh = parseCSV(ta.value || '');
-      if (fresh.length === 0) return;
-      rows = fresh;
-      visible.clear();
-      pasteMode = false;
-      syncToTextarea();
-      render();
-    });
+  // Update the paste textarea + counter without a full re-render. Used
+  // when the user is editing rows in the form: the paste textarea
+  // mirrors the current CSV so both views stay coherent.
+  function updatePasteAndMeta() {
+    suppressPasteSync = true;
+    const pasteEl = host.querySelector('.users-editor-paste-textarea');
+    if (pasteEl) pasteEl.value = currentCSV(rows);
+    const meta = host.querySelector('.users-editor-meta');
+    if (meta) meta.textContent = countLabel(rows);
+    suppressPasteSync = false;
   }
 
   function commitPattern(rowIdx, input) {
     const value = (input.value || '').trim();
     if (!value) return;
-    // Allow comma-pasting a list of patterns into the input
     const newOnes = value.split(',').map((s) => s.trim()).filter(Boolean);
     if (newOnes.length === 0) return;
-    // Drop the placeholder '*' if it's the only existing entry and user is adding a real pattern.
     if (rows[rowIdx].patterns.length === 1 && rows[rowIdx].patterns[0] === PATTERN_DEFAULT) {
       rows[rowIdx].patterns = [];
     }
@@ -222,21 +227,15 @@ function initOne(textarea) {
     input.value = '';
     syncToTextarea();
     render();
-    const refocus = host.querySelector(`[data-row="${rowIdx}"] [data-field="pattern-input"]`);
-    if (refocus) refocus.focus();
+    host.querySelector(`[data-row="${rowIdx}"] [data-field="pattern-input"]`)?.focus();
   }
 
-  function updateMeta() {
-    const meta = host.querySelector('.users-editor-meta');
-    if (meta) meta.textContent = countLabel(rows);
-  }
-
-  // Allow programmatic updates (e.g. import-config) to reflect into the editor.
   textarea.addEventListener('users-editor:reflect', () => {
     const incoming = textarea.dataset.raw || textarea.value || '';
     const incomingParsed = parseCSV(incoming);
     if (csvEqual(rows, incomingParsed)) return;
     rows = incomingParsed.length ? incomingParsed : [blankRow()];
+    compactMode = rows.length > 1;
     visible.clear();
     render();
   });
@@ -253,9 +252,19 @@ function countLabel(rows) {
   return `${n} user${n === 1 ? '' : 's'}`;
 }
 
-function rowHTML(r, i, passVisible) {
+function currentCSV(rows) {
+  return rows
+    .filter((r) => r.user.trim() || r.pass || r.patterns.some((p) => p.trim()))
+    .map((r) => {
+      const patterns = r.patterns.map((p) => p.trim()).filter(Boolean);
+      return [r.user.trim(), r.pass, ...(patterns.length ? patterns : [PATTERN_DEFAULT])].join(',');
+    })
+    .join('\n');
+}
+
+function rowHTML(r, i, passVisible, isSample) {
   return `
-    <div class="users-editor-row" data-row="${i}" role="row">
+    <div class="users-editor-row${isSample ? ' is-sample' : ''}" data-row="${i}" role="row">
       <input class="users-editor-input input" data-field="user" type="text" value="${escapeAttr(r.user)}" placeholder="username" autocomplete="username" spellcheck="false" />
       <div class="users-editor-pass-wrap">
         <input class="users-editor-input input users-editor-pass" data-field="pass" type="${passVisible ? 'text' : 'password'}" value="${escapeAttr(r.pass)}" placeholder="password" autocomplete="new-password" spellcheck="false" />

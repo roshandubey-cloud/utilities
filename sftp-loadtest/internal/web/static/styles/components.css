@@ -1068,16 +1068,43 @@
   font-weight: var(--fw-medium);
 }
 
-.users-editor-paste {
-  background: var(--surface-2);
-  border: var(--bw-1) solid var(--border-weak);
-  border-radius: var(--r-2);
-  padding: var(--sp-3);
+/* Sample-row styling: when there's a single empty row it reads as an
+   optional template, not a required field. Lifts to full opacity once the
+   user starts typing in any field within the row. */
+.users-editor-row.is-sample {
+  opacity: 0.55;
+}
+.users-editor-row.is-sample:focus-within {
+  opacity: 1;
+}
+.users-editor-row.is-sample .input,
+.users-editor-row.is-sample .users-editor-patterns {
+  border-style: dashed;
+  background: transparent;
+}
+
+/* Always-visible paste zone — the textarea IS the bulk-edit affordance,
+   no toggle button. Typing/pasting parses live and replaces the row state. */
+.users-editor-paste-zone {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
+  gap: var(--sp-1);
+  margin-top: var(--sp-2);
 }
-.users-editor-paste[hidden] { display: none; }
+.users-editor-paste-label {
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
+  font-weight: var(--fw-regular);
+}
+.users-editor-paste-label .mono {
+  color: var(--text-secondary);
+  font-size: var(--fs-11);
+}
+.users-editor-paste-textarea {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  min-height: 64px;
+}
 
 .users-editor-expand {
   appearance: none;
@@ -1336,6 +1363,21 @@
   padding: 0 0 var(--sp-3);
   margin-bottom: var(--sp-3);
   border-bottom: var(--bw-1) solid var(--border-weak);
+}
+
+/* Run-mechanics group inside the Upload card — surfaces parallel-streams,
+   duration, poll-interval, track-id timeout, max-fails. Was hidden inside
+   the legacy connCard before v0.4.8. */
+.upload-run-mechanics {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: var(--bw-1) solid var(--border-weak);
+}
+.upload-run-mechanics-heading {
+  margin-bottom: var(--sp-2);
+}
+.upload-run-mechanics-heading .help {
+  margin-top: 2px;
 }
 
 .upload-advanced {
