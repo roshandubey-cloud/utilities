@@ -692,6 +692,49 @@
 
 
 /* ============================================================================
+   HOST BAR — collapsed one-liner below the masthead. Reference data
+   (hostname, OS/arch, CPU cores, RAM, FD limit, optional NIC link speed)
+   that you glance at once when planning a run. Sticky so it follows scroll.
+   ============================================================================ */
+
+.host-bar {
+  position: sticky;
+  top: var(--masthead-height);
+  z-index: var(--z-sticky);
+  background: var(--surface-2);
+  border-bottom: var(--bw-1) solid var(--border-weak);
+}
+.host-bar-inner {
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  padding: 0 var(--content-padding-x);
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+}
+.host-bar-inner::-webkit-scrollbar { display: none; }
+.host-bar-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-variant-numeric: tabular-nums;
+}
+.host-bar-strong { color: var(--text-primary); font-weight: var(--fw-medium); }
+.host-bar-sep { color: var(--text-tertiary); opacity: 0.5; }
+.host-bar-cell[hidden] + .host-bar-sep,
+.host-bar-net-sep:has(+ [hidden]) { display: none; }
+
+@media (max-width: 720px) {
+  .host-bar-inner { font-size: var(--fs-11); height: 24px; gap: var(--sp-1); }
+}
+
+
+/* ============================================================================
    HERO RUN — the load-test surface.
    Layout: action row (title + subtitle + Start CTA) on top, subtle "last run"
    strip footer below. The hero is the ACTION; the most recent run is shown

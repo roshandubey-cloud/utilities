@@ -352,6 +352,27 @@
     </div>
   </header>
 
+  <!-- Host capacity bar — sticky one-liner below the masthead. Pulls from
+       /api/host. Reference data, glance-and-forget. -->
+  <div class="host-bar" data-component="host-bar" role="contentinfo" aria-label="Host capacity">
+    <div class="host-bar-inner">
+      <span class="host-bar-cell host-bar-strong">
+        <span class="icon icon-xs" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8"/><path d="M12 16v4"/></svg></span>
+        <span data-role="hostname">—</span>
+      </span>
+      <span class="host-bar-sep" aria-hidden="true">·</span>
+      <span class="host-bar-cell" data-role="os">—</span>
+      <span class="host-bar-sep" aria-hidden="true">·</span>
+      <span class="host-bar-cell"><span data-role="cores">—</span> cores</span>
+      <span class="host-bar-sep" aria-hidden="true">·</span>
+      <span class="host-bar-cell" data-role="ram">—</span>
+      <span class="host-bar-sep" aria-hidden="true">·</span>
+      <span class="host-bar-cell">FD <span data-role="fdlimit">—</span></span>
+      <span class="host-bar-sep host-bar-net-sep" aria-hidden="true">·</span>
+      <span class="host-bar-cell" data-role="net" hidden></span>
+    </div>
+  </div>
+
   <main class="app-content">
 
     <!-- HERO — the actual product surface. The most recent run summary +
