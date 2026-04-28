@@ -147,25 +147,23 @@ export function mountWizard(rootSelector) {
 }
 
 function tagLegacyCards() {
-  // Ids first.
+  // Tag CONFIG cards only — these are the ones we want to filter step-by-step.
+  // Output / history cards (Live metrics, Previous runs, Slowdown events,
+  // Recent uploads) are intentionally LEFT UNTAGGED so they stay visible at
+  // every step; they're reference data, not part of the wizard flow.
   Object.entries(CARD_TO_STEP).forEach(([id, step]) => {
     const el = document.getElementById(id);
     if (el) el.dataset.step = step;
   });
-  // The "Schedule & config" card lacks an id but lives in the LEFT column;
-  // tag it by detecting the toggle-label text "Schedule & config".
+  // The "Schedule & config" card lacks an id; tag it by header text.
   document.querySelectorAll('.grid .card > header .toggle-label').forEach((lbl) => {
     const txt = (lbl.textContent || '').trim().toLowerCase();
     const card = lbl.closest('.card');
     if (!card || card.dataset.step) return;
     if (txt.startsWith('schedule')) card.dataset.step = 'schedule';
   });
-  // Anything else in the right column (Live metrics, Previous runs,
-  // Slowdown events) is "review" — visible only when the user reaches the
-  // review step (these are output, not input).
-  document.querySelectorAll('.grid .card:not([data-step])').forEach((card) => {
-    card.dataset.step = 'review';
-  });
+  // Note: cards NOT in CARD_TO_STEP and not "schedule" stay untagged on
+  // purpose — they're output panels and always visible.
 }
 
 function escapeHTML(s) {

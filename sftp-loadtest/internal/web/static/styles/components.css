@@ -789,11 +789,17 @@
 .records-tbl tbody tr:hover td { background: var(--action-hover); }
 .records-tbl tbody tr:last-child td { border-bottom: 0; }
 
-.rec-col-user   { width: 80px; }
+.rec-col-user   { min-width: 80px; }
 .rec-col-kind   { width: 32px; text-align: center; }
-.rec-col-file   { /* flex */ }
-.rec-col-num    { width: 80px; text-align: right; }
-.rec-col-status { width: 160px; text-align: right; }
+.rec-col-file   { min-width: 220px; }
+.rec-col-time   { width: 80px; text-align: right; font-variant-numeric: tabular-nums; }
+.rec-col-num    { min-width: 70px; text-align: right; }
+.rec-col-mono   { min-width: 130px; }
+.rec-col-status { min-width: 160px; text-align: right; }
+.rec-cell.rec-time  { font-family: var(--font-mono); font-size: var(--fs-11); color: var(--text-secondary); white-space: nowrap; }
+.rec-cell.rec-mono  { font-family: var(--font-mono); font-size: var(--fs-11); color: var(--text-secondary); white-space: nowrap; max-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.records-tbl-wrap { overflow-x: auto; }
+.records-tbl { min-width: 1400px; }
 
 .rec-cell { white-space: nowrap; }
 .rec-cell.rec-num { font-variant-numeric: tabular-nums; text-align: right; font-family: var(--font-mono); }
@@ -937,10 +943,11 @@
 .users-editor-head,
 .users-editor-row {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(140px, 1.2fr) minmax(140px, 1.4fr) 28px;
+  grid-template-columns: minmax(120px, 1fr) minmax(140px, 1.2fr) minmax(220px, 2fr) 28px;
   gap: var(--sp-2);
-  align-items: center;
+  align-items: start;
 }
+.users-editor-head { align-items: center; }
 .users-editor-head {
   font-size: var(--fs-11);
   text-transform: uppercase;
@@ -1043,6 +1050,75 @@
 }
 .users-editor-paste[hidden] { display: none; }
 
+
+/* Pattern chips — flexible layout per row, wraps as more patterns added. */
+.users-editor-patterns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  align-items: center;
+  min-height: 28px;
+  padding: 2px;
+  border: var(--bw-1) solid var(--input-border);
+  border-radius: var(--r-2);
+  background: var(--input-bg);
+  transition: border-color var(--t-fast) var(--ease-out);
+}
+.users-editor-patterns:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.pattern-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px var(--sp-1) 1px var(--sp-2);
+  height: 22px;
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-medium);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-11);
+  color: var(--text-primary);
+  flex-shrink: 0;
+  max-width: 100%;
+}
+.pattern-chip-text {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pattern-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px; height: 14px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: var(--r-pill);
+  flex-shrink: 0;
+}
+.pattern-chip-remove svg { width: 10px; height: 10px; }
+.pattern-chip-remove:hover { color: var(--danger-fg-soft); background: var(--danger-bg-soft); }
+
+.pattern-input {
+  flex: 1;
+  min-width: 80px;
+  border: none !important;
+  background: transparent !important;
+  padding: 0 var(--sp-1) !important;
+  height: 22px !important;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12) !important;
+  outline: none;
+  box-shadow: none !important;
+}
+.pattern-input:focus { box-shadow: none !important; }
+
 @media (max-width: 720px) {
   .users-editor-head { display: none; }
   .users-editor-row {
@@ -1131,6 +1207,80 @@
 .grid[data-step="workload"] .card[data-step]:not([data-step="workload"]) { display: none; }
 .grid[data-step="schedule"] .card[data-step]:not([data-step="schedule"]) { display: none; }
 .grid[data-step="review"]   .card[data-step]:not([data-step="review"])   { display: none; }
+
+
+/* ============================================================================
+   UPLOAD CARD — folder field at top, Advanced large-file disclosure at bottom.
+   The Advanced section uses native <details>; we override the chrome to match
+   the new design system.
+   ============================================================================ */
+
+.upload-folder-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: 0 0 var(--sp-3);
+  margin-bottom: var(--sp-3);
+  border-bottom: var(--bw-1) solid var(--border-weak);
+}
+
+.upload-advanced {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: var(--bw-1) solid var(--border-weak);
+}
+.upload-advanced > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+  padding: var(--sp-2);
+  border-radius: var(--r-2);
+  transition: background var(--t-fast) var(--ease-out);
+}
+.upload-advanced > summary::-webkit-details-marker { display: none; }
+.upload-advanced > summary:hover { background: var(--action-hover); }
+
+.upload-advanced-chevron {
+  display: inline-flex;
+  width: 14px; height: 14px;
+  color: var(--text-tertiary);
+  transition: transform var(--t-default) var(--ease-out);
+}
+.upload-advanced-chevron svg { width: 100%; height: 100%; }
+.upload-advanced[open] > summary .upload-advanced-chevron { transform: rotate(90deg); }
+
+.upload-advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+}
+.upload-advanced-toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 14px; height: 14px;
+  margin: 0;
+  cursor: pointer;
+}
+.upload-advanced-label {
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  font-size: var(--fs-13);
+}
+.upload-advanced-hint {
+  margin-left: var(--sp-1);
+  color: var(--text-tertiary);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-regular);
+}
+
+.upload-advanced-body {
+  padding: var(--sp-3) var(--sp-2) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
 
 /* Wizard review panel — synthesises the configured run for confirmation. */
 .wizard-review { margin: var(--sp-4) var(--content-padding-x) 0; }

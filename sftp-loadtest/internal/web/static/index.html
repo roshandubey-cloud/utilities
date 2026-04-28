@@ -461,9 +461,10 @@
       </div>
     </section>
 
-    <!-- LIVE ACTIVITY — 6-column records table with row-expand for the
-         timing detail. Replaces the legacy 14-column "Recent uploads" card,
-         which is hidden via legacy-overrides.css. -->
+    <!-- LIVE ACTIVITY — full per-file column set (user, kind, file, up-start,
+         up-end, size, up-mbps, track-id, proc-time, dl-user, dl-start, dl-end,
+         dl-wait, dl-mbps, status). Row-expand still available for error detail.
+         Legacy 14-column #rec_tbl is hidden via legacy-overrides.css. -->
     <section class="panel records-panel" data-component="records" id="activity">
       <div class="panel-header">
         <div class="panel-title-group">
@@ -474,7 +475,7 @@
           <div class="panel-subtitle" data-role="count">No activity yet</div>
         </div>
         <div class="panel-actions">
-          <span class="body-small" style="color:var(--text-tertiary)">Click any row for timing detail</span>
+          <span class="body-small" style="color:var(--text-tertiary)">Scroll right for download columns · click row for error detail</span>
         </div>
       </div>
       <div class="panel-body" style="padding:0;gap:0">
@@ -485,8 +486,17 @@
                 <th class="rec-col-user">User</th>
                 <th class="rec-col-kind">Kind</th>
                 <th class="rec-col-file">File</th>
+                <th class="rec-col-time">Up start</th>
+                <th class="rec-col-time">Up end</th>
                 <th class="rec-col-num">Size</th>
-                <th class="rec-col-num">Mbps</th>
+                <th class="rec-col-num">Up Mbps</th>
+                <th class="rec-col-mono">Track ID</th>
+                <th class="rec-col-num" title="Minutes from upload completion to track-id detection">Proc&nbsp;m</th>
+                <th class="rec-col-user">DL user</th>
+                <th class="rec-col-time">DL start</th>
+                <th class="rec-col-time">DL end</th>
+                <th class="rec-col-num">DL wait s</th>
+                <th class="rec-col-num">DL Mbps</th>
                 <th class="rec-col-status">Status</th>
               </tr>
             </thead>

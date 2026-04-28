@@ -1,14 +1,15 @@
 // users-editor.js — structured row editor for SFTP user CSVs.
 //
-// The legacy UI used a single multi-line textarea per user list, with the
-// format: `username,password,pattern1*,pattern2*` per line. That's a power-
-// user trap (no password masking, no validation, paste-induced typos).
+// Each row owns:
+//   - one username
+//   - one password (with show/hide eye)
+//   - N file patterns, expressed as chips (Enter/comma to add, × to remove,
+//     Backspace on empty input deletes the previous chip)
 //
-// This editor mounts in front of each existing `textarea.csv-users`, hides
-// the textarea via inline display:none, and renders a row-based form (one
-// row per user). Every edit serialises back into the legacy textarea so the
-// existing buildRequestBody() / saveConfig() / probe code keeps working
-// without changes — the textarea is the source of truth for downstream code,
+// Mounts in front of every legacy `textarea.csv-users`, hides the textarea,
+// and serialises every change back into it as `user,pass,p1,p2,…,pn` per
+// line. Legacy buildRequestBody() / saveConfig() / probe() keep working
+// unchanged because the textarea is the source of truth for downstream code;
 // the editor is the source of truth for the user.
 
 const PATTERN_DEFAULT = '*';
@@ -23,7 +24,6 @@ export function mountUsersEditors() {
 }
 
 function initOne(textarea) {
-  // Suppress the legacy focus/blur masking on this textarea (we own the value now).
   textarea.style.display = 'none';
   textarea.setAttribute('aria-hidden', 'true');
 
@@ -32,27 +32,23 @@ function initOne(textarea) {
   host.dataset.field = textarea.id;
   textarea.parentNode.insertBefore(host, textarea);
 
-  // Initial state: prefer dataset.raw (legacy mask state) if present, else textarea.value.
   let rows = parseCSV(textarea.dataset.raw || textarea.value || '');
   if (rows.length === 0) rows.push(blankRow());
 
-  // Track which passwords are currently visible (per-row, by index).
-  const visible = new Set();
-
+  const visible = new Set(); // password show/hide, by row index
   let pasteMode = false;
 
   function syncToTextarea() {
     const csv = rows
       .filter((r) => r.user.trim() || r.pass || r.patterns.some((p) => p.trim()))
       .map((r) => {
-        const patterns = r.patterns.filter((p) => p.trim());
+        const patterns = r.patterns.map((p) => p.trim()).filter(Boolean);
         return [r.user.trim(), r.pass, ...(patterns.length ? patterns : [PATTERN_DEFAULT])].join(',');
       })
       .join('\n');
     textarea.dataset.raw = csv;
     textarea.value = csv;
-    textarea.dataset.editing = '0'; // signal to legacy getCsvRaw it's a non-editing snapshot
-    // Trigger 'change' so legacy saveConfig() picks it up.
+    textarea.dataset.editing = '0';
     textarea.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
@@ -62,7 +58,7 @@ function initOne(textarea) {
         <div class="users-editor-head">
           <span>Username</span>
           <span>Password</span>
-          <span>File patterns <span class="label-hint">(comma-sep, * = any)</span></span>
+          <span>File patterns <span class="label-hint">— add as many as you need; <code>*</code> matches anything</span></span>
           <span class="sr-only">Remove</span>
         </div>
         <div class="users-editor-rows">
@@ -72,11 +68,11 @@ function initOne(textarea) {
       <div class="users-editor-actions">
         <button type="button" class="btn btn-sm btn-secondary" data-action="add">+ Add user</button>
         <button type="button" class="btn btn-sm btn-ghost" data-action="paste-toggle" aria-expanded="${pasteMode}">${pasteMode ? 'Hide CSV paste' : 'Paste CSV…'}</button>
-        <span class="users-editor-meta">${rows.filter(r => r.user.trim()).length} user${rows.filter(r => r.user.trim()).length === 1 ? '' : 's'}</span>
+        <span class="users-editor-meta">${countLabel(rows)}</span>
       </div>
       <div class="users-editor-paste" data-role="paste" ${pasteMode ? '' : 'hidden'}>
-        <label class="label" for="${textarea.id}_paste">Paste CSV — one user per line: <span class="mono">user,pass,pattern1,pattern2</span></label>
-        <textarea id="${textarea.id}_paste" class="textarea" rows="4" placeholder="up1,p,invoice*&#10;up2,p,order*"></textarea>
+        <label class="label" for="${textarea.id}_paste">Paste CSV — one user per line: <span class="mono">user,pass,pattern1,pattern2,…</span></label>
+        <textarea id="${textarea.id}_paste" class="textarea" rows="4" placeholder="up1,p,invoice*,order*&#10;up2,p,quote*"></textarea>
         <div class="row-tight" style="margin-top:var(--sp-2)">
           <button type="button" class="btn btn-sm btn-secondary" data-action="paste-append">Append rows</button>
           <button type="button" class="btn btn-sm btn-ghost" data-action="paste-replace">Replace all</button>
@@ -86,9 +82,9 @@ function initOne(textarea) {
   }
 
   function wireEvents() {
-    // Per-row input changes.
     host.querySelectorAll('[data-row]').forEach((rowEl) => {
       const i = parseInt(rowEl.dataset.row, 10);
+
       rowEl.querySelector('[data-field="user"]').addEventListener('input', (e) => {
         rows[i].user = e.target.value;
         syncToTextarea();
@@ -98,23 +94,18 @@ function initOne(textarea) {
         rows[i].pass = e.target.value;
         syncToTextarea();
       });
-      rowEl.querySelector('[data-field="patterns"]').addEventListener('input', (e) => {
-        rows[i].patterns = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
-        if (rows[i].patterns.length === 0) rows[i].patterns = [PATTERN_DEFAULT];
-        syncToTextarea();
-      });
       rowEl.querySelector('[data-action="toggle-pass"]').addEventListener('click', (ev) => {
         ev.preventDefault();
-        if (visible.has(i)) visible.delete(i);
-        else visible.add(i);
+        if (visible.has(i)) visible.delete(i); else visible.add(i);
         const passInput = rowEl.querySelector('[data-field="pass"]');
         const eyeBtn = rowEl.querySelector('[data-action="toggle-pass"]');
         const isVisible = visible.has(i);
         passInput.type = isVisible ? 'text' : 'password';
         eyeBtn.setAttribute('aria-pressed', String(isVisible));
         eyeBtn.title = isVisible ? 'Hide password' : 'Show password';
+        eyeBtn.querySelector('.icon').innerHTML = isVisible ? eyeOffSVG() : eyeOnSVG();
       });
-      rowEl.querySelector('[data-action="remove"]').addEventListener('click', (ev) => {
+      rowEl.querySelector('[data-action="remove-row"]').addEventListener('click', (ev) => {
         ev.preventDefault();
         rows.splice(i, 1);
         if (rows.length === 0) rows.push(blankRow());
@@ -122,13 +113,49 @@ function initOne(textarea) {
         syncToTextarea();
         render();
       });
+
+      // Pattern chips — one × per chip
+      rowEl.querySelectorAll('[data-action="remove-pattern"]').forEach((btn) => {
+        btn.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          const idx = parseInt(btn.dataset.patternIdx, 10);
+          rows[i].patterns.splice(idx, 1);
+          if (rows[i].patterns.length === 0) rows[i].patterns.push(PATTERN_DEFAULT);
+          syncToTextarea();
+          render();
+          // Restore focus to the row's input so adding next pattern is fast.
+          const next = host.querySelector(`[data-row="${i}"] [data-field="pattern-input"]`);
+          if (next) next.focus();
+        });
+      });
+
+      // Pattern input — Enter / comma adds chip; Backspace on empty removes last
+      const patInput = rowEl.querySelector('[data-field="pattern-input"]');
+      if (patInput) {
+        patInput.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === ',') {
+            ev.preventDefault();
+            commitPattern(i, patInput);
+          } else if (ev.key === 'Backspace' && patInput.value === '') {
+            if (rows[i].patterns.length > 1) {
+              rows[i].patterns.pop();
+              syncToTextarea();
+              render();
+              const refocus = host.querySelector(`[data-row="${i}"] [data-field="pattern-input"]`);
+              if (refocus) refocus.focus();
+            }
+          }
+        });
+        patInput.addEventListener('blur', () => {
+          if (patInput.value.trim()) commitPattern(i, patInput);
+        });
+      }
     });
 
     host.querySelector('[data-action="add"]').addEventListener('click', (ev) => {
       ev.preventDefault();
       rows.push(blankRow());
       render();
-      // Focus the newly-added user field.
       const last = host.querySelector('.users-editor-rows .users-editor-row:last-child [data-field="user"]');
       if (last) last.focus();
     });
@@ -137,27 +164,21 @@ function initOne(textarea) {
       ev.preventDefault();
       pasteMode = !pasteMode;
       render();
-      if (pasteMode) {
-        const ta = host.querySelector(`#${textarea.id}_paste`);
-        if (ta) ta.focus();
-      }
+      if (pasteMode) host.querySelector(`#${textarea.id}_paste`)?.focus();
     });
 
-    const appendBtn = host.querySelector('[data-action="paste-append"]');
-    const replaceBtn = host.querySelector('[data-action="paste-replace"]');
-    if (appendBtn) appendBtn.addEventListener('click', (ev) => {
+    host.querySelector('[data-action="paste-append"]')?.addEventListener('click', (ev) => {
       ev.preventDefault();
       const ta = host.querySelector(`#${textarea.id}_paste`);
       const fresh = parseCSV(ta.value || '');
       if (fresh.length === 0) return;
-      // Drop any all-empty trailing row before appending.
       while (rows.length && !rows[rows.length - 1].user && !rows[rows.length - 1].pass) rows.pop();
       rows.push(...fresh);
       pasteMode = false;
       syncToTextarea();
       render();
     });
-    if (replaceBtn) replaceBtn.addEventListener('click', (ev) => {
+    host.querySelector('[data-action="paste-replace"]')?.addEventListener('click', (ev) => {
       ev.preventDefault();
       const ta = host.querySelector(`#${textarea.id}_paste`);
       const fresh = parseCSV(ta.value || '');
@@ -170,25 +191,38 @@ function initOne(textarea) {
     });
   }
 
-  function updateMeta() {
-    const meta = host.querySelector('.users-editor-meta');
-    if (!meta) return;
-    const n = rows.filter((r) => r.user.trim()).length;
-    meta.textContent = `${n} user${n === 1 ? '' : 's'}`;
+  function commitPattern(rowIdx, input) {
+    const value = (input.value || '').trim();
+    if (!value) return;
+    // Allow comma-pasting a list of patterns into the input
+    const newOnes = value.split(',').map((s) => s.trim()).filter(Boolean);
+    if (newOnes.length === 0) return;
+    // Drop the placeholder '*' if it's the only existing entry and user is adding a real pattern.
+    if (rows[rowIdx].patterns.length === 1 && rows[rowIdx].patterns[0] === PATTERN_DEFAULT) {
+      rows[rowIdx].patterns = [];
+    }
+    rows[rowIdx].patterns.push(...newOnes);
+    input.value = '';
+    syncToTextarea();
+    render();
+    const refocus = host.querySelector(`[data-row="${rowIdx}"] [data-field="pattern-input"]`);
+    if (refocus) refocus.focus();
   }
 
-  // External callers (e.g. import-config) may rewrite textarea.value programmatically.
-  // Watch the textarea for external value changes so the editor stays in sync.
-  const reflect = () => {
+  function updateMeta() {
+    const meta = host.querySelector('.users-editor-meta');
+    if (meta) meta.textContent = countLabel(rows);
+  }
+
+  // Allow programmatic updates (e.g. import-config) to reflect into the editor.
+  textarea.addEventListener('users-editor:reflect', () => {
     const incoming = textarea.dataset.raw || textarea.value || '';
     const incomingParsed = parseCSV(incoming);
     if (csvEqual(rows, incomingParsed)) return;
     rows = incomingParsed.length ? incomingParsed : [blankRow()];
     visible.clear();
     render();
-  };
-  // Listen for the events the legacy code dispatches when it programmatically writes.
-  textarea.addEventListener('users-editor:reflect', reflect);
+  });
 
   render();
   syncToTextarea();
@@ -196,6 +230,11 @@ function initOne(textarea) {
 
 // ---------- helpers ----------
 function blankRow() { return { user: '', pass: '', patterns: [PATTERN_DEFAULT] }; }
+
+function countLabel(rows) {
+  const n = rows.filter((r) => r.user.trim()).length;
+  return `${n} user${n === 1 ? '' : 's'}`;
+}
 
 function rowHTML(r, i, passVisible) {
   return `
@@ -207,8 +246,18 @@ function rowHTML(r, i, passVisible) {
           <span class="icon icon-sm" aria-hidden="true">${passVisible ? eyeOffSVG() : eyeOnSVG()}</span>
         </button>
       </div>
-      <input class="users-editor-input input" data-field="patterns" type="text" value="${escapeAttr(r.patterns.join(', '))}" placeholder="*" spellcheck="false" />
-      <button type="button" class="users-editor-remove" data-action="remove" aria-label="Remove user">
+      <div class="users-editor-patterns">
+        ${r.patterns.map((p, idx) => `
+          <span class="pattern-chip">
+            <span class="pattern-chip-text mono">${escapeHTML(p)}</span>
+            <button type="button" class="pattern-chip-remove" data-action="remove-pattern" data-pattern-idx="${idx}" aria-label="Remove pattern ${escapeAttr(p)}" title="Remove">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+            </button>
+          </span>
+        `).join('')}
+        <input class="users-editor-input pattern-input" data-field="pattern-input" type="text" placeholder="${r.patterns.length === 0 ? '*' : '+ pattern'}" spellcheck="false" />
+      </div>
+      <button type="button" class="users-editor-remove" data-action="remove-row" aria-label="Remove user">
         <span class="icon icon-sm" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></span>
       </button>
     </div>`;
@@ -242,3 +291,4 @@ function csvEqual(a, b) {
 }
 
 function escapeAttr(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function escapeHTML(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
