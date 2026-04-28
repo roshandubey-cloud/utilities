@@ -37,6 +37,7 @@ function render(latest, errorMsg) {
         <div class="hero-subtitle">Generate uploads at a controlled rate, track processing time per file, capture downloads, stream a CSV report.</div>
       </div>
       <div class="hero-action-cta">
+        <button class="btn btn-secondary" type="button" data-role="export-cta" title="Save the current configuration as JSON">Export config</button>
         <button class="btn btn-primary btn-lg" type="button" data-role="start-cta">Start a new load test</button>
       </div>
     </div>`;
@@ -57,7 +58,7 @@ function render(latest, errorMsg) {
         <span class="hero-last-run-id mono">${escapeHTML(latest.id)}</span>
         <span class="hero-last-run-meta">${escapeHTML(stats)}</span>
         <span class="hero-last-run-time" title="${escapeHTML(latest.started_at || '')}">${formatStarted(latest.started_at)}</span>
-        <a class="hero-last-run-csv" href="${csvUrl}" download>Download CSV</a>
+        <a class="hero-last-run-csv" href="${csvUrl}" download data-external="1">Download CSV</a>
       </div>`;
   } else if (errorMsg) {
     strip = `<div class="hero-last-run hero-last-run-error">Couldn't reach <code>/api/runs</code>: ${escapeHTML(errorMsg)}</div>`;
@@ -66,6 +67,19 @@ function render(latest, errorMsg) {
   }
 
   return action + strip;
+}
+
+function wireExportCTA(slot) {
+  const btn = slot.querySelector('[data-role="export-cta"]');
+  if (!btn) return;
+  btn.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    // Drive the legacy Export Config button so the existing serialization
+    // (with passwords-stripped-by-default + opt-in include) keeps applying.
+    const legacy = document.getElementById('exportBtn');
+    if (legacy) legacy.click();
+    else if (typeof window.exportConfig === 'function') window.exportConfig();
+  });
 }
 
 function wireCTAs(slot) {
@@ -77,6 +91,7 @@ function wireCTAs(slot) {
       if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }
+  wireExportCTA(slot);
 }
 
 // ---------- formatters ----------

@@ -219,13 +219,38 @@ func sealAllAndWriteMeta(r *Run, reportsDir string) error {
 		// existed; downstream tools treat a zero-row CSV as "no activity".
 		_ = r.reportStream.Close()
 	}
+	// Failure tally: every code in r.errCounts represents a failed file;
+	// sum and subtract from total to get successes.
+	var failed int64
+	for _, n := range r.errCounts.snapshot() {
+		failed += n
+	}
+	if failed > snap.TotalFiles {
+		failed = snap.TotalFiles
+	}
 	meta := persist.RunMeta{
-		ID:          r.ID,
-		StartedAt:   r.StartedAt,
-		StoppedAt:   time.Now(),
-		TotalFiles:  snap.TotalFiles,
-		TotalBytes:  snap.TotalBytes,
-		OverallMBps: snap.OverallMBps,
+		ID:             r.ID,
+		StartedAt:      r.StartedAt,
+		StoppedAt:      time.Now(),
+		TotalFiles:     snap.TotalFiles,
+		TotalBytes:     snap.TotalBytes,
+		OverallMBps:    snap.OverallMBps,
+		FailedFiles:    failed,
+		SucceededFiles: snap.TotalFiles - failed,
+	}
+	// Capture workload-shape from the live config so the Previous-runs
+	// overview tells the user what was attempted, not just what finished.
+	if r.Cfg != nil {
+		meta.UploadUsers = len(r.Cfg.NormalUsers)
+		meta.ParallelStreams = r.Cfg.ParallelStreams
+		if r.Cfg.Normal != nil {
+			meta.FilesPerMinute = r.Cfg.Normal.FilesPerMinute
+		}
+		if r.Cfg.Download != nil {
+			meta.DownloadEnabled = true
+			meta.DownloadUsers = len(r.Cfg.DownloadUsers)
+			meta.DownloadParallelStreams = r.Cfg.Download.ParallelStreams
+		}
 	}
 	for _, d := range r.DisabledUsers() {
 		meta.Disabled = append(meta.Disabled, persist.DisabledUser{

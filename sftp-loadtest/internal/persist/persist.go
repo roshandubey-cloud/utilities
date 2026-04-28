@@ -23,6 +23,21 @@ type RunMeta struct {
 	TotalFiles  int64          `json:"total_files"`
 	TotalBytes  int64          `json:"total_bytes"`
 	OverallMBps float64        `json:"overall_mbps"`
+
+	// Success / failure breakdown so the UI can show success rate at a
+	// glance instead of recomputing from the CSV every render.
+	FailedFiles    int64 `json:"failed_files"`
+	SucceededFiles int64 `json:"succeeded_files"`
+
+	// Configured workload — captured at seal time so the Previous-runs
+	// overview can show what was attempted (vs. only what completed).
+	UploadUsers             int  `json:"upload_users"`
+	DownloadUsers           int  `json:"download_users"`
+	ParallelStreams         int  `json:"parallel_streams"`
+	DownloadParallelStreams int  `json:"download_parallel_streams"`
+	FilesPerMinute          int  `json:"files_per_minute"`
+	DownloadEnabled         bool `json:"download_enabled"`
+
 	Disabled    []DisabledUser `json:"disabled,omitempty"`
 }
 

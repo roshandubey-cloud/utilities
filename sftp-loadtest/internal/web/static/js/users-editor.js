@@ -37,6 +37,10 @@ function initOne(textarea) {
 
   const visible = new Set(); // password show/hide, by row index
   let pasteMode = false;
+  // Default to compact mode whenever there are more than 3 rows: show the
+  // first row + a "Show N more" affordance, on the assumption that most
+  // users will paste a CSV rather than scroll through 10+ form rows.
+  let compactMode = rows.length > 3;
 
   function syncToTextarea() {
     const csv = rows
@@ -53,17 +57,23 @@ function initOne(textarea) {
   }
 
   function render() {
+    const visibleRows = (compactMode && rows.length > 3) ? rows.slice(0, 1) : rows;
+    const hiddenCount = rows.length - visibleRows.length;
     host.innerHTML = `
       <div class="users-editor-table" role="grid" aria-label="SFTP users">
         <div class="users-editor-head">
           <span>Username</span>
           <span>Password</span>
-          <span>File patterns <span class="label-hint">— add as many as you need; <code>*</code> matches anything</span></span>
+          <span>File patterns <span class="label-hint">— <code>*</code> matches anything; press Enter or comma to add another</span></span>
           <span class="sr-only">Remove</span>
         </div>
         <div class="users-editor-rows">
-          ${rows.map((r, i) => rowHTML(r, i, visible.has(i))).join('')}
+          ${visibleRows.map((r, i) => rowHTML(r, i, visible.has(i))).join('')}
         </div>
+        ${hiddenCount > 0 ? `
+          <button type="button" class="users-editor-expand" data-action="expand">
+            Show ${hiddenCount} more user${hiddenCount === 1 ? '' : 's'}
+          </button>` : ''}
       </div>
       <div class="users-editor-actions">
         <button type="button" class="btn btn-sm btn-secondary" data-action="add">+ Add user</button>
@@ -155,9 +165,16 @@ function initOne(textarea) {
     host.querySelector('[data-action="add"]').addEventListener('click', (ev) => {
       ev.preventDefault();
       rows.push(blankRow());
+      compactMode = false; // adding a row → user is configuring, expand the list
       render();
       const last = host.querySelector('.users-editor-rows .users-editor-row:last-child [data-field="user"]');
       if (last) last.focus();
+    });
+
+    host.querySelector('[data-action="expand"]')?.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      compactMode = false;
+      render();
     });
 
     host.querySelector('[data-action="paste-toggle"]').addEventListener('click', (ev) => {

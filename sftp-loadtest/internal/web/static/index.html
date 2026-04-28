@@ -520,6 +520,19 @@
          purely navigational chrome. -->
     <nav data-component="wizard" id="legacy-shell" class="wizard"></nav>
 
+    <!-- Previous runs — rich overview cards (success rate, users, streams,
+         fpm). Replaces the legacy table-row "Previous runs" card which is
+         hidden via legacy-overrides.css. -->
+    <section class="panel" data-component="runs-history" id="history">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <div class="panel-title">Previous runs</div>
+          <div class="panel-subtitle" data-role="count">loading…</div>
+        </div>
+      </div>
+      <div class="panel-body" style="padding:var(--sp-3) var(--sp-5) var(--sp-5);gap:var(--sp-3)" data-role="content"></div>
+    </section>
+
     <!-- Sub-note under the wizard: short cue for what comes next. -->
     <div class="legacy-banner">
       <span class="icon icon-sm" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 8v5"/><path d="M12 16.5h.01"/><circle cx="12" cy="12" r="9"/></svg></span>

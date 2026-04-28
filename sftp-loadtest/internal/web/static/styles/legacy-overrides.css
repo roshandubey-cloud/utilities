@@ -277,6 +277,10 @@ button {
    .records-panel component above the legacy banner (Phase 3.2). */
 .card:has(#rec_tbl) { display: none !important; }
 
+/* Hide the legacy "Previous runs" table — replaced by the new
+   .runs-history overview cards in <main> (v0.4.6). */
+.card:has(#runs_body) { display: none !important; }
+
 
 /* ============================================================================
    BUTTONS — drop uppercase + tracked. Map .primary / .ghost to new variants.

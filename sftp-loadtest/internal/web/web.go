@@ -563,14 +563,22 @@ func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			historical = append(historical, map[string]any{
-				"id":           m.ID,
-				"started_at":   m.StartedAt,
-				"stopped_at":   m.StoppedAt,
-				"active":       false,
-				"total_files":  m.TotalFiles,
-				"total_bytes":  m.TotalBytes,
-				"overall_mbps": m.OverallMBps,
-				"source":       "disk",
+				"id":                        m.ID,
+				"started_at":                m.StartedAt,
+				"stopped_at":                m.StoppedAt,
+				"active":                    false,
+				"total_files":               m.TotalFiles,
+				"total_bytes":               m.TotalBytes,
+				"overall_mbps":              m.OverallMBps,
+				"failed_files":              m.FailedFiles,
+				"succeeded_files":           m.SucceededFiles,
+				"upload_users":              m.UploadUsers,
+				"download_users":            m.DownloadUsers,
+				"parallel_streams":          m.ParallelStreams,
+				"download_parallel_streams": m.DownloadParallelStreams,
+				"files_per_minute":          m.FilesPerMinute,
+				"download_enabled":          m.DownloadEnabled,
+				"source":                    "disk",
 			})
 		}
 	}

@@ -1064,6 +1064,89 @@
 }
 .users-editor-paste[hidden] { display: none; }
 
+.users-editor-expand {
+  appearance: none;
+  background: transparent;
+  border: var(--bw-1) dashed var(--border-medium);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--fs-12);
+  padding: var(--sp-2);
+  border-radius: var(--r-2);
+  cursor: pointer;
+  margin-top: var(--sp-1);
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
+}
+.users-editor-expand:hover {
+  background: var(--action-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+
+/* ============================================================================
+   RUNS HISTORY — overview cards replacing the legacy Previous-runs table.
+   ============================================================================ */
+
+.runs-history-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-3);
+}
+.runs-history-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.runs-history-id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.runs-history-id .mono { font-size: var(--fs-13); color: var(--text-primary); font-weight: var(--fw-medium); word-break: break-all; }
+.runs-history-actions { display: flex; gap: var(--sp-2); flex-shrink: 0; }
+
+.runs-history-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--sp-3);
+  padding-top: var(--sp-2);
+  border-top: var(--bw-1) solid var(--border-weak);
+}
+.runs-history-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.runs-history-stat .metric-default {
+  font-size: var(--fs-22);
+  line-height: var(--lh-tight);
+}
+.runs-history-pct {
+  font-size: var(--fs-13);
+  color: var(--text-tertiary);
+  font-weight: var(--fw-regular);
+  margin-left: 2px;
+}
+.runs-history-success-ok   { color: var(--success-fg-soft); }
+.runs-history-success-warn { color: var(--warning-fg-soft); }
+.runs-history-success-bad  { color: var(--danger-fg-soft); }
+
+.runs-history-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-6) var(--sp-4);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+.runs-history-empty .hero-empty-icon { width: 48px; height: 48px; }
+
 
 /* Pattern chips — flexible layout per row, wraps as more patterns added. */
 .users-editor-patterns {
