@@ -12,6 +12,7 @@
 package main
 
 import (
+	_ "embed"
 	"log"
 	"os"
 	"path/filepath"
@@ -23,8 +24,15 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
 )
+
+// Embedded brand bitmap — same source as Wails uses for macOS .icns and
+// Windows .ico generation, plus passed to Linux at runtime so the GTK
+// window manager renders the correct icon in the taskbar / window list.
+//go:embed build/appicon.png
+var appIcon []byte
 
 func main() {
 	fdlimit.Check()
@@ -83,7 +91,11 @@ func main() {
 			About: &mac.AboutInfo{
 				Title:   "SFTP Load Test",
 				Message: "SFTP load testing tool — desktop edition.\nMIT licensed.\nhttps://github.com/roshandubey-cloud/utilities",
+				Icon:    appIcon,
 			},
+		},
+		Linux: &linux.Options{
+			Icon: appIcon,
 		},
 	})
 	if err != nil {
