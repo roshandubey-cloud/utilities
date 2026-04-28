@@ -23,10 +23,20 @@ const cleared = new Set(); // host:port pairs already pre-flighted this session
 let inProgress = false;
 
 export function mountStartPreflight() {
+  // Wrap both the Start and Schedule buttons. Both go through /api/start
+  // (or /api/schedule) which now do a server-side host-key pre-flight; the
+  // wrapper here makes the UI handle requires_consent / requires_renewal
+  // BEFORE the legacy click fires the actual write.
   const startBtn = document.getElementById('startBtn');
-  if (!startBtn || startBtn.dataset.preflightWrapped) return;
-  startBtn.dataset.preflightWrapped = '1';
-  startBtn.addEventListener('click', onStartClick, true);
+  if (startBtn && !startBtn.dataset.preflightWrapped) {
+    startBtn.dataset.preflightWrapped = '1';
+    startBtn.addEventListener('click', onStartClick, true);
+  }
+  const scheduleBtn = document.getElementById('scheduleBtn');
+  if (scheduleBtn && !scheduleBtn.dataset.preflightWrapped) {
+    scheduleBtn.dataset.preflightWrapped = '1';
+    scheduleBtn.addEventListener('click', onStartClick, true);
+  }
 }
 
 async function onStartClick(ev) {

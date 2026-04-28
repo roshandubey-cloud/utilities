@@ -157,6 +157,23 @@ func (s *Server) handleScheduleCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "config: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	// Pre-flight host-key check at schedule-time. The schedule fires hours
+	// later when no operator is around to accept a TOFU prompt, so an
+	// untrusted host key would silently fail the run. Mirroring handleStart's
+	// pre-flight: if the key is unknown or changed, refuse to schedule and
+	// surface the structured response so the UI can offer the same Accept
+	// flow before the user confirms the schedule.
+	if khPath := s.getKnownHostsPath(); khPath != "" {
+		creds := firstStartCredential(req.Cfg)
+		if creds.user != "" && req.Cfg.Host != "" && req.Cfg.Port > 0 {
+			if pre := s.preflightHostKey(khPath, req.Cfg.Host, req.Cfg.Port, creds.user, creds.pass); pre != nil {
+				writeJSON(w, pre)
+				return
+			}
+		}
+	}
+
 	entry := Schedule{
 		ID:        fmt.Sprintf("sched-%d", time.Now().UnixNano()),
 		RunAt:     runAt,
