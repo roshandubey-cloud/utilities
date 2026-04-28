@@ -113,14 +113,26 @@ func CSRFGuard(next http.Handler) http.Handler {
 	})
 }
 
-// rateLimitedPaths is the set of endpoints that get a per-IP bucket. Other
-// paths are unlimited — read-only status polling at 2 s intervals is cheap.
-var rateLimitedPaths = map[string]bool{
-	"/api/start":           true,
-	"/api/probe":           true,
-	"/api/schedule":        true,
-	"/api/schedule/cancel": true,
-	"/api/stop":            true,
+// rateLimitedPaths is the set of endpoints that get a per-IP token bucket.
+// Two tiers: state-changing endpoints get a tight bucket (10 capacity, 1/s);
+// read-only endpoints get a generous bucket (60 capacity, 30/s) — comfortably
+// above the 2 s UI poll cadence but bounded so a malicious client can't
+// generate unbounded load by spamming /api/runs or /api/host.
+var rateLimitedPaths = map[string]rateLimit{
+	"/api/start":           {capacity: 10, refill: 1.0},
+	"/api/probe":           {capacity: 10, refill: 1.0},
+	"/api/schedule":        {capacity: 10, refill: 1.0},
+	"/api/schedule/cancel": {capacity: 10, refill: 1.0},
+	"/api/stop":            {capacity: 10, refill: 1.0},
+	"/api/runs":            {capacity: 60, refill: 30.0},
+	"/api/host":            {capacity: 60, refill: 30.0},
+	"/api/status":          {capacity: 60, refill: 30.0},
+	"/api/schedules":       {capacity: 60, refill: 30.0},
+}
+
+type rateLimit struct {
+	capacity float64
+	refill   float64
 }
 
 // trustedProxies, when non-nil, is the only set of source-IP CIDRs whose
@@ -217,7 +229,8 @@ func RateLimit(next http.Handler) http.Handler {
 		}
 	}()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !rateLimitedPaths[r.URL.Path] {
+		limit, limited := rateLimitedPaths[r.URL.Path]
+		if !limited {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -244,7 +257,7 @@ func RateLimit(next http.Handler) http.Handler {
 		mu.Lock()
 		b := buckets[key]
 		if b == nil {
-			b = &tokenBucket{capacity: 10, refill: 1.0}
+			b = &tokenBucket{capacity: limit.capacity, refill: limit.refill}
 			buckets[key] = b
 		}
 		ok := b.allow()

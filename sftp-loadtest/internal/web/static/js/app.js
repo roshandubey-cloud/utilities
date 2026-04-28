@@ -14,6 +14,7 @@ import { mountRunsHistory } from './runs-history.js';
 import { mountUsersEditors } from './users-editor.js';
 import { mountUploadRestructure } from './upload-restructure.js';
 import { mountRunActions } from './run-actions.js';
+import { mountStartPreflight } from './start-preflight.js';
 import { mountWizard } from './wizard.js';
 
 initTheme();
@@ -34,6 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
     mountUploadRestructure();
     mountUsersEditors();
     mountRunActions();
+    mountStartPreflight();
     mountWizard('[data-component="wizard"]');
   }, 0);
 });

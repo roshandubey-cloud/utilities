@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -149,6 +150,24 @@ func TOFUCallback(path string, captured func(host, fingerprint string)) (ssh.Hos
 // distinct from the auto-add TOFU implemented by TOFUCallback.
 var ErrHostKeyConsentRequired = errors.New("host key not in known_hosts; user consent required")
 
+// ErrHostKeyChanged is returned by CapturePreviewCallback when the presented
+// host key DIFFERS from what's recorded in known_hosts. This is the OpenSSH
+// "REMOTE HOST IDENTIFICATION HAS CHANGED" case — almost always a server
+// rebuild but classically the man-in-the-middle signal. The callback
+// captures BOTH the old and new fingerprints via the closure so the caller
+// can present a high-friction prompt before overwriting.
+var ErrHostKeyChanged = errors.New("host key has changed; user consent required to overwrite")
+
+// CapturedKey is what CapturePreviewCallback feeds back to its caller via
+// the captured-key closure. Previous is empty for first-time hosts; populated
+// (with the SHA-256 of the previously-trusted key) on the changed-key path.
+type CapturedKey struct {
+	Host        string
+	Fingerprint string
+	Previous    string
+	Changed     bool
+}
+
 // CapturePreviewCallback returns a host-key callback that:
 //   - Strict-checks the presented key against the known_hosts file.
 //   - On success: returns nil (key is already trusted).
@@ -162,7 +181,7 @@ var ErrHostKeyConsentRequired = errors.New("host key not in known_hosts; user co
 //
 // The known_hosts file is created (mode 0o600) if missing — same as
 // TOFUCallback — so the very first probe against any server can populate it.
-func CapturePreviewCallback(path string, captured func(host, fingerprint string)) (ssh.HostKeyCallback, error) {
+func CapturePreviewCallback(path string, captured func(CapturedKey)) (ssh.HostKeyCallback, error) {
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		if err := os.WriteFile(path, []byte{}, 0o600); err != nil {
 			return nil, fmt.Errorf("create known_hosts %s: %w", path, err)
@@ -186,19 +205,84 @@ func CapturePreviewCallback(path string, captured func(host, fingerprint string)
 		var keErr *knownhosts.KeyError
 		if errors.As(strictErr, &keErr) {
 			if len(keErr.Want) > 0 {
-				// Loud MITM: never auto-fix, never preview.
-				return fmt.Errorf("host key for %s has changed since the last connection — possible MITM, refusing (delete the offending line in %s only after verifying the new key out-of-band): %w",
-					hostname, path, strictErr)
+				// Changed key (OpenSSH "REMOTE HOST IDENTIFICATION HAS CHANGED").
+				// Capture BOTH the previously-trusted and the newly-presented
+				// fingerprints so the caller can show a high-friction prompt;
+				// do NOT modify the file ourselves.
+				prevFP := ""
+				if len(keErr.Want) > 0 && keErr.Want[0].Key != nil {
+					prevFP = ssh.FingerprintSHA256(keErr.Want[0].Key)
+				}
+				if captured != nil {
+					captured(CapturedKey{
+						Host:        hostname,
+						Fingerprint: ssh.FingerprintSHA256(key),
+						Previous:    prevFP,
+						Changed:     true,
+					})
+				}
+				return ErrHostKeyChanged
 			}
 			// Unknown host: capture the fingerprint so the caller can prompt
 			// the user, but DO NOT modify known_hosts. Return the sentinel.
 			if captured != nil {
-				captured(hostname, ssh.FingerprintSHA256(key))
+				captured(CapturedKey{
+					Host:        hostname,
+					Fingerprint: ssh.FingerprintSHA256(key),
+				})
 			}
 			return ErrHostKeyConsentRequired
 		}
 		return strictErr
 	}, nil
+}
+
+// RemoveKnownHostEntries rewrites the known_hosts file with every line for
+// the given hostname removed. Used by the changed-key consent flow: the UI
+// asks the operator to confirm the key has truly rotated; on accept the old
+// entry is wiped and a TOFUCallback re-add captures the new one. Matching is
+// done against the OpenSSH "[host]:port" / "host" form via knownhosts.Normalize
+// so a hostname rewrite via Normalize matches both "127.0.0.1:2222" → "[127.0.0.1]:2222".
+func RemoveKnownHostEntries(path, hostname string) error {
+	target := knownhosts.Normalize(hostname)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("read known_hosts %s: %w", path, err)
+	}
+	var out []byte
+	for _, line := range strings.SplitAfter(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			out = append(out, line...)
+			continue
+		}
+		// First field is one or more comma-separated host patterns.
+		fields := strings.Fields(trimmed)
+		if len(fields) == 0 {
+			out = append(out, line...)
+			continue
+		}
+		hosts := strings.Split(fields[0], ",")
+		matched := false
+		for _, h := range hosts {
+			if strings.TrimSpace(h) == target {
+				matched = true
+				break
+			}
+		}
+		if matched {
+			continue // drop this line
+		}
+		out = append(out, line...)
+	}
+	tmp := path + ".tmp"
+	if werr := os.WriteFile(tmp, out, 0o600); werr != nil {
+		return fmt.Errorf("write %s: %w", tmp, werr)
+	}
+	return os.Rename(tmp, path)
 }
 
 // DialOpts customises a single Dial call. A zero value uses the

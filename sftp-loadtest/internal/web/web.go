@@ -104,9 +104,14 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 		// TrustOnFirstUse, when true, instructs the probe to ADD this server's
 		// host key to the known_hosts file if it isn't there yet. A key that's
 		// already known and matches is silently accepted. A key that's already
-		// known and DIFFERENT is refused (MITM signal). Requires the server
-		// was launched with -known-hosts <path>.
+		// known and DIFFERENT is refused (MITM signal) UNLESS AcceptChanged is
+		// also true. Requires the server was launched with -known-hosts <path>.
 		TrustOnFirstUse  bool `json:"trust_on_first_use"`
+		// AcceptChanged, when true alongside TrustOnFirstUse, removes any
+		// existing known_hosts entry for the host before TOFU appends — used
+		// by the UI's "host key changed" consent flow after the operator
+		// explicitly approves overwriting the previous key.
+		AcceptChanged    bool `json:"accept_changed"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -157,8 +162,25 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 	//      Fall through to the process-wide callback (insecure).
 	t1 := time.Now()
 	var dialOpts sftpx.DialOpts
-	var capturedFP string
+	var capturedFP, capturedPrev string
+	var capturedChanged bool
 	khPath := s.getKnownHostsPath()
+
+	// AcceptChanged with a known_hosts path: rewrite the file to drop any
+	// existing entry for this host. The TOFU callback below then appends
+	// the new key as if for an unknown host. Done before the SSH dial so
+	// strict-checking sees a clean slate.
+	if req.AcceptChanged && req.TrustOnFirstUse && khPath != "" {
+		if err := sftpx.RemoveKnownHostEntries(khPath, addr); err != nil {
+			log.Printf("probe %s: remove existing known_hosts entry: %v", addr, err)
+			out["stage"] = "ssh_or_sftp"
+			out["error"] = "could not rewrite known_hosts to overwrite previous entry"
+			writeJSON(w, out)
+			return
+		}
+		log.Printf("probe %s: removed previous known_hosts entry per accept_changed", addr)
+	}
+
 	switch {
 	case req.TrustOnFirstUse:
 		if khPath == "" {
@@ -179,9 +201,11 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 		dialOpts.HostKeyCallback = cb
 	case khPath != "":
 		// Capture-preview path — strict check + capture fingerprint on
-		// unknown-host so the UI can prompt the user.
-		cb, cberr := sftpx.CapturePreviewCallback(khPath, func(host, fp string) {
-			capturedFP = fp
+		// unknown-host AND changed-key cases so the UI can prompt the user.
+		cb, cberr := sftpx.CapturePreviewCallback(khPath, func(ck sftpx.CapturedKey) {
+			capturedFP = ck.Fingerprint
+			capturedPrev = ck.Previous
+			capturedChanged = ck.Changed
 		})
 		if cberr != nil {
 			out["stage"] = "ssh_or_sftp"
@@ -201,15 +225,24 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 		// fingerprint, surface it so the UI can render an Accept/Reject
 		// prompt. Same shape regardless of whether the SSH error wraps the
 		// sentinel directly or in a transport-layer message.
-		if capturedFP != "" && (errors.Is(err, sftpx.ErrHostKeyConsentRequired) ||
+		switch {
+		case capturedChanged && capturedFP != "":
+			// Renewed / rotated / possibly-MITM. UI must show a high-friction
+			// prompt with both fingerprints before the operator opts in.
+			out["requires_renewal"] = true
+			out["captured_fingerprint"] = capturedFP
+			out["captured_previous_fingerprint"] = capturedPrev
+			out["captured_for_host"] = req.Host
+			out["error"] = "Server presented a DIFFERENT host key than the one already in known_hosts. Verify out-of-band before accepting."
+		case capturedFP != "" && (errors.Is(err, sftpx.ErrHostKeyConsentRequired) ||
 			strings.Contains(err.Error(), "user consent required") ||
 			strings.Contains(err.Error(), "knownhosts: key is unknown") ||
-			strings.Contains(err.Error(), "ssh: handshake failed")) {
+			strings.Contains(err.Error(), "ssh: handshake failed")):
 			out["requires_consent"] = true
 			out["captured_fingerprint"] = capturedFP
 			out["captured_for_host"] = req.Host
 			out["error"] = "Server presented a new host key. Verify the fingerprint and accept to continue."
-		} else {
+		default:
 			out["error"] = friendlyProbeError("ssh_or_sftp", err)
 		}
 		writeJSON(w, out)
@@ -260,6 +293,11 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 // /healthz — cheap liveness probe. Always 200 while the HTTP server is up.
 // Includes uptime + whether a run is active so orchestrators can tell the
 // difference between "idle but alive" and "executing a test".
+// handleHealth answers liveness probes. Returns minimal "ok" payload by
+// default so the unauthenticated endpoint cannot be used to fingerprint
+// uptime or detect when a run is active. When ?detail=1 is passed AND the
+// caller has cleared BasicAuth (or auth is disabled), additional fields
+// are returned for in-cluster monitoring agents that explicitly opt in.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	active := s.activeRun()
 	out := map[string]any{
@@ -451,6 +489,23 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	// Pre-flight host-key check. Without this, a Start Run that hits an
+	// unknown or changed key only surfaces as per-record errors after the
+	// run starts streaming — operators have no remediation path. Try a
+	// single dial with the first available user via the CapturePreview
+	// callback; if consent is needed, return the structured response so
+	// the UI can prompt and re-call /api/start once the operator accepts.
+	if khPath := s.getKnownHostsPath(); khPath != "" {
+		creds := firstStartCredential(req)
+		if creds.user != "" && req.Host != "" && req.Port > 0 {
+			if pre := s.preflightHostKey(khPath, req.Host, req.Port, creds.user, creds.pass); pre != nil {
+				writeJSON(w, pre)
+				return
+			}
+		}
+	}
+
 	run, err := s.startRun(req, "manual")
 	if err != nil {
 		code := http.StatusBadRequest
@@ -461,6 +516,84 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"run_id": run.ID})
+}
+
+// preflightHostKey runs a single CapturePreview dial. Returns a non-nil JSON
+// payload only when the UI needs to show a consent prompt — unknown host
+// (requires_consent) or changed host key (requires_renewal). All other errors
+// (TCP refused, auth failure, etc.) are tolerated here so the actual run can
+// start and propagate them as ordinary per-file failures; the caller has
+// already pre-validated the request shape.
+func (s *Server) preflightHostKey(khPath, host string, port int, user, pass string) map[string]any {
+	var capturedFP, capturedPrev string
+	var capturedChanged bool
+	cb, cberr := sftpx.CapturePreviewCallback(khPath, func(ck sftpx.CapturedKey) {
+		capturedFP = ck.Fingerprint
+		capturedPrev = ck.Previous
+		capturedChanged = ck.Changed
+	})
+	if cberr != nil {
+		log.Printf("preflight setup: %v", cberr)
+		return nil
+	}
+	c, err := sftpx.DialWithOpts(host, port, user, pass, sftpx.DialOpts{HostKeyCallback: cb})
+	if err == nil {
+		c.Close()
+		return nil
+	}
+	switch {
+	case capturedChanged && capturedFP != "":
+		log.Printf("start preflight %s:%d: host key changed (was %s, now %s)", host, port, capturedPrev, capturedFP)
+		return map[string]any{
+			"ok":                              false,
+			"requires_renewal":                true,
+			"captured_fingerprint":            capturedFP,
+			"captured_previous_fingerprint":   capturedPrev,
+			"captured_for_host":               host,
+			"error":                           "Server presented a DIFFERENT host key than the one already in known_hosts. Verify out-of-band before accepting.",
+		}
+	case capturedFP != "" && (errors.Is(err, sftpx.ErrHostKeyConsentRequired) ||
+		strings.Contains(err.Error(), "user consent required") ||
+		strings.Contains(err.Error(), "knownhosts: key is unknown")):
+		log.Printf("start preflight %s:%d: unknown host key (%s)", host, port, capturedFP)
+		return map[string]any{
+			"ok":                   false,
+			"requires_consent":     true,
+			"captured_fingerprint": capturedFP,
+			"captured_for_host":    host,
+			"error":                "Server presented a new host key. Verify the fingerprint and accept to continue.",
+		}
+	}
+	// Other dial errors fall through — let the actual run start so the
+	// failure shows up in the records / disabled-users surfaces.
+	return nil
+}
+
+type startCred struct{ user, pass string }
+
+// firstStartCredential picks the first usable credential from the run config:
+// normal users, then large-file users, then download users. Used solely for the
+// pre-flight host-key dial so any one user is enough to surface a key issue.
+func firstStartCredential(req startReq) startCred {
+	parse := func(csv string) startCred {
+		for _, line := range strings.Split(csv, "\n") {
+			t := strings.TrimSpace(line)
+			if t == "" {
+				continue
+			}
+			parts := strings.Split(t, ",")
+			if len(parts) >= 2 {
+				return startCred{user: strings.TrimSpace(parts[0]), pass: parts[1]}
+			}
+		}
+		return startCred{}
+	}
+	for _, csv := range []string{req.NormalUsersCSV, req.LargeUsersCSV, req.DownloadUsersCSV} {
+		if c := parse(csv); c.user != "" {
+			return c
+		}
+	}
+	return startCred{}
 }
 
 func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
