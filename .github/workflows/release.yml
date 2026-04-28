@@ -74,8 +74,8 @@ jobs:
       - name: package desktop-app arm64 zips (versioned + alias)
         working-directory: sftp-loadtest/cmd/desktop/build/bin
         run: |
-          zip -9 -r ../../../../sftp-loadtest-desktop-app-${VERSION}-mac-apple-silicon.zip sftp-loadtest-desktop.app
-          cp     ../../../../sftp-loadtest-desktop-app-${VERSION}-mac-apple-silicon.zip ../../../../sftp-loadtest-desktop-app-mac-apple-silicon.zip
+          zip -9 -r ../../../../../sftp-loadtest-desktop-app-${VERSION}-mac-apple-silicon.zip sftp-loadtest-desktop.app
+          cp     ../../../../../sftp-loadtest-desktop-app-${VERSION}-mac-apple-silicon.zip ../../../../../sftp-loadtest-desktop-app-mac-apple-silicon.zip
 
       - name: build desktop-app intel
         working-directory: sftp-loadtest/cmd/desktop
@@ -84,8 +84,8 @@ jobs:
       - name: package desktop-app intel zips (versioned + alias)
         working-directory: sftp-loadtest/cmd/desktop/build/bin
         run: |
-          zip -9 -r ../../../../sftp-loadtest-desktop-app-${VERSION}-mac-intel.zip sftp-loadtest-desktop.app
-          cp     ../../../../sftp-loadtest-desktop-app-${VERSION}-mac-intel.zip ../../../../sftp-loadtest-desktop-app-mac-intel.zip
+          zip -9 -r ../../../../../sftp-loadtest-desktop-app-${VERSION}-mac-intel.zip sftp-loadtest-desktop.app
+          cp     ../../../../../sftp-loadtest-desktop-app-${VERSION}-mac-intel.zip ../../../../../sftp-loadtest-desktop-app-mac-intel.zip
 
       - uses: softprops/action-gh-release@v2
         with:
@@ -116,7 +116,7 @@ jobs:
       - name: install wails dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config zip
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev pkg-config zip
 
       - name: tidy
         working-directory: sftp-loadtest
@@ -154,8 +154,8 @@ jobs:
       - name: package desktop-app zips (versioned + alias)
         working-directory: sftp-loadtest/cmd/desktop/build/bin
         run: |
-          zip -9 ../../../../sftp-loadtest-desktop-app-${VERSION}-linux-amd64.zip sftp-loadtest-desktop
-          cp    ../../../../sftp-loadtest-desktop-app-${VERSION}-linux-amd64.zip ../../../../sftp-loadtest-desktop-app-linux-amd64.zip
+          zip -9 ../../../../../sftp-loadtest-desktop-app-${VERSION}-linux-amd64.zip sftp-loadtest-desktop
+          cp    ../../../../../sftp-loadtest-desktop-app-${VERSION}-linux-amd64.zip ../../../../../sftp-loadtest-desktop-app-linux-amd64.zip
 
       - uses: softprops/action-gh-release@v2
         with:
@@ -220,8 +220,8 @@ jobs:
         shell: pwsh
         run: |
           $version = $env:VERSION
-          Compress-Archive -Path sftp-loadtest-desktop.exe -DestinationPath "../../../../sftp-loadtest-desktop-app-$version-windows-amd64.zip" -CompressionLevel Optimal
-          Copy-Item "../../../../sftp-loadtest-desktop-app-$version-windows-amd64.zip" ../../../../sftp-loadtest-desktop-app-windows-amd64.zip
+          Compress-Archive -Path sftp-loadtest-desktop.exe -DestinationPath "../../../../../sftp-loadtest-desktop-app-$version-windows-amd64.zip" -CompressionLevel Optimal
+          Copy-Item "../../../../../sftp-loadtest-desktop-app-$version-windows-amd64.zip" ../../../../../sftp-loadtest-desktop-app-windows-amd64.zip
 
       - uses: softprops/action-gh-release@v2
         with:
