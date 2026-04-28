@@ -119,16 +119,23 @@ export function mountUploadRestructure() {
       const newToggle = advanced.querySelector('#upload-advanced-enabled');
       if (largeEnabled && newToggle) {
         newToggle.checked = !!largeEnabled.checked;
+        // Toggling the checkbox directly opens/closes the disclosure so users
+        // get a single clear gesture: tick it ON to expand, OFF to collapse.
+        // Stop propagation so clicking the checkbox doesn't ALSO trigger the
+        // <summary> default toggle (which would re-flip the state).
+        newToggle.addEventListener('click', (ev) => ev.stopPropagation());
         const fwd = () => {
           if (largeEnabled.checked !== newToggle.checked) {
             largeEnabled.checked = newToggle.checked;
             largeEnabled.dispatchEvent(new Event('change', { bubbles: true }));
           }
-          // Also auto-open the disclosure when enabled.
-          advanced.open = newToggle.checked || advanced.open;
+          advanced.open = newToggle.checked;
         };
         const back = () => {
-          if (newToggle.checked !== largeEnabled.checked) newToggle.checked = largeEnabled.checked;
+          if (newToggle.checked !== largeEnabled.checked) {
+            newToggle.checked = largeEnabled.checked;
+            advanced.open = newToggle.checked;
+          }
         };
         newToggle.addEventListener('change', fwd);
         largeEnabled.addEventListener('change', back);

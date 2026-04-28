@@ -133,6 +133,59 @@ func TOFUCallback(path string, captured func(host, fingerprint string)) (ssh.Hos
 	}, nil
 }
 
+// ErrHostKeyConsentRequired is returned by CapturePreviewCallback when the
+// presented host key is not in known_hosts. The callback also captures the
+// key's fingerprint via the closure so the caller can show it to the user
+// for explicit Accept/Reject. This is the "interactive TOFU" workflow —
+// distinct from the auto-add TOFU implemented by TOFUCallback.
+var ErrHostKeyConsentRequired = errors.New("host key not in known_hosts; user consent required")
+
+// CapturePreviewCallback returns a host-key callback that:
+//   - Strict-checks the presented key against the known_hosts file.
+//   - On success: returns nil (key is already trusted).
+//   - On a "key changed" mismatch: returns the loud MITM error (never
+//     auto-fixes).
+//   - On "host not seen yet": captures the key's SHA-256 fingerprint via
+//     the closure AND returns ErrHostKeyConsentRequired without modifying
+//     the file. The caller surfaces the fingerprint to the user, who can
+//     then opt in by re-running the probe with TrustOnFirstUse: true (which
+//     uses TOFUCallback to actually append).
+//
+// The known_hosts file is created (mode 0o600) if missing — same as
+// TOFUCallback — so the very first probe against any server can populate it.
+func CapturePreviewCallback(path string, captured func(host, fingerprint string)) (ssh.HostKeyCallback, error) {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		if err := os.WriteFile(path, []byte{}, 0o600); err != nil {
+			return nil, fmt.Errorf("create known_hosts %s: %w", path, err)
+		}
+	}
+	strict, err := knownhosts.New(path)
+	if err != nil {
+		return nil, fmt.Errorf("load known_hosts %s: %w", path, err)
+	}
+	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		strictErr := strict(hostname, remote, key)
+		if strictErr == nil {
+			return nil
+		}
+		var keErr *knownhosts.KeyError
+		if errors.As(strictErr, &keErr) {
+			if len(keErr.Want) > 0 {
+				// Loud MITM: never auto-fix, never preview.
+				return fmt.Errorf("host key for %s has changed since the last connection — possible MITM, refusing (delete the offending line in %s only after verifying the new key out-of-band): %w",
+					hostname, path, strictErr)
+			}
+			// Unknown host: capture the fingerprint so the caller can prompt
+			// the user, but DO NOT modify known_hosts. Return the sentinel.
+			if captured != nil {
+				captured(hostname, ssh.FingerprintSHA256(key))
+			}
+			return ErrHostKeyConsentRequired
+		}
+		return strictErr
+	}, nil
+}
+
 // DialOpts customises a single Dial call. A zero value uses the
 // process-wide host-key callback (the one main.go installs at startup).
 type DialOpts struct {

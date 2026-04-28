@@ -493,7 +493,11 @@
 .probe-result[data-state="ok"]      { border-color: var(--success-border); background: var(--success-bg-soft); }
 .probe-result[data-state="error"]   { border-color: var(--danger-border);  background: var(--danger-bg-soft);  }
 .probe-result[data-state="testing"] { border-color: var(--info-border);    background: var(--info-bg-soft);    }
+.probe-result[data-state="consent"] { border-color: var(--warning-border); background: var(--warning-bg-soft); }
 .probe-result[data-state="idle"]    { display: none; }
+.probe-result[data-state="consent"] .probe-headline { color: var(--warning-fg-soft); font-weight: var(--fw-semibold); }
+.probe-result[data-state="consent"] .probe-fingerprint { background: var(--surface); border: var(--bw-1) solid var(--border-medium); padding: var(--sp-3); }
+.probe-result[data-state="consent"] .probe-fingerprint .eyebrow { margin-bottom: var(--sp-1); }
 
 .probe-headline {
   display: flex;
@@ -789,17 +793,27 @@
 .records-tbl tbody tr:hover td { background: var(--action-hover); }
 .records-tbl tbody tr:last-child td { border-bottom: 0; }
 
-.rec-col-user   { min-width: 80px; }
-.rec-col-kind   { width: 32px; text-align: center; }
-.rec-col-file   { min-width: 220px; }
-.rec-col-time   { width: 80px; text-align: right; font-variant-numeric: tabular-nums; }
-.rec-col-num    { min-width: 70px; text-align: right; }
-.rec-col-mono   { min-width: 130px; }
-.rec-col-status { min-width: 160px; text-align: right; }
+.rec-col-user   { min-width: 70px; }
+.rec-col-kind   { width: 28px; text-align: center; }
+.rec-col-file   { min-width: 200px; }
+.rec-col-time   { width: 72px; text-align: right; font-variant-numeric: tabular-nums; }
+.rec-col-num    { min-width: 64px; text-align: right; }
+.rec-col-mono   { min-width: 120px; }
+.rec-col-status { min-width: 150px; text-align: right; }
 .rec-cell.rec-time  { font-family: var(--font-mono); font-size: var(--fs-11); color: var(--text-secondary); white-space: nowrap; }
-.rec-cell.rec-mono  { font-family: var(--font-mono); font-size: var(--fs-11); color: var(--text-secondary); white-space: nowrap; max-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.rec-cell.rec-mono  { font-family: var(--font-mono); font-size: var(--fs-11); color: var(--text-secondary); white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .records-tbl-wrap { overflow-x: auto; }
-.records-tbl { min-width: 1400px; }
+.records-tbl { min-width: 1280px; }
+/* Sticky first column so user identity stays visible on horizontal scroll. */
+.records-tbl thead th:first-child,
+.records-tbl tbody td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surface);
+}
+.records-tbl thead th:first-child { background: var(--surface-2); z-index: 3; }
+.records-tbl tbody tr:hover td:first-child { background: var(--surface-2); }
 
 .rec-cell { white-space: nowrap; }
 .rec-cell.rec-num { font-variant-numeric: tabular-nums; text-align: right; font-family: var(--font-mono); }

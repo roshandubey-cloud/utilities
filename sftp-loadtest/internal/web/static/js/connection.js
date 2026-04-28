@@ -86,6 +86,34 @@ export function mountConnectionCard(rootSelector) {
         <span class="probe-stage" data-status="pending">list</span>
       </div>`;
   }
+  function setConsent(reply, host, port) {
+    resultEl.dataset.state = 'consent';
+    const fp = reply.captured_fingerprint || '(unavailable)';
+    const target = reply.captured_for_host || host;
+    resultEl.innerHTML = `
+      <div class="probe-headline">${iconShield()}<span>New host key — your decision needed</span></div>
+      <div class="help" style="white-space:normal">
+        The SFTP server at <strong class="mono">${escapeHTML(target)}:${port}</strong> presented a host
+        key that's not in <code>known_hosts</code> yet. This is normal the first time you connect to a
+        new server — but always confirm the fingerprint matches one given to you out-of-band.
+      </div>
+      <div class="probe-fingerprint">
+        <div class="eyebrow">SHA-256 fingerprint</div>
+        <div>${escapeHTML(fp)}</div>
+      </div>
+      <div class="row" style="justify-content:flex-end;flex-wrap:wrap;gap:var(--sp-2);padding-top:var(--sp-2)">
+        <button class="btn btn-ghost"     type="button" data-role="consent-cancel">Cancel</button>
+        <button class="btn btn-primary"   type="button" data-role="consent-accept">Accept and connect</button>
+      </div>`;
+    resultEl.querySelector('[data-role="consent-accept"]').addEventListener('click', (ev) => {
+      ev.preventDefault();
+      probe(true);   // re-probe with TOFU=true so the server appends + accepts
+    });
+    resultEl.querySelector('[data-role="consent-cancel"]').addEventListener('click', (ev) => {
+      ev.preventDefault();
+      setIdle();
+    });
+  }
   function setOk(reply, host) {
     resultEl.dataset.state = 'ok';
     const stages = [
@@ -154,7 +182,9 @@ export function mountConnectionCard(rootSelector) {
   });
 
   // ---------- submit handler ----------
-  async function probe() {
+  // forceTOFU=true is used by the consent prompt's Accept button: the user
+  // has seen the fingerprint and explicitly opted in.
+  async function probe(forceTOFU) {
     const hostOK = validateField(hostEl);
     const portOK = validateField(portEl);
     if (!hostOK || !portOK) {
@@ -171,13 +201,15 @@ export function mountConnectionCard(rootSelector) {
       if (userEl.value) body.username = userEl.value;
       if (passEl.value) body.password = passEl.value;
       if (folderEl.value) body.folder = folderEl.value.trim();
-      if (tofuEl.checked) body.trust_on_first_use = true;
+      if (forceTOFU || (tofuEl && tofuEl.checked)) body.trust_on_first_use = true;
 
       const reply = await apiPostJSON('/api/probe', body);
       if (reply.ok) {
         setOk(reply, host);
         rememberConn(host, port);
-        pushToast(`Connected to ${host}:${port}${reply.captured_fingerprint ? ' (host key captured)' : ''}`, 'success');
+        pushToast(`Connected to ${host}:${port}${reply.captured_fingerprint ? ' — host key added to known_hosts' : ''}`, 'success');
+      } else if (reply.requires_consent) {
+        setConsent(reply, host, port);
       } else {
         setError(reply.error || 'unknown error', reply.stage);
         pushToast(`Connection failed${reply.stage ? ' at ' + reply.stage : ''}`, 'error');
@@ -257,6 +289,9 @@ function iconCheck() {
 }
 function iconAlert() {
   return `<span class="icon icon-md" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 8v5"/><path d="M12 16.5h.01"/><path d="M10.6 3.5l-8 14a1.6 1.6 0 0 0 1.4 2.5h16a1.6 1.6 0 0 0 1.4-2.5l-8-14a1.6 1.6 0 0 0-2.8 0z"/></svg></span>`;
+}
+function iconShield() {
+  return `<span class="icon icon-md" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg></span>`;
 }
 
 function escapeHTML(s) {

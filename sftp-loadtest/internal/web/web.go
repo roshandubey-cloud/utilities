@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -142,15 +143,23 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Stage 2 + 3 — SSH handshake + SFTP subsystem. If the caller asked for
-	// TOFU, build a per-call host-key callback that auto-appends unknown
-	// keys; otherwise fall through to the process-wide callback (set by
-	// main.go from -known-hosts / -insecure-host-key).
+	// Stage 2 + 3 — SSH handshake + SFTP subsystem.
+	//
+	// Three modes, chosen per-request:
+	//   a) TrustOnFirstUse=true + known_hosts set:
+	//      Use TOFUCallback — auto-append unknown keys, accept after.
+	//   b) TrustOnFirstUse=false + known_hosts set:
+	//      Use CapturePreviewCallback — strict check, but on "key unknown"
+	//      capture the fingerprint AND respond with requires_consent=true
+	//      so the UI can show an explicit Accept/Reject prompt.
+	//   c) -insecure-host-key mode (no known_hosts path):
+	//      Fall through to the process-wide callback (insecure).
 	t1 := time.Now()
 	var dialOpts sftpx.DialOpts
 	var capturedFP string
-	if req.TrustOnFirstUse {
-		khPath := s.getKnownHostsPath()
+	khPath := s.getKnownHostsPath()
+	switch {
+	case req.TrustOnFirstUse:
 		if khPath == "" {
 			out["stage"] = "ssh_or_sftp"
 			out["error"] = "trust_on_first_use requires the server to have been launched with -known-hosts <path>"
@@ -167,18 +176,46 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		dialOpts.HostKeyCallback = cb
+	case khPath != "":
+		// Capture-preview path — strict check + capture fingerprint on
+		// unknown-host so the UI can prompt the user.
+		cb, cberr := sftpx.CapturePreviewCallback(khPath, func(host, fp string) {
+			capturedFP = fp
+		})
+		if cberr != nil {
+			out["stage"] = "ssh_or_sftp"
+			out["error"] = "host-key check setup: " + cberr.Error()
+			writeJSON(w, out)
+			return
+		}
+		dialOpts.HostKeyCallback = cb
 	}
 	c, err := sftpx.DialWithOpts(req.Host, req.Port, req.Username, req.Password, dialOpts)
 	if err != nil {
 		out["stage"] = "ssh_or_sftp"
 		out["error"] = err.Error()
 		out["ssh_ms"] = time.Since(t1).Milliseconds()
+		// If the failure was specifically the "user consent required" sentinel
+		// from CapturePreviewCallback AND we successfully captured a
+		// fingerprint, surface it so the UI can render an Accept/Reject
+		// prompt. Same shape regardless of whether the SSH error wraps the
+		// sentinel directly or in a transport-layer message.
+		if capturedFP != "" && (errors.Is(err, sftpx.ErrHostKeyConsentRequired) ||
+			strings.Contains(err.Error(), "user consent required") ||
+			strings.Contains(err.Error(), "knownhosts: key is unknown") ||
+			strings.Contains(err.Error(), "ssh: handshake failed")) {
+			out["requires_consent"] = true
+			out["captured_fingerprint"] = capturedFP
+			out["captured_for_host"] = req.Host
+			// User-friendly headline; the raw err.Error() is technical SSH stderr.
+			out["error"] = "Server presented a new host key. Verify the fingerprint and accept to continue."
+		}
 		writeJSON(w, out)
 		return
 	}
 	out["ssh_sftp_ms"] = time.Since(t1).Milliseconds()
 	defer c.Close()
-	if capturedFP != "" {
+	if capturedFP != "" && req.TrustOnFirstUse {
 		out["captured_fingerprint"] = capturedFP
 		out["captured_for_host"] = req.Host
 		// The process-wide host-key callback was loaded once at startup from
