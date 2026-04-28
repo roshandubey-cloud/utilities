@@ -491,10 +491,14 @@
       </div>
     </section>
 
-    <!-- LEGACY MARKER — landing target for the masthead "Schedules & reports"
-         link and the hero "Start a new load test" CTA. Phase 2-4 will migrate
-         the cards below into the new design system. -->
-    <div class="legacy-banner" id="legacy-shell">
+    <!-- WIZARD — Workload · Schedule · Review stepper. Filters which legacy
+         cards are visible by step. Cards keep all their JS bindings; this is
+         purely navigational chrome. -->
+    <nav data-component="wizard" id="legacy-shell" class="wizard"></nav>
+
+    <!-- Legacy banner kept (now a sub-note under the wizard); content below
+         is the actual configuration surface, filtered by step. -->
+    <div class="legacy-banner">
       <span class="icon icon-sm" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 8v5"/><path d="M12 16.5h.01"/><circle cx="12" cy="12" r="9"/></svg></span>
       <span><strong>Configure &amp; schedule below.</strong> The run configuration, scheduler, and reports tables are mid-redesign — they still work, they just haven't been re-themed yet.</span>
     </div>

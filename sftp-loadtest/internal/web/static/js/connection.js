@@ -167,7 +167,41 @@ export function mountConnectionCard(rootSelector) {
     setIdle();
     hostEl.focus();
   }
+
+  // Sync host/port/folder from Quick Checks into the LEGACY hidden Connection
+  // card inputs (#host/#port/#folder). The legacy buildRequestBody() reads
+  // from those — without this sync, typing into Quick Checks and clicking
+  // Start Run would silently send empty host/port. Bidirectional so an
+  // imported config (which writes to the legacy ids) reflects back into QC.
+  setupLegacySync(hostEl,   'host');
+  setupLegacySync(portEl,   'port');
+  setupLegacySync(folderEl, 'folder');
+
   setIdle();
+}
+
+function setupLegacySync(qc, legacyId) {
+  if (!qc) return;
+  const leg = document.getElementById(legacyId);
+  if (!leg) return;
+  // Initial: prefer existing legacy value (e.g. from saved config / import).
+  if (leg.value && !qc.value) {
+    qc.value = leg.value;
+  } else if (qc.value && !leg.value) {
+    leg.value = qc.value;
+    leg.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  // QC → legacy on every keystroke.
+  qc.addEventListener('input', () => {
+    if (leg.value !== qc.value) {
+      leg.value = qc.value;
+      leg.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  });
+  // Legacy → QC when the legacy value is changed programmatically (import).
+  leg.addEventListener('change', () => {
+    if (qc.value !== leg.value) qc.value = leg.value;
+  });
 }
 
 // ---------- inline icons ----------

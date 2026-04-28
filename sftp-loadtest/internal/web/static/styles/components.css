@@ -1064,6 +1064,97 @@
 
 
 /* ============================================================================
+   WIZARD STEPPER — 3 tabs above the legacy form: Workload · Schedule · Review.
+   Filters which legacy card is visible via [data-step] on .grid + .card.
+   ============================================================================ */
+
+.wizard {
+  display: flex;
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-3);
+  overflow: hidden;
+}
+.wizard-steps {
+  display: flex;
+  width: 100%;
+}
+.wizard-step {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: transparent;
+  border: none;
+  border-right: var(--bw-1) solid var(--border-weak);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-sans);
+  color: var(--text-secondary);
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+.wizard-step:last-child { border-right: none; }
+.wizard-step:hover { background: var(--action-hover); color: var(--text-primary); }
+.wizard-step:focus-visible { box-shadow: var(--focus-ring); }
+.wizard-step.is-active { background: var(--action-selected); color: var(--text-primary); }
+.wizard-step.is-active .wizard-step-num {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.wizard-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  border: var(--bw-1) solid var(--border-medium);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+  flex-shrink: 0;
+}
+.wizard-step-text { display: flex; flex-direction: column; gap: 0; min-width: 0; }
+.wizard-step-label { font-weight: var(--fw-semibold); font-size: var(--fs-13); }
+.wizard-step-hint { font-size: var(--fs-11); color: var(--text-tertiary); }
+
+@media (max-width: 720px) {
+  .wizard-step-hint { display: none; }
+  .wizard-step { padding: var(--sp-2) var(--sp-3); gap: var(--sp-2); }
+}
+
+/* Card filtering — only show cards tagged with the active step. */
+.grid[data-step="workload"] .card[data-step]:not([data-step="workload"]) { display: none; }
+.grid[data-step="schedule"] .card[data-step]:not([data-step="schedule"]) { display: none; }
+.grid[data-step="review"]   .card[data-step]:not([data-step="review"])   { display: none; }
+
+/* Wizard review panel — synthesises the configured run for confirmation. */
+.wizard-review { margin: var(--sp-4) var(--content-padding-x) 0; }
+.wizard-review-grid {
+  display: grid;
+  grid-template-columns: minmax(140px, max-content) 1fr;
+  gap: var(--sp-2) var(--sp-4);
+  margin: 0;
+}
+.wizard-review-grid dt {
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-tertiary);
+  font-weight: var(--fw-semibold);
+}
+.wizard-review-grid dd {
+  margin: 0;
+  font-size: var(--fs-13);
+  color: var(--text-primary);
+}
+
+
+/* ============================================================================
    HERO RUN — the load-test surface.
    Layout: action row (title + subtitle + Start CTA) on top, subtle "last run"
    strip footer below. The hero is the ACTION; the most recent run is shown
