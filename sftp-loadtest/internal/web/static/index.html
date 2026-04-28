@@ -543,7 +543,10 @@
   <header class="masthead">
     <div class="meta" style="margin-bottom:8px">
       <span><span class="edition">The Transfer Desk</span><span class="sep">·</span>Late Edition</span>
-      <span><span id="m_date">—</span><span class="sep">·</span><span id="m_clock">—</span></span>
+      <span style="display:flex; align-items:center; gap:10px">
+        <span id="m_date">—</span><span class="sep">·</span><span id="m_clock">—</span>
+        <button type="button" id="quitBtn" class="ghost" title="Quit the application (Wails desktop) or this browser tab" style="margin-left:6px; font-size:12px; padding:3px 10px">Quit</button>
+      </span>
     </div>
     <h1>SFTP Load Test</h1>
     <p class="dek">Lightweight end-to-end throughput, processing-time, and error reporting — for the fastidious engineer.</p>
@@ -1157,11 +1160,82 @@ CFG_KEYS.concat(TOGGLES).forEach(k => { const el = $(k); if (el) el.addEventList
 restoreConfig();
 
 // ---------- start / stop ----------
+// ensureHostKeyTrusted runs a pre-flight /api/probe with the first user's
+// credentials. If the server presents a host key we haven't seen before, the
+// probe responds with requires_consent + the SHA-256 fingerprint; we show
+// that to the operator in a confirm() dialog and, on Accept, re-probe with
+// trust_on_first_use=true to actually append the key. Returns true when the
+// key is trusted (run can proceed), false when the operator declined.
+//
+// Any non-host-key probe failure (auth, unreachable, etc.) returns true so
+// /api/start can run and surface its own error — we only intercept the
+// specific case where TLS/SSH host-key trust is missing.
+async function ensureHostKeyTrusted(host, port) {
+  function firstUser(raw) {
+    if (!raw) return null;
+    for (const line of raw.split('\n')) {
+      const t = line.trim();
+      if (!t) continue;
+      const parts = t.split(',');
+      if (parts.length >= 2) return { user: parts[0].trim(), pass: parts[1] };
+    }
+    return null;
+  }
+  const cred = firstUser(getCsvRaw('normal_users')) ||
+               firstUser(getCsvRaw('large_users')) ||
+               firstUser(getCsvRaw('download_users'));
+  if (!cred) return true; // no creds, /api/start will fail validation with a useful message
+
+  const probeBody = { host, port, username: cred.user, password: cred.pass };
+  let r;
+  try {
+    r = await (await apiFetch('/api/probe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(probeBody),
+    })).json();
+  } catch {
+    return true; // probe itself failed — let /api/start show the real error
+  }
+  if (r.ok) return true;
+  if (!r.requires_consent || !r.captured_fingerprint) {
+    // Probe failed for some other reason (auth, refused, list error). Don't
+    // block — let /api/start fail with the underlying error so the operator
+    // sees the actual problem instead of a wrong "host key" question.
+    return true;
+  }
+
+  const accept = window.confirm(
+    `New SSH host key for ${r.captured_for_host || host}\n\n` +
+    `${r.captured_fingerprint}\n\n` +
+    `Trust this key and add it to known_hosts?\n\n` +
+    `Click OK only if you've verified the fingerprint out-of-band.\n` +
+    `Click Cancel to abort the run.`
+  );
+  if (!accept) return false;
+
+  probeBody.trust_on_first_use = true;
+  const r2 = await (await apiFetch('/api/probe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(probeBody),
+  })).json();
+  if (!r2.ok) {
+    throw new Error(`failed to add host key: ${r2.error || 'unknown'}`);
+  }
+  return true;
+}
+
 async function start() {
   $('err').textContent = '';
   saveConfig();
   const body = buildRequestBody();
   try {
+    const trusted = await ensureHostKeyTrusted(body.host, body.port);
+    if (!trusted) {
+      $('err').textContent = 'Run cancelled — server host key was not trusted.';
+      return;
+    }
     const res = await apiFetch('/api/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(await res.text());
     rememberConn(body.host, body.port);
@@ -1173,6 +1247,29 @@ async function stop() { await apiFetch('/api/stop', { method: 'POST' }); }
 
 $('startBtn').addEventListener('click', start);
 $('stopBtn').addEventListener('click', stop);
+
+// ---------- Quit button ----------
+// Wails on some Windows builds renders without a native close affordance, so
+// the masthead carries an explicit Quit button that calls the Wails runtime
+// when present (closes the desktop window) and falls back to window.close()
+// in a regular browser tab. The confirm() prompt prevents accidental closes
+// during a live run.
+if ($('quitBtn')) {
+  $('quitBtn').addEventListener('click', () => {
+    if (!window.confirm('Quit SFTP Load Test? Any active run will be cancelled.')) return;
+    if (window.runtime && typeof window.runtime.Quit === 'function') {
+      window.runtime.Quit();
+    } else {
+      // Plain browser tab: window.close() only works on tabs the script opened
+      // itself; if the user has the page in a normal tab the call is a no-op
+      // and we fall back to a navigation hint.
+      window.close();
+      setTimeout(() => {
+        $('err').textContent = 'Browser blocked window.close — close this tab manually.';
+      }, 100);
+    }
+  });
+}
 
 // ---------- speed source tagging ----------
 // MB/s must never be blank or misleading. When per-file timing is unreliable
