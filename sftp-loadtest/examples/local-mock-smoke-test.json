@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "exported_at": "2026-04-28T00:00:00Z",
+  "passwords_included": true,
+  "comment": "Smoke test against the local Dockerised mock SFTP at 127.0.0.1:2222. Mock auto-renames each upload to <name>#<trackid> after ~1s — both upload and download phases exercise the same /inbox folder.",
+  "config": {
+    "host": "127.0.0.1",
+    "port": 2222,
+    "upload_folder": "/inbox",
+    "parallel_streams": 2,
+    "duration_hours": 0.05,
+    "poll_seconds": 1,
+    "track_id_timeout_seconds": 60,
+    "max_consecutive_failures": 5,
+
+    "normal_enabled": true,
+    "files_per_minute": 60,
+    "normal_min_mb": 1,
+    "normal_max_mb": 5,
+    "normal_content_type": "binary",
+    "normal_users_csv": "alice,pw1,inv*\nbob,pw2,ord*\ncarol,pw3,rep*",
+
+    "large_enabled": false,
+    "large_min": 100,
+    "large_max": 500,
+    "large_unit": "MB",
+    "interval_minutes": 30,
+    "large_users_csv": "",
+
+    "download_enabled": true,
+    "download_folder": "/inbox",
+    "download_parallel_streams": 2,
+    "download_users_csv": "alice,pw1,*\nbob,pw2,*\ncarol,pw3,*"
+  }
+}
