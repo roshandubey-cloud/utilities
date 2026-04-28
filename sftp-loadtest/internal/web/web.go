@@ -19,6 +19,7 @@ import (
 
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/config"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/hostinfo"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/hostkeys"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/persist"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/proc"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/report"
@@ -41,7 +42,12 @@ type Server struct {
 	reportsDir     string
 	schedules      *scheduleStore // nil if -schedules-dir wasn't provided
 	stopCh         chan struct{}  // closed on shutdown to stop background tickers
-	knownHostsPath string         // set by main.go from -known-hosts; "" = TOFU disabled
+	knownHostsPath string         // set by main.go from -known-hosts; "" = file mode disabled
+	// hostKeyStore is the tool-managed JSON trust store. When non-nil it is
+	// the authoritative source for host-key trust decisions and the legacy
+	// file-based code paths are bypassed. When nil, the operator passed
+	// -known-hosts (file mode) or -insecure-host-key (no verification).
+	hostKeyStore *hostkeys.Store
 }
 
 // NewServer constructs the HTTP server. schedulesDir may be empty, in which
@@ -63,10 +69,9 @@ func NewServer(reportsDir, schedulesDir string) *Server {
 // Shutdown stops background tickers. Call before exiting.
 func (s *Server) Shutdown() { close(s.stopCh) }
 
-// SetKnownHostsPath records the path the operator passed via -known-hosts so
-// the probe handler can offer Trust-On-First-Use enrollment. Pass "" when
-// the operator launched in -insecure-host-key mode — TOFU isn't meaningful
-// there and the probe handler will reject TOFU requests with a clear error.
+// SetKnownHostsPath records the path the operator passed via -known-hosts.
+// Used only in legacy file-mode; the tool-managed JSON store (set via
+// SetHostKeyStore) is preferred and bypasses this entirely.
 func (s *Server) SetKnownHostsPath(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -77,6 +82,21 @@ func (s *Server) getKnownHostsPath() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.knownHostsPath
+}
+
+// SetHostKeyStore wires the tool-managed JSON trust store into the web
+// layer. When set, all probe / pre-flight / runtime host-key decisions
+// flow through it and the legacy file-based code paths are dormant.
+func (s *Server) SetHostKeyStore(store *hostkeys.Store) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.hostKeyStore = store
+}
+
+func (s *Server) getHostKeyStore() *hostkeys.Store {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hostKeyStore
 }
 
 // startedAt is recorded once at construction for the /healthz uptime field.
@@ -165,30 +185,41 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 	var capturedFP, capturedPrev string
 	var capturedChanged bool
 	khPath := s.getKnownHostsPath()
+	store := s.getHostKeyStore()
 
-	// AcceptChanged with a known_hosts path: rewrite the file to drop any
-	// existing entry for this host. The TOFU callback below then appends
-	// the new key as if for an unknown host. Done before the SSH dial so
-	// strict-checking sees a clean slate.
-	if req.AcceptChanged && req.TrustOnFirstUse && khPath != "" {
-		if err := sftpx.RemoveKnownHostEntries(khPath, addr); err != nil {
-			log.Printf("probe %s: remove existing known_hosts entry: %v", addr, err)
-			out["stage"] = "ssh_or_sftp"
-			out["error"] = "could not rewrite known_hosts to overwrite previous entry"
-			writeJSON(w, out)
-			return
+	// AcceptChanged: drop the existing trust entry so the TOFU dial below
+	// re-records the new key. Done before the SSH dial so strict-checking
+	// sees a clean slate. Implementation differs by mode (store vs file)
+	// but the user-visible behaviour is identical.
+	if req.AcceptChanged && req.TrustOnFirstUse {
+		switch {
+		case store != nil:
+			if _, rerr := store.Remove(req.Host, req.Port); rerr != nil {
+				log.Printf("probe %s: remove existing trust entry: %v", addr, rerr)
+				out["stage"] = "ssh_or_sftp"
+				out["error"] = "could not update trust store to overwrite previous entry"
+				writeJSON(w, out)
+				return
+			}
+			log.Printf("probe %s: removed previous trust entry per accept_changed", addr)
+		case khPath != "":
+			if err := sftpx.RemoveKnownHostEntries(khPath, addr); err != nil {
+				log.Printf("probe %s: remove existing known_hosts entry: %v", addr, err)
+				out["stage"] = "ssh_or_sftp"
+				out["error"] = "could not rewrite known_hosts to overwrite previous entry"
+				writeJSON(w, out)
+				return
+			}
+			log.Printf("probe %s: removed previous known_hosts entry per accept_changed", addr)
 		}
-		log.Printf("probe %s: removed previous known_hosts entry per accept_changed", addr)
 	}
 
 	switch {
-	case req.TrustOnFirstUse:
-		if khPath == "" {
-			out["stage"] = "ssh_or_sftp"
-			out["error"] = "trust_on_first_use requires the server to have been launched with -known-hosts <path>"
-			writeJSON(w, out)
-			return
-		}
+	case req.TrustOnFirstUse && store != nil:
+		dialOpts.HostKeyCallback = store.TOFUCallback(func(ck hostkeys.CapturedKey) {
+			capturedFP = ck.Fingerprint
+		})
+	case req.TrustOnFirstUse && khPath != "":
 		cb, cberr := sftpx.TOFUCallback(khPath, func(host, fp string) {
 			capturedFP = fp
 		})
@@ -199,9 +230,18 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		dialOpts.HostKeyCallback = cb
+	case req.TrustOnFirstUse:
+		out["stage"] = "ssh_or_sftp"
+		out["error"] = "trust_on_first_use requires the tool-managed trust store or -known-hosts <path>"
+		writeJSON(w, out)
+		return
+	case store != nil:
+		dialOpts.HostKeyCallback = store.CaptureCallback(func(ck hostkeys.CapturedKey) {
+			capturedFP = ck.Fingerprint
+			capturedPrev = ck.Previous
+			capturedChanged = ck.Changed
+		})
 	case khPath != "":
-		// Capture-preview path — strict check + capture fingerprint on
-		// unknown-host AND changed-key cases so the UI can prompt the user.
 		cb, cberr := sftpx.CapturePreviewCallback(khPath, func(ck sftpx.CapturedKey) {
 			capturedFP = ck.Fingerprint
 			capturedPrev = ck.Previous
@@ -235,8 +275,10 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 			out["captured_for_host"] = req.Host
 			out["error"] = "Server presented a DIFFERENT host key than the one already in known_hosts. Verify out-of-band before accepting."
 		case capturedFP != "" && (errors.Is(err, sftpx.ErrHostKeyConsentRequired) ||
+			errors.Is(err, hostkeys.ErrUnknownHost) ||
 			strings.Contains(err.Error(), "user consent required") ||
 			strings.Contains(err.Error(), "knownhosts: key is unknown") ||
+			strings.Contains(err.Error(), "host key not trusted") ||
 			strings.Contains(err.Error(), "ssh: handshake failed")):
 			out["requires_consent"] = true
 			out["captured_fingerprint"] = capturedFP
@@ -253,11 +295,17 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 	if capturedFP != "" && req.TrustOnFirstUse {
 		out["captured_fingerprint"] = capturedFP
 		out["captured_for_host"] = req.Host
-		// The process-wide host-key callback was loaded once at startup from
-		// the known_hosts file. We just appended a new entry — reload so the
-		// next /api/start (and every existing run's reconnect) sees it.
-		if err := sftpx.UseKnownHosts(s.getKnownHostsPath()); err != nil {
-			log.Printf("reload known_hosts after TOFU: %v", err)
+		// Store mode: the in-memory map already has the new key — the
+		// process-wide StrictCallback reads it on every Dial, no reload
+		// needed. File mode: the process-wide callback was loaded once
+		// at startup from the OpenSSH file; reload it so next /api/start
+		// sees the freshly-appended entry.
+		if store == nil {
+			if khPath := s.getKnownHostsPath(); khPath != "" {
+				if err := sftpx.UseKnownHosts(khPath); err != nil {
+					log.Printf("reload known_hosts after TOFU: %v", err)
+				}
+			}
 		}
 	}
 
@@ -326,7 +374,67 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/schedule", s.handleScheduleCreate)
 	mux.HandleFunc("/api/schedules", s.handleScheduleList)
 	mux.HandleFunc("/api/schedule/cancel", s.handleScheduleCancel)
+	mux.HandleFunc("/api/hostkeys", s.handleHostKeys)
+	mux.HandleFunc("/api/hostkeys/remove", s.handleHostKeysRemove)
 	return mux
+}
+
+// handleHostKeys returns the list of trusted host keys. Read-only; the UI
+// renders a row per entry with a delete button that hits /api/hostkeys/remove.
+// In legacy file-mode we surface a small {mode:"file"} stub so the UI can
+// fall back to "managed externally — see -known-hosts file" instead of
+// pretending the list is empty.
+func (s *Server) handleHostKeys(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "GET required", http.StatusMethodNotAllowed)
+		return
+	}
+	store := s.getHostKeyStore()
+	if store == nil {
+		writeJSON(w, map[string]any{
+			"mode":  "file",
+			"path":  s.getKnownHostsPath(),
+			"hosts": []any{},
+		})
+		return
+	}
+	writeJSON(w, map[string]any{
+		"mode":  "store",
+		"path":  store.Path(),
+		"hosts": store.List(),
+	})
+}
+
+// handleHostKeysRemove deletes a single trust entry. Body: {host, port}.
+// Only meaningful in store-mode; in file-mode the operator owns the file.
+func (s *Server) handleHostKeysRemove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	store := s.getHostKeyStore()
+	if store == nil {
+		http.Error(w, "trust store not enabled (file-mode); edit the known_hosts file directly", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Host string `json:"host"`
+		Port int    `json:"port"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Host == "" {
+		http.Error(w, "host required", http.StatusBadRequest)
+		return
+	}
+	removed, err := store.Remove(req.Host, req.Port)
+	if err != nil {
+		http.Error(w, "remove: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"removed": removed})
 }
 
 // latest returns the most recently started run, or nil if none.
@@ -491,13 +599,13 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	// Pre-flight host-key check. Without this, a Start Run that hits an
 	// unknown or changed key only surfaces as per-record errors after the
 	// run starts streaming — operators have no remediation path. Try a
-	// single dial with the first available user via the CapturePreview
-	// callback; if consent is needed, return the structured response so
-	// the UI can prompt and re-call /api/start once the operator accepts.
-	if khPath := s.getKnownHostsPath(); khPath != "" {
+	// single dial with the first available user via the capture callback;
+	// if consent is needed, return the structured response so the UI can
+	// prompt and re-call /api/start once the operator accepts.
+	if s.getHostKeyStore() != nil || s.getKnownHostsPath() != "" {
 		creds := firstStartCredential(req)
 		if creds.user != "" && req.Host != "" && req.Port > 0 {
-			if pre := s.preflightHostKey(khPath, req.Host, req.Port, creds.user, creds.pass); pre != nil {
+			if pre := s.preflightHostKey(req.Host, req.Port, creds.user, creds.pass); pre != nil {
 				writeJSON(w, pre)
 				return
 			}
@@ -516,25 +624,39 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"run_id": run.ID})
 }
 
-// preflightHostKey runs a single CapturePreview dial. Returns a non-nil JSON
-// payload only when the UI needs to show a consent prompt — unknown host
-// (requires_consent) or changed host key (requires_renewal). All other errors
-// (TCP refused, auth failure, etc.) are tolerated here so the actual run can
-// start and propagate them as ordinary per-file failures; the caller has
-// already pre-validated the request shape.
-func (s *Server) preflightHostKey(khPath, host string, port int, user, pass string) map[string]any {
+// preflightHostKey runs a single capture-callback dial. Returns a non-nil
+// JSON payload only when the UI needs to show a consent prompt — unknown
+// host (requires_consent) or changed host key (requires_renewal). All other
+// errors (TCP refused, auth failure, etc.) are tolerated here so the actual
+// run can start and propagate them as ordinary per-file failures.
+//
+// Mode selection mirrors handleProbe: store-mode when SetHostKeyStore was
+// called, file-mode otherwise.
+func (s *Server) preflightHostKey(host string, port int, user, pass string) map[string]any {
 	var capturedFP, capturedPrev string
 	var capturedChanged bool
-	cb, cberr := sftpx.CapturePreviewCallback(khPath, func(ck sftpx.CapturedKey) {
-		capturedFP = ck.Fingerprint
-		capturedPrev = ck.Previous
-		capturedChanged = ck.Changed
-	})
-	if cberr != nil {
-		log.Printf("preflight setup: %v", cberr)
+	var dialOpts sftpx.DialOpts
+	if store := s.getHostKeyStore(); store != nil {
+		dialOpts.HostKeyCallback = store.CaptureCallback(func(ck hostkeys.CapturedKey) {
+			capturedFP = ck.Fingerprint
+			capturedPrev = ck.Previous
+			capturedChanged = ck.Changed
+		})
+	} else if khPath := s.getKnownHostsPath(); khPath != "" {
+		cb, cberr := sftpx.CapturePreviewCallback(khPath, func(ck sftpx.CapturedKey) {
+			capturedFP = ck.Fingerprint
+			capturedPrev = ck.Previous
+			capturedChanged = ck.Changed
+		})
+		if cberr != nil {
+			log.Printf("preflight setup: %v", cberr)
+			return nil
+		}
+		dialOpts.HostKeyCallback = cb
+	} else {
 		return nil
 	}
-	c, err := sftpx.DialWithOpts(host, port, user, pass, sftpx.DialOpts{HostKeyCallback: cb})
+	c, err := sftpx.DialWithOpts(host, port, user, pass, dialOpts)
 	if err == nil {
 		c.Close()
 		return nil
@@ -551,8 +673,10 @@ func (s *Server) preflightHostKey(khPath, host string, port int, user, pass stri
 			"error":                           "Server presented a DIFFERENT host key than the one already in known_hosts. Verify out-of-band before accepting.",
 		}
 	case capturedFP != "" && (errors.Is(err, sftpx.ErrHostKeyConsentRequired) ||
+		errors.Is(err, hostkeys.ErrUnknownHost) ||
 		strings.Contains(err.Error(), "user consent required") ||
-		strings.Contains(err.Error(), "knownhosts: key is unknown")):
+		strings.Contains(err.Error(), "knownhosts: key is unknown") ||
+		strings.Contains(err.Error(), "host key not trusted")):
 		log.Printf("start preflight %s:%d: unknown host key (%s)", host, port, capturedFP)
 		return map[string]any{
 			"ok":                   false,

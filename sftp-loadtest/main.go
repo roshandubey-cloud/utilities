@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/fdlimit"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/hostkeys"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/sftpx"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/web"
 )
@@ -57,41 +58,42 @@ func main() {
 
 	// SSH host-key verification.
 	//
-	// Default behaviour (no flags): use a per-user known_hosts file under
-	// the OS config dir, auto-create it empty, and rely on the UI's
-	// trust-on-first-use flow to populate it. The first time the operator
-	// runs against a new SFTP host, the UI prompts to trust the key; on
-	// subsequent runs the entry is already there and the dial passes
-	// strict verification with no further prompting.
+	// Default behaviour (no flags): tool-managed JSON trust store at
+	// <config-dir>/sftp-loadtest/hosts.json. The store is the source of
+	// truth at runtime; the UI's trust-on-first-use, key-changed-consent,
+	// list-trusted, and remove-trusted controls all flow through it.
+	// Out-of-band file edits get overwritten on the next change so the
+	// UI and the runtime never disagree.
 	//
-	// -known-hosts <path> overrides the default path (CI / shared-fleet
-	// scenarios). -insecure-host-key remains for ephemeral lab tests but
-	// is no longer required for normal use.
-	if *knownHosts == "" && !*insecureHostKey {
-		def, derr := defaultKnownHostsPath()
-		if derr != nil {
-			log.Fatalf("default known_hosts path: %v (pass -known-hosts <path> or -insecure-host-key to override)", derr)
-		}
-		if err := os.MkdirAll(filepath.Dir(def), 0o700); err != nil {
-			log.Fatalf("create known_hosts dir: %v", err)
-		}
-		// Touch the file so UseKnownHosts has something to load. An empty
-		// file is fine — TOFU will append on the first successful probe.
-		if _, err := os.Stat(def); os.IsNotExist(err) {
-			if f, ferr := os.OpenFile(def, os.O_CREATE|os.O_WRONLY, 0o600); ferr == nil {
-				f.Close()
-			}
-		}
-		*knownHosts = def
-	}
+	// -known-hosts <path> keeps the legacy OpenSSH-format file behaviour
+	// for CI / shared-fleet setups where the operator manages the file
+	// externally. -insecure-host-key remains for ephemeral lab tests.
+	var hkStore *hostkeys.Store
 	switch {
 	case *knownHosts != "":
 		if err := sftpx.UseKnownHosts(*knownHosts); err != nil {
 			log.Fatalf("known-hosts: %v", err)
 		}
-		log.Printf("ssh host-key verification: known_hosts=%s (managed via UI; first-run hosts will prompt for trust)", *knownHosts)
+		log.Printf("ssh host-key verification: known_hosts=%s (operator-managed file)", *knownHosts)
 	case *insecureHostKey:
 		sftpx.AllowAnyHostKey(log.Printf)
+	default:
+		def, derr := defaultHostKeysStorePath()
+		if derr != nil {
+			log.Fatalf("default trust store path: %v", derr)
+		}
+		store, oerr := hostkeys.Open(def)
+		if oerr != nil {
+			log.Fatalf("open trust store %s: %v", def, oerr)
+		}
+		// Materialise the file at 0o600 on first run so the UI can rely
+		// on its existence and an external reader sees our perms.
+		if err := store.Save(); err != nil {
+			log.Fatalf("init trust store: %v", err)
+		}
+		hkStore = store
+		sftpx.SetHostKeyCallback(store.StrictCallback())
+		log.Printf("ssh host-key verification: trust store=%s (managed via UI)", def)
 	}
 
 	// Resolve to absolute path so logs and HTTP downloads are unambiguous.
@@ -131,6 +133,9 @@ func main() {
 	// -insecure-host-key mode, this stays empty and the probe handler
 	// refuses TOFU requests with a clear error.
 	srv.SetKnownHostsPath(*knownHosts)
+	if hkStore != nil {
+		srv.SetHostKeyStore(hkStore)
+	}
 	handler := srv.Routes()
 
 	if *debug {
@@ -219,20 +224,20 @@ func main() {
 	log.Println("stopped")
 }
 
-// defaultKnownHostsPath returns the per-user known_hosts file location
-// inside the OS config dir. The UI's trust-on-first-use flow appends here
-// on a first successful probe, so subsequent runs against the same host
-// pass strict verification without operator action.
+// defaultHostKeysStorePath returns the per-user trust-store path inside
+// the OS config dir. The UI's controls (TOFU, accept-changed, list,
+// delete) all read and write through this store; out-of-band file edits
+// are overwritten on the next change.
 //
-// macOS:   ~/Library/Application Support/sftp-loadtest/known_hosts
-// Linux:   ~/.config/sftp-loadtest/known_hosts (respects $XDG_CONFIG_HOME)
-// Windows: %AppData%\sftp-loadtest\known_hosts
-func defaultKnownHostsPath() (string, error) {
+// macOS:   ~/Library/Application Support/sftp-loadtest/hosts.json
+// Linux:   ~/.config/sftp-loadtest/hosts.json (respects $XDG_CONFIG_HOME)
+// Windows: %AppData%\sftp-loadtest\hosts.json
+func defaultHostKeysStorePath() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "sftp-loadtest", "known_hosts"), nil
+	return filepath.Join(dir, "sftp-loadtest", "hosts.json"), nil
 }
 
 // isLoopback reports whether host resolves to a loopback or unspecified

@@ -529,6 +529,19 @@
     <!-- Hosting node for the runs-history panel. The mount script relocates
          this into the legacy right-column at runtime so historical runs
          appear where operators expect them. -->
+    <section class="panel panel-compact" data-component="trusted-hosts" id="trusted-hosts">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <div class="panel-title">Trusted SSH host keys</div>
+          <div class="panel-subtitle">Every server you've accepted, with its fingerprint. Remove any entry and the next connection prompts to trust the key again.</div>
+        </div>
+        <div class="panel-actions">
+          <span data-role="count" class="body-small" style="color:var(--text-tertiary)"></span>
+        </div>
+      </div>
+      <div class="panel-body" data-role="content"></div>
+    </section>
+
     <section class="panel" data-component="runs-history" id="history">
       <div class="panel-header">
         <div class="panel-title-group">

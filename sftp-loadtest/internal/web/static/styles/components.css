@@ -1274,6 +1274,62 @@
 }
 
 
+/* ============================================================================
+   TRUSTED HOSTS — list of accepted SSH host keys with Forget controls.
+   ============================================================================ */
+
+.trusted-hosts-empty {
+  padding: var(--sp-3) 0;
+}
+.trusted-hosts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.trusted-host {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: var(--bw-1) solid var(--border-subtle);
+  border-radius: var(--r-2);
+  background: var(--surface-2);
+}
+.trusted-host-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.trusted-host-id {
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+.trusted-host-port {
+  color: var(--text-tertiary);
+}
+.trusted-host-fp {
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+.trusted-host-added {
+  color: var(--text-tertiary);
+}
+.trusted-host-source {
+  margin-left: var(--sp-1);
+  padding: 0 6px;
+  border: var(--bw-1) solid var(--border-subtle);
+  border-radius: var(--r-1);
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+}
+.trusted-host-actions { flex-shrink: 0; }
+
+
 /* Pattern chips — flexible layout per row, wraps as more patterns added. */
 .users-editor-patterns {
   display: flex;

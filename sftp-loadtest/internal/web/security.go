@@ -51,6 +51,7 @@ var bodySizeLimits = map[string]int64{
 	"/api/probe":           8 << 10, // 8 KiB
 	"/api/stop":            1 << 10, // 1 KiB (empty body in practice)
 	"/api/schedule/cancel": 1 << 10,
+	"/api/hostkeys/remove": 1 << 10,
 }
 
 // BodySizeLimit caps r.Body via http.MaxBytesReader before the handler reads
@@ -130,10 +131,12 @@ var rateLimitedPaths = map[string]rateLimit{
 	"/api/schedule":        {capacity: 10, refill: 1.0},
 	"/api/schedule/cancel": {capacity: 10, refill: 1.0},
 	"/api/stop":            {capacity: 10, refill: 1.0},
+	"/api/hostkeys/remove": {capacity: 10, refill: 1.0},
 	"/api/runs":            {capacity: 60, refill: 30.0},
 	"/api/host":            {capacity: 60, refill: 30.0},
 	"/api/status":          {capacity: 60, refill: 30.0},
 	"/api/schedules":       {capacity: 60, refill: 30.0},
+	"/api/hostkeys":        {capacity: 60, refill: 30.0},
 }
 
 type rateLimit struct {

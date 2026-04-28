@@ -164,10 +164,10 @@ func (s *Server) handleScheduleCreate(w http.ResponseWriter, r *http.Request) {
 	// pre-flight: if the key is unknown or changed, refuse to schedule and
 	// surface the structured response so the UI can offer the same Accept
 	// flow before the user confirms the schedule.
-	if khPath := s.getKnownHostsPath(); khPath != "" {
+	if s.getHostKeyStore() != nil || s.getKnownHostsPath() != "" {
 		creds := firstStartCredential(req.Cfg)
 		if creds.user != "" && req.Cfg.Host != "" && req.Cfg.Port > 0 {
-			if pre := s.preflightHostKey(khPath, req.Cfg.Host, req.Cfg.Port, creds.user, creds.pass); pre != nil {
+			if pre := s.preflightHostKey(req.Cfg.Host, req.Cfg.Port, creds.user, creds.pass); pre != nil {
 				writeJSON(w, pre)
 				return
 			}
