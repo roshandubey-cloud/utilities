@@ -328,16 +328,12 @@
        =================================================================== -->
   <header class="app-masthead" data-component="masthead">
     <div class="masthead-inner">
-      <a href="#test" class="brand">
+      <a href="#hero" class="brand">
         <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/></svg>
+          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 4.5L20.5 19.5H3.5z"/></svg>
         </span>
         <span class="brand-name">SFTP Load Test</span>
       </a>
-      <nav class="masthead-nav" aria-label="Primary">
-        <a href="#hero"         class="masthead-link" aria-current="page">Load tests</a>
-        <a href="#legacy-shell" class="masthead-link">Schedules &amp; reports</a>
-      </nav>
       <div class="masthead-actions">
         <span class="masthead-status" title="Server status">
           <span class="masthead-status-dot" data-role="status-dot" data-state="idle" aria-hidden="true"></span>
@@ -522,11 +518,10 @@
          purely navigational chrome. -->
     <nav data-component="wizard" id="legacy-shell" class="wizard"></nav>
 
-    <!-- Legacy banner kept (now a sub-note under the wizard); content below
-         is the actual configuration surface, filtered by step. -->
+    <!-- Sub-note under the wizard: short cue for what comes next. -->
     <div class="legacy-banner">
       <span class="icon icon-sm" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 8v5"/><path d="M12 16.5h.01"/><circle cx="12" cy="12" r="9"/></svg></span>
-      <span><strong>Configure &amp; schedule below.</strong> The run configuration, scheduler, and reports tables are mid-redesign — they still work, they just haven't been re-themed yet.</span>
+      <span><strong>Configure your run.</strong> Set upload, schedule (optional), then review and start.</span>
     </div>
   </main>
 
@@ -624,7 +619,7 @@
         </header>
         <div class="body">
           <div class="row">
-            <div><label>Files per minute (total)</label><input id="fpm" type="number" value="60" min="1"></div>
+            <div><label>Files per minute</label><input id="fpm" type="number" value="60" min="1"></div>
             <div><label>Min size (MB)</label><input id="nmin" type="number" value="1" min="1"></div>
             <div><label>Max size (MB)</label><input id="nmax" type="number" value="5" min="1"></div>
             <div><label>Content</label>

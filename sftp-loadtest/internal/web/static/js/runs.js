@@ -34,7 +34,7 @@ function render(latest, errorMsg) {
     <div class="hero-action">
       <div class="hero-action-text">
         <div class="hero-title">Run a load test</div>
-        <div class="hero-subtitle">Generate-and-upload SFTP files at controlled rates. Watch processing-time per file. Capture downloads. Stream a CSV report.</div>
+        <div class="hero-subtitle">Generate uploads at a controlled rate, track processing time per file, capture downloads, stream a CSV report.</div>
       </div>
       <div class="hero-action-cta">
         <button class="btn btn-primary btn-lg" type="button" data-role="start-cta">Start a new load test</button>
