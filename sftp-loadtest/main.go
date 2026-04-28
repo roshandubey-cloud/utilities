@@ -32,7 +32,7 @@ func main() {
 	authUser := flag.String("auth-user", "", "if set together with -auth-pass, require HTTP Basic auth on every request")
 	authPass := flag.String("auth-pass", "", "password to pair with -auth-user")
 
-	knownHosts := flag.String("known-hosts", "", "OpenSSH-format known_hosts file used to verify SFTP server keys (recommended)")
+	knownHosts := flag.String("known-hosts", "", "OpenSSH-format known_hosts file used to verify SFTP server keys (default: <user-config-dir>/sftp-loadtest/known_hosts, auto-created and managed via the UI's trust-on-first-use flow)")
 	insecureHostKey := flag.Bool("insecure-host-key", false, "DANGEROUS: disable SSH host-key verification entirely (only for ephemeral lab tests)")
 
 	trustProxy := flag.String("trust-proxy", "", "comma-separated CIDRs whose X-Forwarded-For header is honoured for rate-limit attribution; empty (default) ignores XFF entirely")
@@ -55,19 +55,43 @@ func main() {
 	// up front instead of at mystery failure time mid-run.
 	fdlimit.Check()
 
-	// SSH host-key verification: prefer known_hosts, fall back to explicit
-	// opt-out, otherwise refuse to dial. This is process-wide; the runtime
-	// installs the callback into sftpx so every Dial uses it.
+	// SSH host-key verification.
+	//
+	// Default behaviour (no flags): use a per-user known_hosts file under
+	// the OS config dir, auto-create it empty, and rely on the UI's
+	// trust-on-first-use flow to populate it. The first time the operator
+	// runs against a new SFTP host, the UI prompts to trust the key; on
+	// subsequent runs the entry is already there and the dial passes
+	// strict verification with no further prompting.
+	//
+	// -known-hosts <path> overrides the default path (CI / shared-fleet
+	// scenarios). -insecure-host-key remains for ephemeral lab tests but
+	// is no longer required for normal use.
+	if *knownHosts == "" && !*insecureHostKey {
+		def, derr := defaultKnownHostsPath()
+		if derr != nil {
+			log.Fatalf("default known_hosts path: %v (pass -known-hosts <path> or -insecure-host-key to override)", derr)
+		}
+		if err := os.MkdirAll(filepath.Dir(def), 0o700); err != nil {
+			log.Fatalf("create known_hosts dir: %v", err)
+		}
+		// Touch the file so UseKnownHosts has something to load. An empty
+		// file is fine — TOFU will append on the first successful probe.
+		if _, err := os.Stat(def); os.IsNotExist(err) {
+			if f, ferr := os.OpenFile(def, os.O_CREATE|os.O_WRONLY, 0o600); ferr == nil {
+				f.Close()
+			}
+		}
+		*knownHosts = def
+	}
 	switch {
 	case *knownHosts != "":
 		if err := sftpx.UseKnownHosts(*knownHosts); err != nil {
 			log.Fatalf("known-hosts: %v", err)
 		}
-		log.Printf("ssh host-key verification: known_hosts=%s", *knownHosts)
+		log.Printf("ssh host-key verification: known_hosts=%s (managed via UI; first-run hosts will prompt for trust)", *knownHosts)
 	case *insecureHostKey:
 		sftpx.AllowAnyHostKey(log.Printf)
-	default:
-		log.Fatal("ssh host-key verification: pass -known-hosts <path> (recommended) or -insecure-host-key (lab use only)")
 	}
 
 	// Resolve to absolute path so logs and HTTP downloads are unambiguous.
@@ -193,6 +217,22 @@ func main() {
 		log.Fatal(serveErr)
 	}
 	log.Println("stopped")
+}
+
+// defaultKnownHostsPath returns the per-user known_hosts file location
+// inside the OS config dir. The UI's trust-on-first-use flow appends here
+// on a first successful probe, so subsequent runs against the same host
+// pass strict verification without operator action.
+//
+// macOS:   ~/Library/Application Support/sftp-loadtest/known_hosts
+// Linux:   ~/.config/sftp-loadtest/known_hosts (respects $XDG_CONFIG_HOME)
+// Windows: %AppData%\sftp-loadtest\known_hosts
+func defaultKnownHostsPath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "sftp-loadtest", "known_hosts"), nil
 }
 
 // isLoopback reports whether host resolves to a loopback or unspecified

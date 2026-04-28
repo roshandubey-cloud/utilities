@@ -75,24 +75,24 @@ All releases: [github.com/roshandubey-cloud/utilities/releases](https://github.c
 curl -LO https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-webui-mac-apple-silicon.zip
 unzip sftp-loadtest-webui-mac-apple-silicon.zip
 xattr -cr ./sftp-loadtest-mac-apple-silicon && chmod +x ./sftp-loadtest-mac-apple-silicon
-./sftp-loadtest-mac-apple-silicon -known-hosts ~/.ssh/known_hosts
+./sftp-loadtest-mac-apple-silicon
 
 # macOS (Intel) — web-ui flavor
 curl -LO https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-webui-mac-intel.zip
 unzip sftp-loadtest-webui-mac-intel.zip
 xattr -cr ./sftp-loadtest-mac-intel && chmod +x ./sftp-loadtest-mac-intel
-./sftp-loadtest-mac-intel -known-hosts ~/.ssh/known_hosts
+./sftp-loadtest-mac-intel
 
 # Linux (amd64) — web-ui flavor
 curl -LO https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-webui-linux-amd64.zip
 unzip sftp-loadtest-webui-linux-amd64.zip
 chmod +x ./sftp-loadtest-linux-amd64
-./sftp-loadtest-linux-amd64 -known-hosts ~/.ssh/known_hosts
+./sftp-loadtest-linux-amd64
 
 # Windows (amd64) — web-ui flavor (PowerShell)
 Invoke-WebRequest https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-webui-windows-amd64.zip -OutFile sftp-loadtest-webui-windows-amd64.zip
 Expand-Archive sftp-loadtest-webui-windows-amd64.zip
-.\sftp-loadtest-webui-windows-amd64\sftp-loadtest-windows-amd64.exe -known-hosts $env:USERPROFILE\.ssh\known_hosts
+.\sftp-loadtest-webui-windows-amd64\sftp-loadtest-windows-amd64.exe
 ```
 
 **desktop-app flavor:** download the zip for your platform from the second
@@ -100,9 +100,13 @@ table above, unzip, and double-click. No flags needed — all options are
 configurable from the native window. macOS users get a Gatekeeper warning
 the first time (self-signed); right-click → Open, then "Open Anyway".
 
-> **Note:** SSH host-key verification is now mandatory. Pass either
-> `-known-hosts <path>` (recommended) or `-insecure-host-key` (lab use only).
-> See [docs/security.md](docs/security.md) for the full security model.
+> **SSH host-key verification is on by default.** No flags required — the
+> tool auto-creates a per-user `known_hosts` file under your OS config
+> directory, and the UI prompts you to trust each new server's key the
+> first time you connect (and prompts again if a server's key changes).
+> Override the path with `-known-hosts <file>`, or pass `-insecure-host-key`
+> for ephemeral lab tests. See [docs/security.md](docs/security.md) for
+> the full security model.
 
 You'll see:
 ```
