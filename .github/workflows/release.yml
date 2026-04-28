@@ -103,7 +103,9 @@ jobs:
   # ---------------------------------------------------------------- Linux
   build-linux:
     name: build linux (webui amd64+arm64, desktop-app amd64)
-    runs-on: ubuntu-latest
+    # ubuntu-22.04 is pinned because Wails 2.x requires webkit2gtk-4.0,
+    # which was removed from ubuntu-24.04 (the new ubuntu-latest).
+    runs-on: ubuntu-22.04
     env:
       VERSION: ${{ github.ref_name }}
     steps:
