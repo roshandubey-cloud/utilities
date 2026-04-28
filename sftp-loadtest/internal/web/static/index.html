@@ -1428,8 +1428,13 @@ async function poll() {
     du.forEach(d => {
       const c = document.createElement('span');
       c.className = 'chip';
-      c.title = `${d.kind} user "${d.user}" — ${d.total_failed} total fails, last=${d.last_code}`;
-      c.innerHTML = `<b>⛔ ${d.user}</b> (${d.kind}, ${d.last_code})`;
+      // Compose the chip body and tooltip from whatever the backend sent.
+      // last_file is empty for non-file failures (DIAL/AUTH); only show it
+      // when it's actually meaningful so the chip stays terse for those.
+      const fileSuffix = d.last_file ? ` · file: ${d.last_file}` : '';
+      const fileTooltip = d.last_file ? `\nlast file: ${d.last_file}` : '';
+      c.title = `${d.kind} user "${d.user}" — ${d.total_failed} total fails, last=${d.last_code}${fileTooltip}`;
+      c.innerHTML = `<b>⛔ ${d.user}</b> (${d.kind}, ${d.last_code}${fileSuffix})`;
       dchips.appendChild(c);
     });
 

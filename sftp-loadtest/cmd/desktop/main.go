@@ -26,6 +26,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
 
 // Embedded brand bitmap — same source as Wails uses for macOS .icns and
@@ -73,9 +74,17 @@ func main() {
 	app := NewApp(srv, reportsDir)
 
 	err = wails.Run(&options.App{
-		Title:  "SFTP Load Test",
-		Width:  1280,
-		Height: 820,
+		Title:     "SFTP Load Test",
+		Width:     1280,
+		Height:    820,
+		MinWidth:  900,
+		MinHeight: 600,
+		// Frameless explicitly false so Wails always renders the OS-native
+		// title bar with minimize / maximize / close. Earlier desktop bundles
+		// shipped on some Windows machines without these affordances; keeping
+		// this opt-in setting documented prevents a regression.
+		Frameless:    false,
+		DisableResize: false,
 		AssetServer: &assetserver.Options{
 			// No embedded asset bundle — the existing internal/web static
 			// FS is served via srv.Routes() through Handler. Keeps the
@@ -93,6 +102,14 @@ func main() {
 				Message: "SFTP load testing tool — desktop edition.\nMIT licensed.\nhttps://github.com/roshandubey-cloud/utilities",
 				Icon:    appIcon,
 			},
+		},
+		Windows: &windows.Options{
+			// Standard chrome with the close / minimize / maximize triplet —
+			// Wails defaults to this, but we set the block explicitly so the
+			// behaviour is obvious to anyone reading this file later.
+			DisableWindowIcon:    false,
+			WebviewIsTransparent: false,
+			WindowIsTranslucent:  false,
 		},
 		Linux: &linux.Options{
 			Icon: appIcon,

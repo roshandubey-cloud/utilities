@@ -30,9 +30,14 @@ type userStatus struct {
 	consecutive    atomic.Int64
 	totalFailed    atomic.Int64
 	disabled       atomic.Bool
-	disabledAtNano atomic.Int64   // 0 until disabled
+	disabledAtNano atomic.Int64           // 0 until disabled
 	lastCode       atomic.Pointer[string]
 	lastAtNano     atomic.Int64
+	// lastFile captures the most recent basename associated with a failure
+	// (empty when not applicable, e.g. a DIAL failure has no file). Surfaced
+	// in DisabledSnapshot so the UI's disabled-users chip can show *which*
+	// file the operator should investigate, not just the failure code.
+	lastFile atomic.Pointer[string]
 }
 
 type disablePolicy struct {
@@ -86,6 +91,14 @@ func (p *disablePolicy) onSuccess(user, kind string) {
 // onFailure bumps the counter; returns true iff this call is the one that
 // crossed the threshold (so callers can log once).
 func (p *disablePolicy) onFailure(user, kind, code string) bool {
+	return p.onFailureFor(user, kind, code, "")
+}
+
+// onFailureFor is like onFailure but also records the basename of the file
+// involved in the failure (empty string when the failure has no file context,
+// e.g. a DIAL error). Surfaces in the DisabledSnapshot.LastFile so the
+// disabled-users chip can show which file the operator should investigate.
+func (p *disablePolicy) onFailureFor(user, kind, code, basename string) bool {
 	if p == nil {
 		return false
 	}
@@ -97,6 +110,10 @@ func (p *disablePolicy) onFailure(user, kind, code string) bool {
 	s.lastAtNano.Store(time.Now().UnixNano())
 	codeCopy := code
 	s.lastCode.Store(&codeCopy)
+	if basename != "" {
+		fileCopy := basename
+		s.lastFile.Store(&fileCopy)
+	}
 	n := s.consecutive.Add(1)
 	if p.threshold > 0 && n >= int64(p.threshold) {
 		if s.disabled.CompareAndSwap(false, true) {
@@ -117,11 +134,12 @@ func (p *disablePolicy) isDisabled(user, kind string) bool {
 
 type DisabledSnapshot struct {
 	User        string    `json:"user"`
-	Kind        string    `json:"kind"`  // "upload" or "download"
+	Kind        string    `json:"kind"` // "upload" or "download"
 	At          time.Time `json:"at"`
 	Consecutive int64     `json:"consecutive"`
 	TotalFailed int64     `json:"total_failed"`
 	LastCode    string    `json:"last_code"`
+	LastFile    string    `json:"last_file"` // basename of the most recent file involved in a failure (may be empty for DIAL/AUTH errors)
 	LastAt      time.Time `json:"last_at"`
 }
 
@@ -139,6 +157,10 @@ func (p *disablePolicy) snapshot() []DisabledSnapshot {
 			if sp := s.lastCode.Load(); sp != nil {
 				lc = *sp
 			}
+			lf := ""
+			if fp := s.lastFile.Load(); fp != nil {
+				lf = *fp
+			}
 			out = append(out, DisabledSnapshot{
 				User:        s.user,
 				Kind:        s.kind,
@@ -146,6 +168,7 @@ func (p *disablePolicy) snapshot() []DisabledSnapshot {
 				Consecutive: s.consecutive.Load(),
 				TotalFailed: s.totalFailed.Load(),
 				LastCode:    lc,
+				LastFile:    lf,
 				LastAt:      time.Unix(0, s.lastAtNano.Load()),
 			})
 		}
@@ -260,6 +283,7 @@ func sealAllAndWriteMeta(r *Run, reportsDir string) error {
 			Consecutive: d.Consecutive,
 			TotalFailed: d.TotalFailed,
 			LastCode:    d.LastCode,
+			LastFile:    d.LastFile,
 			LastAt:      d.LastAt,
 		})
 	}
@@ -678,7 +702,7 @@ func (r *Run) consumeTrackIDs() {
 			r.Report.AttachTrackID(res.User, res.Basename, res.TrackID, res.DetectedAt, res.TimedOut)
 			if res.TimedOut {
 				r.errCounts.inc("TRACKID_TIMEOUT")
-				r.disable.onFailure(res.User, "upload", "TRACKID_TIMEOUT")
+				r.disable.onFailureFor(res.User, "upload", "TRACKID_TIMEOUT", res.Basename)
 			}
 		}
 	}
@@ -795,7 +819,7 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 				result.EndTime = start
 				result.Error = err.Error()
 				r.errCounts.inc("DOWNLOAD")
-				r.disable.onFailure(u.Username, "download", "DOWNLOAD")
+				r.disable.onFailureFor(u.Username, "download", "DOWNLOAD", basename)
 			} else {
 				n, derr := c.Download(path.Join(folder, name))
 				result.EndTime = time.Now()
@@ -804,7 +828,7 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 					slot.markDead()
 					result.Error = derr.Error()
 					r.errCounts.inc("DOWNLOAD")
-					r.disable.onFailure(u.Username, "download", "DOWNLOAD")
+					r.disable.onFailureFor(u.Username, "download", "DOWNLOAD", basename)
 				} else {
 					result.SpeedMBps = report.RawSpeedMBps(n, result.EndTime.Sub(start))
 					r.disable.onSuccess(u.Username, "download")
@@ -1086,7 +1110,10 @@ func (r *Run) uploadOne(u config.UserCreds, size int64, kind string) {
 		r.FailedFiles.Add(1)
 		r.FailedBytes.Add(bytesSent)
 		r.errCounts.inc(code)
-		r.disable.onFailure(u.Username, "upload", code)
+		// Pass the basename so the disabled-users chip can show *which* file
+		// was the most recent victim — saves operators digging through the
+		// per-file report for context.
+		r.disable.onFailureFor(u.Username, "upload", code, rec.Filename)
 	}
 
 	// Panic recovery: a crash in pkg/sftp, the generator, or the pool would

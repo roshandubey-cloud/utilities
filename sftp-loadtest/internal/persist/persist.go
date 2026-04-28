@@ -49,6 +49,7 @@ type DisabledUser struct {
 	Consecutive int64     `json:"consecutive"`
 	TotalFailed int64     `json:"total_failed"`
 	LastCode    string    `json:"last_code"`
+	LastFile    string    `json:"last_file"` // basename of the most recent file involved (empty for non-file failures)
 	LastAt      time.Time `json:"last_at"`
 }
 
