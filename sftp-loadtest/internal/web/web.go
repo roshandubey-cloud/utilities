@@ -559,28 +559,38 @@ func (s *Server) handleReportCSV(w http.ResponseWriter, r *http.Request) {
 			return runner.EffectiveSpeedMBps(bytes, startTime, dur, snap)
 		}
 		streamPath := run.ReportStreamPath()
-		if streamPath == "" {
-			// No streaming configured — fall back to bulk in-memory snapshot.
-			if err := report.WriteCSV(w, run.Report.Snapshot(), run.SlowdownMinutes(), eff); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+		if streamPath != "" {
+			// Active streaming path: the on-disk file is append-only. Read its
+			// current size, stream those bytes (frozen — flushes only ever
+			// extend past this mark), then append the in-memory tail as CSV
+			// rows. If the file is empty yet (no row has been flushed), write
+			// the header ourselves so clients always get a valid file.
+			if data, err := os.ReadFile(streamPath); err == nil && len(data) > 0 {
+				_, _ = w.Write(data)
+			} else {
+				cw := csv.NewWriter(w)
+				_ = cw.Write(report.CSVHeader)
+				cw.Flush()
 			}
+			cw := csv.NewWriter(w)
+			_ = run.Report.WriteRemainingCSV(cw, run.SlowdownMinutes(), eff)
+			cw.Flush()
 			return
 		}
-		// Streaming path: the on-disk file is append-only. Read its current
-		// size, stream those bytes (which are frozen — flushes only ever
-		// extend the file past that mark), then append the in-memory tail
-		// as CSV rows. If the file is empty yet (no row has been flushed),
-		// write the header ourselves so clients always get a valid file.
-		if data, err := os.ReadFile(streamPath); err == nil && len(data) > 0 {
-			_, _ = w.Write(data)
-		} else {
-			cw := csv.NewWriter(w)
-			_ = cw.Write(report.CSVHeader)
-			cw.Flush()
+		// Run is in-memory but its stream writer has been closed (finalized).
+		// The fully-flushed file lives on disk; stream that. We only fall back
+		// to the in-memory snapshot when no reports-dir is configured at all
+		// (and even then, after seal, the snapshot is typically drained).
+		if s.reportsDir != "" {
+			if f, err := os.Open(persist.CSVPath(s.reportsDir, run.ID)); err == nil {
+				defer f.Close()
+				_, _ = io.Copy(w, f)
+				return
+			}
 		}
-		cw := csv.NewWriter(w)
-		_ = run.Report.WriteRemainingCSV(cw, run.SlowdownMinutes(), eff)
-		cw.Flush()
+		if err := report.WriteCSV(w, run.Report.Snapshot(), run.SlowdownMinutes(), eff); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
 	// Historical run → stream the file from disk.
