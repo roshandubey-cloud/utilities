@@ -5,6 +5,7 @@
 import { initTheme } from './theme.js';
 import { mountMasthead } from './masthead.js';
 import { mountHostBar } from './host.js';
+import { mountRunHeader } from './run-header.js';
 import { mountHeroRun } from './runs.js';
 import { mountConnectionCard } from './connection.js';
 import { mountRecords } from './records.js';
@@ -15,6 +16,7 @@ initTheme();
 
 document.addEventListener('DOMContentLoaded', () => {
   mountMasthead('[data-component="masthead"]');
+  mountRunHeader('[data-component="run-header"]');
   mountHostBar('[data-component="host-bar"]');
   mountHeroRun('[data-component="hero-run"]');
   mountConnectionCard('[data-component="connection"]');

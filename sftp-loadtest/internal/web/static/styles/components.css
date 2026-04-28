@@ -1155,6 +1155,190 @@
 
 
 /* ============================================================================
+   TOAST — top-right stack of dismissable notifications. Slide+fade in/out.
+   ============================================================================ */
+
+.toast-host {
+  position: fixed;
+  top: calc(var(--masthead-height) + var(--sp-3));
+  right: var(--sp-4);
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  pointer-events: none;
+  max-width: 420px;
+}
+
+.toast {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: 16px 1fr auto auto;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-3);
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-medium);
+  border-radius: var(--r-3);
+  box-shadow: var(--shadow-2);
+  font-size: var(--fs-13);
+  color: var(--text-primary);
+  transform: translateX(110%);
+  opacity: 0;
+  transition: transform var(--t-default) var(--ease-out), opacity var(--t-default) var(--ease-out);
+}
+.toast[data-entered="1"] { transform: translateX(0); opacity: 1; }
+.toast[data-leaving="1"] { transform: translateX(110%); opacity: 0; }
+
+.toast-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+.toast-icon svg { width: 16px; height: 16px; }
+
+.toast-message { line-height: var(--lh-normal); }
+
+.toast-action {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-link);
+  font-family: var(--font-sans);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-2);
+}
+.toast-action:hover { background: var(--action-hover); }
+
+.toast-close {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-2);
+}
+.toast-close svg { width: 14px; height: 14px; }
+.toast-close:hover { background: var(--action-hover); color: var(--text-primary); }
+
+.toast-success { border-color: var(--success-border); }
+.toast-success .toast-icon { color: var(--success-fg-soft); }
+.toast-warn    { border-color: var(--warning-border); }
+.toast-warn    .toast-icon { color: var(--warning-fg-soft); }
+.toast-error   { border-color: var(--danger-border); }
+.toast-error   .toast-icon { color: var(--danger-fg-soft); }
+.toast-info    { border-color: var(--info-border); }
+.toast-info    .toast-icon { color: var(--info-fg-soft); }
+
+
+/* ============================================================================
+   SKELETON — pulsing placeholders for async-loading content.
+   ============================================================================ */
+
+.skeleton {
+  display: block;
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--action-hover) 50%, var(--surface-2) 100%);
+  background-size: 200% 100%;
+  border-radius: var(--r-2);
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+.skeleton-line     { height: 14px; margin-bottom: var(--sp-2); }
+.skeleton-line:last-child { margin-bottom: 0; }
+.skeleton-line-sm  { height: 10px; }
+.skeleton-line-lg  { height: 22px; }
+.skeleton-circle   { border-radius: var(--r-pill); }
+.skeleton-block    { height: 80px; }
+
+
+/* ============================================================================
+   FIELD VALIDATION STATES — used by inline validation.
+   ============================================================================ */
+
+.field-error {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-12);
+  color: var(--danger-fg-soft);
+  margin-top: var(--sp-1);
+}
+.field-error[hidden] { display: none; }
+.field-error .icon { width: 12px; height: 12px; flex-shrink: 0; }
+
+
+/* ============================================================================
+   STICKY RUN HEADER — appears below the masthead when a run is active.
+   Shows elapsed timer, run id, files counter, and a Stop button visible
+   from any scroll position.
+   ============================================================================ */
+
+.run-header {
+  position: sticky;
+  top: var(--masthead-height);
+  z-index: var(--z-sticky);
+  background: var(--success-bg-soft);
+  border-bottom: var(--bw-1) solid var(--success-border);
+  display: none;
+}
+.run-header[data-active="true"] { display: block; }
+.run-header-inner {
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  padding: var(--sp-2) var(--content-padding-x);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-13);
+  flex-wrap: wrap;
+}
+.run-header-pulse {
+  width: 8px; height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--success);
+  animation: status-pulse 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.run-header-id { color: var(--text-primary); font-weight: var(--fw-semibold); }
+.run-header-id .mono { color: var(--text-secondary); font-weight: var(--fw-regular); margin-left: var(--sp-1); }
+.run-header-stat { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.run-header-stat strong { color: var(--text-primary); font-weight: var(--fw-semibold); }
+.run-header-actions { margin-left: auto; display: flex; gap: var(--sp-2); }
+/* When sticky run header is showing, push the host bar below it. */
+.run-header[data-active="true"] + .host-bar { top: calc(var(--masthead-height) + 36px); }
+
+
+/* ============================================================================
+   MICRO-TRANSITIONS — small, deliberate. Avoid global transitions on every
+   property; opt in per surface.
+   ============================================================================ */
+
+.records-tbl tbody tr {
+  animation: row-enter var(--t-default) var(--ease-out);
+}
+@keyframes row-enter {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .records-tbl tbody tr,
+  .toast,
+  .skeleton,
+  .rec-live-dot,
+  .masthead-status-dot { animation: none !important; transition: none !important; }
+}
+
+
+/* ============================================================================
    HERO RUN — the load-test surface.
    Layout: action row (title + subtitle + Start CTA) on top, subtle "last run"
    strip footer below. The hero is the ACTION; the most recent run is shown

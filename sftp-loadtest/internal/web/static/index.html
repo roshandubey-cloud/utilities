@@ -352,6 +352,22 @@
     </div>
   </header>
 
+  <!-- Sticky run-active header — appears between masthead and host bar
+       whenever a run is in progress. Visible from any scroll position so the
+       Stop button is one click away. -->
+  <div class="run-header" data-component="run-header" data-active="false" role="status" aria-live="polite">
+    <div class="run-header-inner">
+      <span class="run-header-pulse" aria-hidden="true"></span>
+      <span class="run-header-id">Run in progress<span class="mono" data-role="id"></span></span>
+      <span class="run-header-stat">elapsed <strong data-role="elapsed">—</strong></span>
+      <span class="run-header-stat"><strong data-role="files">0</strong> files</span>
+      <span class="run-header-stat"><strong data-role="mbps">0</strong> Mbps</span>
+      <span class="run-header-actions">
+        <button class="btn btn-sm btn-secondary" type="button" data-role="stop">Stop run</button>
+      </span>
+    </div>
+  </div>
+
   <!-- Host capacity bar — sticky one-liner below the masthead. Pulls from
        /api/host. Reference data, glance-and-forget. -->
   <div class="host-bar" data-component="host-bar" role="contentinfo" aria-label="Host capacity">

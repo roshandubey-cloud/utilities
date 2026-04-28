@@ -5,6 +5,7 @@
 // fingerprint capture, and ties into shared connection-history (host/port).
 
 import { apiPostJSON, apiFetch } from './api.js';
+import { pushToast } from './toast.js';
 
 const HISTORY_KEY = 'sftp-loadtest-conn-history-v1';
 const HISTORY_MAX = 8;
@@ -112,14 +113,57 @@ export function mountConnectionCard(rootSelector) {
       <div class="help" style="color:var(--danger-fg-soft);white-space:pre-wrap">${escapeHTML(msg || 'unknown error')}</div>`;
   }
 
+  // ---------- inline validation ----------
+  function validateField(el) {
+    if (!el) return true;
+    const field = el.closest('.field');
+    let err = '';
+    if (el === hostEl) {
+      if (!el.value.trim()) err = 'Host is required.';
+    } else if (el === portEl) {
+      const p = parseInt(el.value || '0', 10);
+      if (!p) err = 'Port is required.';
+      else if (p < 1 || p > 65535) err = 'Port must be 1–65535.';
+    }
+    if (field) {
+      field.dataset.invalid = err ? 'true' : 'false';
+      let errEl = field.querySelector('.field-error');
+      if (err) {
+        if (!errEl) {
+          errEl = document.createElement('div');
+          errEl.className = 'field-error';
+          errEl.innerHTML = '<span class="icon icon-xs" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16.5h.01"/></svg></span><span></span>';
+          field.appendChild(errEl);
+        }
+        errEl.querySelector('span:last-child').textContent = err;
+        errEl.hidden = false;
+      } else if (errEl) {
+        errEl.hidden = true;
+      }
+    }
+    return !err;
+  }
+  [hostEl, portEl].forEach((el) => {
+    if (!el) return;
+    el.addEventListener('blur', () => validateField(el));
+    el.addEventListener('input', () => {
+      // Clear error state once the user starts typing again.
+      const f = el.closest('.field');
+      if (f && f.dataset.invalid === 'true') validateField(el);
+    });
+  });
+
   // ---------- submit handler ----------
   async function probe() {
-    const host = (hostEl.value || '').trim();
-    const port = parseInt(portEl.value || '0', 10);
-    if (!host || !port) {
-      setError('Enter host and port first.', null);
+    const hostOK = validateField(hostEl);
+    const portOK = validateField(portEl);
+    if (!hostOK || !portOK) {
+      const firstInvalid = root.querySelector('.field[data-invalid="true"] .input');
+      if (firstInvalid) firstInvalid.focus();
       return;
     }
+    const host = (hostEl.value || '').trim();
+    const port = parseInt(portEl.value || '0', 10);
     submitEl.disabled = true;
     setTesting();
     try {
@@ -133,11 +177,14 @@ export function mountConnectionCard(rootSelector) {
       if (reply.ok) {
         setOk(reply, host);
         rememberConn(host, port);
+        pushToast(`Connected to ${host}:${port}${reply.captured_fingerprint ? ' (host key captured)' : ''}`, 'success');
       } else {
         setError(reply.error || 'unknown error', reply.stage);
+        pushToast(`Connection failed${reply.stage ? ' at ' + reply.stage : ''}`, 'error');
       }
     } catch (e) {
       setError(e.message || String(e), null);
+      pushToast(`Probe error: ${e.message || e}`, 'error');
     } finally {
       submitEl.disabled = false;
     }
