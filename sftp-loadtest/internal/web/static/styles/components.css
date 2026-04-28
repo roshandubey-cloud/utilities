@@ -1,0 +1,812 @@
+/* ============================================================================
+   components.css — atomic UI primitives
+   button · input · field · panel · badge · toggle · segmented · disclosure
+   Loaded after base.css. All sizing/colour resolves through tokens.css.
+   ============================================================================ */
+
+
+/* ============================================================================
+   BUTTON
+   Three variants × three sizes. Variant carries semantic weight (primary =
+   commit, secondary = neutral, ghost = tertiary). Size is structural only.
+   ============================================================================ */
+
+.btn {
+  /* base — every variant inherits */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  font-family: var(--font-sans);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;          /* defeat the legacy global `button { text-transform: uppercase }` */
+  white-space: nowrap;
+  border: var(--bw-1) solid transparent;
+  border-radius: var(--r-2);
+  cursor: pointer;
+  user-select: none;
+  text-decoration: none;
+  transition:
+    background-color var(--t-fast) var(--ease-out),
+    border-color    var(--t-fast) var(--ease-out),
+    color           var(--t-fast) var(--ease-out),
+    box-shadow      var(--t-fast) var(--ease-out);
+}
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* sizes */
+.btn-sm { height: 28px; padding: 0 var(--sp-3); font-size: var(--fs-12); }
+.btn,
+.btn-md { height: 32px; padding: 0 var(--sp-4); font-size: var(--fs-13); }
+.btn-lg { height: 40px; padding: 0 var(--sp-5); font-size: var(--fs-14); }
+
+/* variants — primary = filled accent */
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+.btn-primary:hover    { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn-primary:active   { background: var(--accent-active); border-color: var(--accent-active); }
+.btn-primary:focus-visible { box-shadow: var(--focus-ring); }
+
+/* secondary = bordered, neutral surface */
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text-primary);
+  border-color: var(--border-medium);
+}
+.btn-secondary:hover  { background: var(--surface-2); border-color: var(--border-strong); }
+.btn-secondary:active { background: var(--surface-3); }
+.btn-secondary:focus-visible { box-shadow: var(--focus-ring); }
+
+/* ghost = no chrome until hover */
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: transparent;
+}
+.btn-ghost:hover  { background: var(--action-hover); color: var(--text-primary); }
+.btn-ghost:active { background: var(--action-pressed); }
+.btn-ghost:focus-visible { box-shadow: var(--focus-ring-strong); }
+
+/* danger = destructive (delete, force-stop) */
+.btn-danger {
+  background: var(--danger);
+  color: #ffffff;
+  border-color: var(--danger);
+}
+.btn-danger:hover { filter: brightness(1.1); }
+
+/* icon-only variant — square, used for theme toggle / close */
+.btn-icon {
+  width: 32px; height: 32px;
+  padding: 0;
+  border-radius: var(--r-2);
+}
+.btn-icon.btn-sm { width: 28px; height: 28px; }
+
+
+/* ============================================================================
+   INPUT — text, number, datetime
+   Labels live ABOVE inputs. Use .field wrapper for label + input + help text.
+   ============================================================================ */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.field-row {
+  display: grid;
+  gap: var(--sp-3);
+  grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
+}
+
+.label {
+  font-size: var(--fs-12);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  letter-spacing: var(--tracking-normal);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.label .label-hint {
+  font-weight: var(--fw-regular);
+  color: var(--text-tertiary);
+}
+
+.help {
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
+  line-height: var(--lh-normal);
+}
+
+.input,
+.textarea,
+.select {
+  display: block;
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-regular);
+  color: var(--input-fg);
+  background: var(--input-bg);
+  border: var(--bw-1) solid var(--input-border);
+  border-radius: var(--r-2);
+  padding: 0 var(--sp-3);
+  height: 32px;
+  line-height: 1;
+  transition:
+    border-color   var(--t-fast) var(--ease-out),
+    background     var(--t-fast) var(--ease-out),
+    box-shadow     var(--t-fast) var(--ease-out);
+}
+.input::placeholder,
+.textarea::placeholder { color: var(--input-placeholder); }
+
+.input:hover,
+.textarea:hover,
+.select:hover { background: var(--input-bg-hover); border-color: var(--input-border-hover); }
+
+.input:focus-visible,
+.textarea:focus-visible,
+.select:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.input:disabled,
+.textarea:disabled,
+.select:disabled {
+  background: var(--input-bg-disabled);
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+/* validation state */
+.input.is-invalid,
+.textarea.is-invalid,
+.field[data-invalid="true"] .input,
+.field[data-invalid="true"] .textarea {
+  border-color: var(--danger);
+}
+.field[data-invalid="true"] .help { color: var(--danger); }
+
+.textarea {
+  height: auto;
+  min-height: 80px;
+  padding: var(--sp-2) var(--sp-3);
+  line-height: var(--lh-normal);
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+
+/* number input — strip native spinner clutter */
+.input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+.input[type="number"]::-webkit-outer-spin-button,
+.input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* ============================================================================
+   PANEL — Grafana-style card. Title + actions row + body.
+   ============================================================================ */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-3);
+  overflow: hidden;
+}
+/* Light theme panels lift via shadow (the dark surface-step trick doesn't work
+   on white-on-white). Dark theme panels rely on surface-step + border-weak. */
+[data-theme="light"] .panel,
+[data-theme="light"] .card {
+  box-shadow: var(--shadow-1);
+  border-color: transparent;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .panel,
+  :root:not([data-theme]) .card { box-shadow: var(--shadow-1); border-color: transparent; }
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: var(--bw-1) solid var(--border-weak);
+  background: var(--surface);
+  min-height: 48px;
+}
+
+.panel-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.panel-title {
+  font-size: var(--fs-14);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  letter-spacing: var(--tracking-normal);
+}
+.panel-subtitle {
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
+}
+
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+
+.panel-body {
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.panel-footer {
+  padding: var(--sp-3) var(--sp-5);
+  border-top: var(--bw-1) solid var(--border-weak);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+  background: var(--surface-2);
+}
+
+.panel.is-loading { position: relative; }
+.panel.is-loading::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--action-hover), transparent);
+  animation: panel-shimmer 1.5s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes panel-shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+
+/* ============================================================================
+   BADGE — small status pill. Variants by semantic colour.
+   ============================================================================ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  height: 20px;
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-normal);
+  border-radius: var(--r-2);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  border: var(--bw-1) solid var(--border-weak);
+  white-space: nowrap;
+}
+.badge-success { color: var(--success-fg-soft); background: var(--success-bg-soft); border-color: var(--success-border); }
+.badge-warning { color: var(--warning-fg-soft); background: var(--warning-bg-soft); border-color: var(--warning-border); }
+.badge-danger  { color: var(--danger-fg-soft);  background: var(--danger-bg-soft);  border-color: var(--danger-border); }
+.badge-info    { color: var(--info-fg-soft);    background: var(--info-bg-soft);    border-color: var(--info-border); }
+
+.badge .dot {
+  width: 6px; height: 6px;
+  border-radius: var(--r-pill);
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+
+/* ============================================================================
+   TOGGLE — switch-style checkbox. Use for boolean settings.
+   <label class="toggle"><input type="checkbox"><span class="toggle-track"><span class="toggle-thumb"></span></span><span class="toggle-text">Label</span></label>
+   ============================================================================ */
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+  user-select: none;
+}
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.toggle-track {
+  position: relative;
+  display: inline-block;
+  width: 32px;
+  height: 18px;
+  background: var(--input-border);
+  border-radius: var(--r-pill);
+  transition: background var(--t-default) var(--ease-out);
+}
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background: var(--surface-inverse);
+  border-radius: 50%;
+  transition: transform var(--t-default) var(--ease-out);
+}
+.toggle input:checked + .toggle-track { background: var(--accent); }
+.toggle input:checked + .toggle-track .toggle-thumb { transform: translateX(14px); background: var(--accent-fg); }
+.toggle input:focus-visible + .toggle-track { box-shadow: var(--focus-ring-strong); }
+.toggle-text {
+  font-size: var(--fs-13);
+  color: var(--text-primary);
+}
+.toggle-text-secondary {
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+}
+
+
+/* ============================================================================
+   SEGMENTED CONTROL — used for theme switcher (light/dark/auto), tabs.
+   ============================================================================ */
+
+.segmented {
+  display: inline-flex;
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+  padding: 2px;
+  gap: 0;
+}
+.segmented button {
+  font-family: var(--font-sans);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-medium);
+  height: 24px;
+  padding: 0 var(--sp-3);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: var(--r-1);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+.segmented button:hover { color: var(--text-primary); }
+.segmented button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-1);
+}
+
+
+/* ============================================================================
+   ICON
+   Inline SVG sized via currentColor + inline-flex. Inherit text colour.
+   <span class="icon icon-sm"><svg>…</svg></span>
+   ============================================================================ */
+
+.icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+.icon svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.icon-xs { width: 12px; height: 12px; }
+.icon-sm { width: 14px; height: 14px; }
+.icon-md { width: 16px; height: 16px; }
+.icon-lg { width: 20px; height: 20px; }
+
+
+/* ============================================================================
+   DISCLOSURE — used to fold the legacy cards under a single banner during
+   Phase 1. Replaces native <details>/<summary> default styling.
+   ============================================================================ */
+
+.disclosure {
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-3);
+  background: var(--surface);
+  overflow: hidden;
+}
+.disclosure summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  cursor: pointer;
+  user-select: none;
+  background: var(--surface);
+  transition: background var(--t-fast) var(--ease-out);
+}
+.disclosure summary::-webkit-details-marker { display: none; }
+.disclosure summary:hover { background: var(--action-hover); }
+.disclosure summary:focus-visible { box-shadow: var(--focus-ring); }
+
+.disclosure summary .summary-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-primary);
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-13);
+}
+.disclosure summary .summary-meta {
+  color: var(--text-tertiary);
+  font-size: var(--fs-12);
+}
+.disclosure summary .summary-chevron {
+  display: inline-flex;
+  transition: transform var(--t-default) var(--ease-out);
+}
+.disclosure[open] summary .summary-chevron { transform: rotate(90deg); }
+
+.disclosure-content {
+  border-top: var(--bw-1) solid var(--border-weak);
+  padding: var(--sp-5);
+  background: var(--surface);
+}
+
+
+/* ============================================================================
+   PROBE-RESULT — staged result feedback (TCP → SSH → SFTP → list).
+   Used by the new Test Connection card. Each stage gets an icon + label + ms.
+   ============================================================================ */
+
+.probe-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+  background: var(--surface-2);
+}
+.probe-result[data-state="ok"]      { border-color: var(--success-border); background: var(--success-bg-soft); }
+.probe-result[data-state="error"]   { border-color: var(--danger-border);  background: var(--danger-bg-soft);  }
+.probe-result[data-state="testing"] { border-color: var(--info-border);    background: var(--info-bg-soft);    }
+.probe-result[data-state="idle"]    { display: none; }
+
+.probe-headline {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+.probe-stages {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.probe-stage {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2);
+  font-size: var(--fs-11);
+  font-family: var(--font-mono);
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+  color: var(--text-secondary);
+}
+.probe-stage[data-status="ok"]      { color: var(--success-fg-soft); border-color: var(--success-border); }
+.probe-stage[data-status="error"]   { color: var(--danger-fg-soft);  border-color: var(--danger-border); }
+.probe-stage[data-status="pending"] { color: var(--text-tertiary); }
+.probe-fingerprint {
+  margin-top: var(--sp-1);
+  padding: var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+  word-break: break-all;
+  user-select: all;
+}
+
+
+/* ============================================================================
+   SPINNER — minimal loading affordance, used in Test Connection during probe.
+   ============================================================================ */
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-medium);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spinner-rotate 0.8s linear infinite;
+}
+@keyframes spinner-rotate { to { transform: rotate(360deg); } }
+
+
+/* ============================================================================
+   UTILITIES — composition helpers
+   ============================================================================ */
+
+.row    { display: flex; align-items: center; gap: var(--sp-3); }
+.row-tight { display: flex; align-items: center; gap: var(--sp-2); }
+.col    { display: flex; flex-direction: column; gap: var(--sp-3); }
+.col-tight { display: flex; flex-direction: column; gap: var(--sp-2); }
+.spacer { flex: 1; }
+
+.divider {
+  height: 1px;
+  background: var(--border-weak);
+  margin: var(--sp-2) 0;
+}
+
+.legacy-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
+  background: var(--surface-2);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--r-2);
+}
+
+
+/* ============================================================================
+   APP MASTHEAD — top bar. 56 px tall, sticky, single bottom border.
+   Wordmark · primary nav · status + theme switcher.
+   ============================================================================ */
+
+.app-masthead {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  background: var(--surface);
+  border-bottom: var(--bw-1) solid var(--border-weak);
+  height: var(--masthead-height);
+}
+.masthead-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  height: 100%;
+  width: 100%;
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  padding: 0 var(--content-padding-x);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.brand-mark {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-radius: var(--r-2);
+}
+.brand-mark svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.brand-name {
+  font-size: var(--fs-14);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+}
+
+.masthead-nav {
+  display: flex;
+  gap: var(--sp-1);
+}
+.masthead-link {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  border-radius: var(--r-2);
+  text-decoration: none;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+.masthead-link:hover { color: var(--text-primary); background: var(--action-hover); text-decoration: none; }
+.masthead-link[aria-current="page"] { color: var(--text-primary); background: var(--action-selected); }
+
+.masthead-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.masthead-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-3);
+  height: 28px;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-pill);
+}
+.masthead-status-dot {
+  width: 8px; height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--text-tertiary);
+  position: relative;
+}
+.masthead-status-dot[data-state="idle"]    { background: var(--text-tertiary); }
+.masthead-status-dot[data-state="running"] { background: var(--success); box-shadow: 0 0 0 0 var(--success); animation: status-pulse 2s ease-in-out infinite; }
+.masthead-status-dot[data-state="error"]   { background: var(--danger); }
+@keyframes status-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(26, 127, 55, 0.5); }
+  70%  { box-shadow: 0 0 0 6px rgba(26, 127, 55, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(26, 127, 55, 0); }
+}
+
+@media (max-width: 720px) {
+  .masthead-nav { display: none; }
+  .masthead-status { display: none; }
+}
+
+
+/* ============================================================================
+   HERO RUN — the load-test surface.
+   Layout: action row (title + subtitle + Start CTA) on top, subtle "last run"
+   strip footer below. The hero is the ACTION; the most recent run is shown
+   accessibly but never headlines.
+   ============================================================================ */
+
+.hero-run { /* uses .panel base */ }
+
+.hero-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-6);
+  padding: var(--sp-5) var(--sp-5);
+  flex-wrap: wrap;
+}
+.hero-action-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+  flex: 1 1 320px;
+}
+.hero-title {
+  font-size: var(--fs-18);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  letter-spacing: var(--tracking-tight);
+}
+.hero-subtitle {
+  font-size: var(--fs-13);
+  color: var(--text-secondary);
+  line-height: var(--lh-normal);
+  max-width: 640px;
+}
+.hero-action-cta {
+  flex-shrink: 0;
+}
+
+/* Subtle status strip — last run as a single one-line summary, not a
+   metric grid. Sits inside the hero panel as a footer-band, divided from the
+   action above by a hairline. */
+.hero-last-run {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border-top: var(--bw-1) solid var(--border-weak);
+  flex-wrap: wrap;
+}
+.hero-last-run-label {
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+}
+.hero-last-run[data-active="true"] .hero-last-run-label {
+  color: var(--success-fg-soft);
+}
+.hero-last-run-id {
+  color: var(--text-secondary);
+  font-size: var(--fs-12);
+}
+.hero-last-run-meta {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.hero-last-run-time {
+  color: var(--text-tertiary);
+  font-size: var(--fs-12);
+}
+.hero-last-run-csv {
+  margin-left: auto;
+  color: var(--text-link);
+  font-size: var(--fs-12);
+  text-decoration: none;
+}
+.hero-last-run-csv:hover { color: var(--text-link-hover); text-decoration: underline; text-underline-offset: 2px; }
+.hero-last-run-empty,
+.hero-last-run-error {
+  color: var(--text-tertiary);
+  width: 100%;
+}
+
+
+/* ============================================================================
+   PANEL COMPACT — used for secondary panels (Quick checks). Smaller padding,
+   tighter visual weight, sits below the hero without competing for attention.
+   ============================================================================ */
+
+.panel-compact .panel-header {
+  padding: var(--sp-3) var(--sp-4);
+  min-height: 40px;
+}
+.panel-compact .panel-title    { font-size: var(--fs-13); }
+.panel-compact .panel-subtitle { font-size: var(--fs-12); }
+.panel-compact .panel-body     { padding: var(--sp-4); gap: var(--sp-3); }
+
+
+/* ============================================================================
+   LEGACY-FALLBACK — hide the old chrome (masthead, host-strip, proc-badge,
+   sched_banner, old connCard). Phase 2-4 will progressively migrate the
+   remaining cards into the new design system; until then the legacy grid
+   stays accessible inside a disclosure so the workflow keeps working.
+   ============================================================================ */
+
+body > .app > .masthead,
+body > .app > .host-strip,
+body > .app > .proc-badge,
+body > .app > .sched-banner {
+  display: none !important;
+}
+.app .grid #connCard { display: none !important; }
+

@@ -1,0 +1,551 @@
+/* ============================================================================
+   legacy-overrides.css — Phase 2.
+   Loaded AFTER the inline <style> in index.html so it wins the cascade.
+
+   Two responsibilities:
+     1. Redeclare :root tokens. The inline <style> redeclares its own --accent,
+        --bg, --rule, etc., which clobbers tokens.css. We restore the new
+        design system here AND map the legacy custom-property names onto the
+        new tokens so unmodified legacy CSS resolves through the new theme.
+     2. Override legacy component classes (.card, .pill, button, label, input,
+        table, .stats, .stat, .sched-banner, etc.) with new-system styling.
+        Legacy HTML stays untouched; visuals catch up with the new chrome.
+   ============================================================================ */
+
+/* ---------- :root re-establishment ----------
+   The legacy inline <style> redeclares its own :root and @media (dark) :root
+   blocks with raw hex for --surface, --surface-2, --accent, etc. — those
+   variable names collide with the new design system. Because the inline
+   <style> loads AFTER tokens.css, the legacy values win for any colliding
+   token. We restore the new values here, AFTER the inline <style>, so the
+   cascade lands on the correct token regardless of system pref or selected
+   theme. Values hardcoded to match tokens.css — keep in sync. */
+:root {
+  /* Surface stack — collide with new design system, must redeclare to win cascade. */
+  --surface:   #16181d;
+  --surface-2: #1d2026;
+
+  /* Accent — collides; legacy uses red/rose, new uses orange. */
+  --accent:           #ff780a;
+  --accent-hover:     #ff8c33;
+  --accent-active:    #e66a00;
+  --accent-fg:        #ffffff;
+
+  /* Map legacy variable names → new tokens. Anything that was using these
+     names continues to work but resolves through the new theme. */
+  --bg:          var(--canvas);
+  --rule:        var(--border-strong);
+  --border:      var(--border-weak);
+  --text:        var(--text-primary);
+  --muted:       var(--text-secondary);
+  --serif:       var(--font-sans);   /* serif aesthetic retired */
+  --sans:        var(--font-sans);
+  --mono:        var(--font-mono);
+  --accent-soft: var(--action-hover);
+  --ok:          var(--success);
+  --warn:        var(--warning);
+  --err:         var(--danger);
+  --slow:        var(--warning-bg-soft);
+  --shadow:      var(--shadow-1);
+}
+
+/* Light theme + auto dark/light: re-establish surface stack + accent.
+   Higher selector specificity ([data-theme="light"] is 0,1,1 vs :root at
+   0,0,1) plus later source order both ensure these win for the colliding
+   --surface/--surface-2 names. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --surface:       #ffffff;
+    --surface-2:     #f4f6f8;
+    --accent:        #ee5b21;
+    --accent-hover:  #ff6b30;
+    --accent-active: #d24a13;
+  }
+}
+[data-theme="light"] {
+  --surface:       #ffffff;
+  --surface-2:     #f4f6f8;
+  --accent:        #ee5b21;
+  --accent-hover:  #ff6b30;
+  --accent-active: #d24a13;
+}
+
+
+/* ============================================================================
+   APP SHELL — kill the legacy 28px outer padding (the new app-content already
+   handles spacing) and fold legacy .app into a clean container.
+   ============================================================================ */
+
+body { font-family: var(--font-sans); font-size: var(--fs-13); line-height: var(--lh-normal); }
+.app { max-width: var(--content-max-width); padding: 0 0 var(--sp-12); margin: 0 auto; }
+
+/* Neutralise the legacy global `button { text-transform: uppercase; letter-spacing: 0.05em; }`
+   so every new-system button (.btn-*) renders sentence-case. Without this the
+   inline <style>'s tag-level rule wins over my .btn base rule's text-transform. */
+button {
+  text-transform: none;
+  letter-spacing: var(--tracking-normal);
+}
+
+
+/* ============================================================================
+   GRID — tighten the column gap; the new design uses var(--sp-4).
+   ============================================================================ */
+
+.grid {
+  grid-template-columns: minmax(0, 440px) minmax(0, 1fr);
+  gap: var(--sp-4);
+  padding: 0 var(--content-padding-x);
+}
+@media (max-width: 960px) {
+  .grid { grid-template-columns: 1fr; gap: var(--sp-3); }
+}
+
+
+/* ============================================================================
+   CARD — was newspaper-cream box with serif uppercase tracked header.
+   New: clean panel matching the .panel component.
+   ============================================================================ */
+
+.card {
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-3);
+  margin-bottom: var(--sp-3);
+  overflow: hidden;
+}
+
+.card > header {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: var(--bw-1) solid var(--border-weak);
+  background: var(--surface);
+  font-family: var(--font-sans);
+  font-weight: var(--fw-semibold);
+  text-transform: none;          /* drop uppercase */
+  letter-spacing: var(--tracking-normal);
+  font-size: var(--fs-14);
+  color: var(--text-primary);
+  min-height: 44px;
+}
+
+.card > header .toggle-label {
+  display: flex; align-items: center; gap: var(--sp-2);
+  flex: 1; cursor: pointer; user-select: none;
+  font-weight: var(--fw-semibold);
+}
+
+.card > header input[type=checkbox] {
+  accent-color: var(--accent);
+  width: 14px; height: 14px;
+  margin: 0; padding: 0;
+  cursor: pointer;
+}
+
+/* Pills inside card headers — convert to subdued labels (no decorative em-dash). */
+.card > header .pill {
+  margin-left: auto;
+  font-family: var(--font-sans);
+  font-weight: var(--fw-regular);
+  font-size: var(--fs-12);
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+  color: var(--text-tertiary);
+  padding: 0;
+}
+.card > header .pill::before { content: ""; }
+
+.card > .body {
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.card.off > .body { display: none; }
+.card.off > header { opacity: 0.55; }
+
+
+/* ============================================================================
+   FORMS — labels lose the uppercase + tracked styling. Inputs adopt new height
+   and focus ring.
+   ============================================================================ */
+
+.card label {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  margin: 0 0 var(--sp-1);
+  font-weight: var(--fw-medium);
+  text-transform: none;
+  letter-spacing: var(--tracking-normal);
+}
+
+.card input[type=text],
+.card input[type=number],
+.card input[type=password],
+.card input[type=datetime-local],
+.card textarea,
+.card select {
+  width: 100%;
+  padding: 0 var(--sp-3);
+  height: 32px;
+  border: var(--bw-1) solid var(--input-border);
+  border-radius: var(--r-2);
+  background: var(--input-bg);
+  color: var(--input-fg);
+  font-size: var(--fs-13);
+  font-family: var(--font-sans);
+  transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
+}
+.card textarea {
+  height: auto;
+  min-height: 88px;
+  padding: var(--sp-2) var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: var(--lh-normal);
+  resize: vertical;
+}
+.card select { cursor: pointer; }
+
+.card input:hover,
+.card textarea:hover,
+.card select:hover { border-color: var(--input-border-hover); background: var(--input-bg-hover); }
+
+.card input:focus,
+.card textarea:focus,
+.card select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.card .row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--sp-3);
+}
+.card .row + .row,
+.card .row + label,
+.card label + .row { margin-top: var(--sp-2); }
+
+/* Hint paragraphs — drop the serif italic, use plain secondary type. */
+.card .hint {
+  color: var(--text-tertiary);
+  font-size: var(--fs-12);
+  margin-top: var(--sp-1);
+  font-family: var(--font-sans);
+  font-style: normal;
+  line-height: var(--lh-normal);
+}
+.card .hint b { color: var(--text-secondary); font-weight: var(--fw-semibold); }
+.card .hint code {
+  background: var(--surface-2);
+  padding: 1px var(--sp-1);
+  border-radius: var(--r-1);
+  font-size: 0.9em;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+/* Chips (.chip-btn — folder presets, recent connections, etc.) */
+.card .chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-1); align-items: center; }
+.card .chip-btn {
+  background: transparent;
+  border: var(--bw-1) solid var(--border-medium);
+  color: var(--text-secondary);
+  padding: 0 var(--sp-2);
+  height: 24px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-11);
+  font-family: var(--font-sans);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.card .chip-btn:hover { background: var(--action-hover); border-color: var(--border-strong); color: var(--text-primary); }
+.card .chip-btn.del { color: var(--text-tertiary); padding: 0 var(--sp-1); }
+
+/* CSV password mask — tone down the surface-2 background flip. */
+.card textarea.csv-users:not(:focus) { background: var(--input-bg-disabled); }
+.card textarea.csv-users:focus { background: var(--input-bg); }
+
+
+/* ============================================================================
+   BUTTONS — drop uppercase + tracked. Map .primary / .ghost to new variants.
+   ============================================================================ */
+
+.card .actions,
+.app .actions {
+  display: flex; gap: var(--sp-2); align-items: center;
+  padding: var(--sp-3) 0 0;
+  flex-wrap: wrap;
+}
+
+.card button,
+.app .actions button,
+.sched-banner button {
+  font-family: var(--font-sans);
+  cursor: pointer;
+  border-radius: var(--r-2);
+  border: var(--bw-1) solid transparent;
+  padding: 0 var(--sp-3);
+  height: 32px;
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+  font-size: var(--fs-13);
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+}
+
+.card button.primary,
+.app .actions button.primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+.card button.primary:hover:not(:disabled),
+.app .actions button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+.card button.ghost,
+.app .actions button.ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--border-medium);
+}
+.card button.ghost:hover:not(:disabled),
+.app .actions button.ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.card button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+a.link {
+  color: var(--text-link);
+  text-decoration: none;
+  font-family: var(--font-sans);
+  font-size: var(--fs-13);
+  text-transform: none;
+  letter-spacing: var(--tracking-normal);
+  font-weight: var(--fw-medium);
+  border-bottom: var(--bw-1) dashed transparent;
+}
+a.link:hover { color: var(--text-link-hover); border-bottom-color: var(--text-link-hover); }
+
+#err {
+  color: var(--danger);
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-13);
+  min-height: 18px;
+  font-family: var(--font-sans);
+  font-style: normal;
+}
+
+
+/* ============================================================================
+   STATS GRID (Live metrics card) — was big serif numbers in a tight grid with
+   double-rule headers. New: cleaner metric tiles using the new design system.
+   ============================================================================ */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0;
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-3);
+  overflow: hidden;
+  background: var(--surface);
+}
+.stat {
+  padding: var(--sp-3) var(--sp-4);
+  display: flex; flex-direction: column;
+  gap: var(--sp-1);
+  border-right: var(--bw-1) solid var(--border-weak);
+  border-bottom: var(--bw-1) solid var(--border-weak);
+  background: var(--surface);
+}
+.stat .k {
+  font-family: var(--font-sans);
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  font-weight: var(--fw-semibold);
+}
+.stat .v {
+  font-family: var(--font-mono);
+  font-size: var(--fs-22);
+  font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+}
+.stat.bad .v { color: var(--danger); }
+.stat.ok  .v { color: var(--success); }
+
+
+/* ============================================================================
+   TABLES — drop the heavy uppercase header, use the new design system.
+   ============================================================================ */
+
+.card table { border-collapse: separate; border-spacing: 0; font-size: var(--fs-12); min-width: 100%; }
+.card th, .card td {
+  text-align: left;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: var(--bw-1) solid var(--border-weak);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.card th {
+  background: var(--surface-2);
+  position: sticky; top: 0;
+  font-family: var(--font-sans);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+  z-index: 1;
+  font-size: var(--fs-11);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  border-bottom: var(--bw-1) solid var(--border-medium);
+  white-space: nowrap;
+}
+.card .tbl-wrap {
+  max-height: 380px;
+  overflow: auto;
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+  background: var(--surface);
+  min-height: 120px;
+}
+.card tr.slow { background: var(--warning-bg-soft); }
+.card tbody tr:hover { background: var(--action-hover); }
+.card .err-text { color: var(--danger); font-weight: var(--fw-semibold); }
+.card .muted { color: var(--text-tertiary); }
+
+.kind-large {
+  background: var(--info-bg-soft);
+  color: var(--info-fg-soft);
+  border: var(--bw-1) solid var(--info-border);
+  padding: 1px var(--sp-1);
+  border-radius: var(--r-1);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0;
+  font-family: var(--font-sans);
+  text-transform: none;
+}
+.sched-tag {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: var(--bw-1) solid var(--accent);
+  padding: 1px var(--sp-1);
+  border-radius: var(--r-1);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0;
+  font-family: var(--font-sans);
+  margin-right: var(--sp-1);
+  text-transform: none;
+}
+.code-chip {
+  display: inline-block;
+  padding: 1px var(--sp-1);
+  border-radius: var(--r-1);
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+/* ============================================================================
+   EMPTY / ERROR LINES
+   ============================================================================ */
+
+.empty {
+  display: flex; align-items: center; justify-content: center;
+  height: 100%;
+  color: var(--text-tertiary);
+  font-size: var(--fs-13);
+  padding: var(--sp-6);
+  text-align: center;
+  font-family: var(--font-sans);
+  font-style: normal;
+}
+.errors-line {
+  display: flex; flex-wrap: wrap;
+  gap: var(--sp-1);
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  padding: var(--sp-2) 0 0;
+  font-family: var(--font-mono);
+}
+.errors-line .chip {
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
+  padding: 1px var(--sp-2);
+  border-radius: var(--r-1);
+  color: var(--text-secondary);
+}
+.errors-line .chip b { color: var(--danger); font-weight: var(--fw-semibold); }
+
+
+/* ============================================================================
+   LIVE PILL — was animated red dot with uppercase tracked label.
+   New: subdued state badge, animation keeps but uses new green/orange.
+   ============================================================================ */
+
+#live_pill {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-12);
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+  color: var(--text-tertiary);
+}
+#live_pill.running { color: var(--success-fg-soft); }
+#live_pill.running::before {
+  content: "";
+  display: inline-block;
+  width: 8px; height: 8px;
+  background: var(--success);
+  border-radius: var(--r-pill);
+  margin-right: var(--sp-1);
+  vertical-align: 1px;
+  animation: status-pulse 2s ease-in-out infinite;
+}
+
+
+/* ============================================================================
+   SCHED BANNER — was bordered red box with uppercase tracked label.
+   New: info-tinted info-style banner.
+   ============================================================================ */
+
+.sched-banner {
+  border: var(--bw-1) solid var(--info-border);
+  background: var(--info-bg-soft);
+  color: var(--text-primary);
+  padding: var(--sp-3) var(--sp-4);
+  margin: 0 var(--content-padding-x) var(--sp-3);
+  border-radius: var(--r-2);
+  font-family: var(--font-sans);
+  font-size: var(--fs-13);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.sched-banner b { color: var(--text-primary); letter-spacing: 0; font-weight: var(--fw-semibold); }
+.sched-banner a.link { font-size: var(--fs-12); }

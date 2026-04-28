@@ -1,0 +1,233 @@
+name: release
+
+# Triggered when a release tag is pushed (e.g. v0.4.0). Builds every
+# platform/arch/flavor combination and uploads each as a SEPARATE asset.
+#
+# Naming rule (see ~/.claude memory feedback_per_asset_releases):
+#   - One binary per zip / one .app per zip. Never bundle archs or flavors.
+#   - Two flavors: "webui" (CLI binary that hosts the web UI on a TCP port)
+#     and "desktop-app" (Wails native window, no allocated port).
+#   - Each artifact is uploaded under TWO names:
+#       1. Versioned (primary) — shows the release tag in the filename, e.g.
+#          sftp-loadtest-webui-v0.4.0-mac-apple-silicon.zip
+#       2. Unversioned (stable alias) — used by README's
+#          releases/latest/download/<asset> links so they don't rot, e.g.
+#          sftp-loadtest-webui-mac-apple-silicon.zip
+#     Both names point at byte-identical content.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write  # required to upload assets to the release
+
+jobs:
+
+  # ---------------------------------------------------------------- macOS
+  build-mac:
+    name: build mac (webui + desktop-app, arm64 + intel)
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ github.ref_name }}  # e.g. v0.4.0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: tidy
+        working-directory: sftp-loadtest
+        run: go mod tidy
+
+      # ---- webui flavor: one zip per arch.
+      - name: build webui arm64 + intel
+        working-directory: sftp-loadtest
+        run: |
+          GOOS=darwin GOARCH=arm64 go build -o sftp-loadtest-mac-apple-silicon .
+          GOOS=darwin GOARCH=amd64 go build -o sftp-loadtest-mac-intel .
+
+      - name: package webui zips (versioned + stable alias)
+        working-directory: sftp-loadtest
+        run: |
+          mkdir -p stage-arm64 stage-intel
+          cp sftp-loadtest-mac-apple-silicon stage-arm64/
+          cp sftp-loadtest-mac-intel        stage-intel/
+          [ -f release-readmes/README-mac.txt ] && cp release-readmes/README-mac.txt stage-arm64/README.txt && cp release-readmes/README-mac.txt stage-intel/README.txt || true
+
+          (cd stage-arm64 && zip -9 ../../sftp-loadtest-webui-${VERSION}-mac-apple-silicon.zip *)
+          (cd stage-intel && zip -9 ../../sftp-loadtest-webui-${VERSION}-mac-intel.zip *)
+
+          # Stable aliases (same content, no version in name).
+          cp ../sftp-loadtest-webui-${VERSION}-mac-apple-silicon.zip ../sftp-loadtest-webui-mac-apple-silicon.zip
+          cp ../sftp-loadtest-webui-${VERSION}-mac-intel.zip         ../sftp-loadtest-webui-mac-intel.zip
+
+      # ---- desktop-app flavor: one .app per arch (no universal).
+      - name: install wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: build desktop-app arm64
+        working-directory: sftp-loadtest/cmd/desktop
+        run: $(go env GOPATH)/bin/wails build -platform darwin/arm64 -clean
+
+      - name: package desktop-app arm64 zips (versioned + alias)
+        working-directory: sftp-loadtest/cmd/desktop/build/bin
+        run: |
+          zip -9 -r ../../../../sftp-loadtest-desktop-app-${VERSION}-mac-apple-silicon.zip sftp-loadtest-desktop.app
+          cp     ../../../../sftp-loadtest-desktop-app-${VERSION}-mac-apple-silicon.zip ../../../../sftp-loadtest-desktop-app-mac-apple-silicon.zip
+
+      - name: build desktop-app intel
+        working-directory: sftp-loadtest/cmd/desktop
+        run: $(go env GOPATH)/bin/wails build -platform darwin/amd64 -clean
+
+      - name: package desktop-app intel zips (versioned + alias)
+        working-directory: sftp-loadtest/cmd/desktop/build/bin
+        run: |
+          zip -9 -r ../../../../sftp-loadtest-desktop-app-${VERSION}-mac-intel.zip sftp-loadtest-desktop.app
+          cp     ../../../../sftp-loadtest-desktop-app-${VERSION}-mac-intel.zip ../../../../sftp-loadtest-desktop-app-mac-intel.zip
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sftp-loadtest-webui-${{ github.ref_name }}-mac-apple-silicon.zip
+            sftp-loadtest-webui-${{ github.ref_name }}-mac-intel.zip
+            sftp-loadtest-webui-mac-apple-silicon.zip
+            sftp-loadtest-webui-mac-intel.zip
+            sftp-loadtest-desktop-app-${{ github.ref_name }}-mac-apple-silicon.zip
+            sftp-loadtest-desktop-app-${{ github.ref_name }}-mac-intel.zip
+            sftp-loadtest-desktop-app-mac-apple-silicon.zip
+            sftp-loadtest-desktop-app-mac-intel.zip
+          fail_on_unmatched_files: true
+
+  # ---------------------------------------------------------------- Linux
+  build-linux:
+    name: build linux (webui amd64+arm64, desktop-app amd64)
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: install wails dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config zip
+
+      - name: tidy
+        working-directory: sftp-loadtest
+        run: go mod tidy
+
+      # ---- webui flavor: one zip per arch.
+      - name: build webui amd64 + arm64
+        working-directory: sftp-loadtest
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o sftp-loadtest-linux-amd64 .
+          GOOS=linux GOARCH=arm64 go build -o sftp-loadtest-linux-arm64 .
+
+      - name: package webui zips (versioned + alias)
+        working-directory: sftp-loadtest
+        run: |
+          mkdir -p stage-amd64 stage-arm64
+          cp sftp-loadtest-linux-amd64 stage-amd64/
+          cp sftp-loadtest-linux-arm64 stage-arm64/
+          [ -f release-readmes/README-linux.txt ] && cp release-readmes/README-linux.txt stage-amd64/README.txt && cp release-readmes/README-linux.txt stage-arm64/README.txt || true
+
+          (cd stage-amd64 && zip -9 ../../sftp-loadtest-webui-${VERSION}-linux-amd64.zip *)
+          (cd stage-arm64 && zip -9 ../../sftp-loadtest-webui-${VERSION}-linux-arm64.zip *)
+
+          cp ../sftp-loadtest-webui-${VERSION}-linux-amd64.zip ../sftp-loadtest-webui-linux-amd64.zip
+          cp ../sftp-loadtest-webui-${VERSION}-linux-arm64.zip ../sftp-loadtest-webui-linux-arm64.zip
+
+      # ---- desktop-app flavor: linux/amd64 only for now (arm64 cross-build TBD).
+      - name: install wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: build desktop-app linux amd64
+        working-directory: sftp-loadtest/cmd/desktop
+        run: $(go env GOPATH)/bin/wails build -platform linux/amd64 -clean
+
+      - name: package desktop-app zips (versioned + alias)
+        working-directory: sftp-loadtest/cmd/desktop/build/bin
+        run: |
+          zip -9 ../../../../sftp-loadtest-desktop-app-${VERSION}-linux-amd64.zip sftp-loadtest-desktop
+          cp    ../../../../sftp-loadtest-desktop-app-${VERSION}-linux-amd64.zip ../../../../sftp-loadtest-desktop-app-linux-amd64.zip
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sftp-loadtest-webui-${{ github.ref_name }}-linux-amd64.zip
+            sftp-loadtest-webui-${{ github.ref_name }}-linux-arm64.zip
+            sftp-loadtest-webui-linux-amd64.zip
+            sftp-loadtest-webui-linux-arm64.zip
+            sftp-loadtest-desktop-app-${{ github.ref_name }}-linux-amd64.zip
+            sftp-loadtest-desktop-app-linux-amd64.zip
+          fail_on_unmatched_files: true
+
+  # -------------------------------------------------------------- Windows
+  build-windows:
+    name: build windows (webui + desktop-app, amd64)
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: tidy
+        working-directory: sftp-loadtest
+        run: go mod tidy
+
+      - name: build webui exe
+        working-directory: sftp-loadtest
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: go build -o sftp-loadtest-windows-amd64.exe .
+
+      - name: package webui zips (versioned + alias)
+        working-directory: sftp-loadtest
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force stage | Out-Null
+          Copy-Item sftp-loadtest-windows-amd64.exe stage/
+          if (Test-Path release-readmes/README-windows.txt) {
+            Copy-Item release-readmes/README-windows.txt stage/README.txt
+          }
+          $version = $env:VERSION
+          Compress-Archive -Path stage/* -DestinationPath "../sftp-loadtest-webui-$version-windows-amd64.zip" -CompressionLevel Optimal
+          Copy-Item "../sftp-loadtest-webui-$version-windows-amd64.zip" ../sftp-loadtest-webui-windows-amd64.zip
+
+      - name: install wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: build desktop-app exe
+        working-directory: sftp-loadtest/cmd/desktop
+        shell: pwsh
+        run: |
+          $wails = Join-Path (go env GOPATH) 'bin\wails.exe'
+          & $wails build -platform windows/amd64 -clean
+
+      - name: package desktop-app zips (versioned + alias)
+        working-directory: sftp-loadtest/cmd/desktop/build/bin
+        shell: pwsh
+        run: |
+          $version = $env:VERSION
+          Compress-Archive -Path sftp-loadtest-desktop.exe -DestinationPath "../../../../sftp-loadtest-desktop-app-$version-windows-amd64.zip" -CompressionLevel Optimal
+          Copy-Item "../../../../sftp-loadtest-desktop-app-$version-windows-amd64.zip" ../../../../sftp-loadtest-desktop-app-windows-amd64.zip
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sftp-loadtest-webui-${{ github.ref_name }}-windows-amd64.zip
+            sftp-loadtest-webui-windows-amd64.zip
+            sftp-loadtest-desktop-app-${{ github.ref_name }}-windows-amd64.zip
+            sftp-loadtest-desktop-app-windows-amd64.zip
+          fail_on_unmatched_files: true

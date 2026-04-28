@@ -1,0 +1,128 @@
+// sftp-loadtest desktop edition.
+//
+// Architecture: this is the same Go server that powers the CLI/server SKU,
+// served through a Wails native window instead of a TCP listener. There is
+// no allocated UI port — the embedded webview talks to the in-process
+// http.Handler returned by web.Server.Routes() via Wails' AssetServer
+// pipeline.
+//
+// Reusing srv.Routes() verbatim is deliberate: it guarantees byte-identical
+// behaviour between the two SKUs. Every feature added to internal/web/
+// shows up in both, and there is no second frontend to keep in sync.
+package main
+
+import (
+	"log"
+	"os"
+	"path/filepath"
+
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/fdlimit"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/sftpx"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/web"
+
+	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
+)
+
+func main() {
+	fdlimit.Check()
+
+	dataDir, err := desktopDataDir()
+	if err != nil {
+		log.Fatalf("data dir: %v", err)
+	}
+	reportsDir := filepath.Join(dataDir, "reports")
+	schedulesDir := filepath.Join(dataDir, "schedules")
+	if err := os.MkdirAll(reportsDir, 0o700); err != nil {
+		log.Fatalf("create reports dir: %v", err)
+	}
+	if err := os.MkdirAll(schedulesDir, 0o700); err != nil {
+		log.Fatalf("create schedules dir: %v", err)
+	}
+
+	knownHostsPath, err := ensureKnownHosts()
+	if err != nil {
+		log.Printf("known_hosts: %v — host-key verification will be unavailable until resolved", err)
+	} else if err := sftpx.UseKnownHosts(knownHostsPath); err != nil {
+		log.Printf("load known_hosts (%s): %v — first-connect TOFU still works via the UI checkbox", knownHostsPath, err)
+	} else {
+		log.Printf("ssh host-key verification: known_hosts=%s", knownHostsPath)
+	}
+
+	srv := web.NewServer(reportsDir, schedulesDir)
+	defer srv.Shutdown()
+	srv.SetKnownHostsPath(knownHostsPath)
+
+	// Same security middleware envelope as the CLI default (no -auth-user,
+	// no TLS): CSRF + rate-limit + body-size cap. SecurityHeaders and
+	// BasicAuth are intentionally skipped — there is no public surface.
+	stack := web.BodySizeLimit(srv.Routes())
+	stack = web.CSRFGuard(stack)
+	stack = web.RateLimit(stack)
+
+	app := NewApp(srv)
+
+	err = wails.Run(&options.App{
+		Title:  "SFTP Load Test",
+		Width:  1280,
+		Height: 820,
+		AssetServer: &assetserver.Options{
+			// No embedded asset bundle — the existing internal/web static
+			// FS is served via srv.Routes() through Handler. Keeps the
+			// frontend single-sourced.
+			Handler: stack,
+		},
+		BackgroundColour: &options.RGBA{R: 250, G: 247, B: 240, A: 1}, // newspaper cream
+		OnStartup:        app.startup,
+		OnShutdown:       app.shutdown,
+		Bind:             []interface{}{app},
+		Mac: &mac.Options{
+			TitleBar: mac.TitleBarHiddenInset(),
+			About: &mac.AboutInfo{
+				Title:   "SFTP Load Test",
+				Message: "SFTP load testing tool — desktop edition.\nMIT licensed.\nhttps://github.com/roshandubey-cloud/utilities",
+			},
+		},
+	})
+	if err != nil {
+		log.Fatalf("wails: %v", err)
+	}
+}
+
+// desktopDataDir returns the per-user directory where reports and schedules
+// live. Falls back to a hidden dir in the user's home if UserConfigDir fails.
+func desktopDataDir() (string, error) {
+	base, err := os.UserConfigDir()
+	if err != nil {
+		home, herr := os.UserHomeDir()
+		if herr != nil {
+			return "", err
+		}
+		base = filepath.Join(home, ".sftp-loadtest")
+	}
+	return filepath.Join(base, "sftp-loadtest"), nil
+}
+
+// ensureKnownHosts returns the user's OpenSSH known_hosts path, creating an
+// empty file at ~/.ssh/known_hosts if neither directory nor file exist yet.
+// The TOFU callback in internal/sftpx will append captured server keys here
+// when the user ticks "Auto-add server key on first connect" in the probe UI.
+func ensureKnownHosts() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		return "", err
+	}
+	path := filepath.Join(sshDir, "known_hosts")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			return "", err
+		}
+	}
+	return path, nil
+}

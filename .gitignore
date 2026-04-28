@@ -1,4 +1,5 @@
-# Compiled binaries — never commit
+# Compiled binaries — never commit. Patterns are anchored or specific so they
+# don't accidentally match a SOURCE directory named the same (e.g. cmd/mockserver/).
 *.exe
 *.exe~
 *.dll
@@ -7,8 +8,9 @@
 sftp-loadtest-mac-*
 sftp-loadtest-linux-*
 sftp-loadtest-windows-*
-mockserver
-mockserver-*
+/mockserver
+/mockserver-*
+**/mockserver-*
 
 # Release archives
 *.zip
@@ -32,3 +34,9 @@ mockserver-*
 go.work
 go.work.sum
 **/third_party/
+
+# Wails desktop build artifacts (cmd/desktop). Templates under build/darwin,
+# build/windows, build/appicon.png ARE committed. The bin/ output and the
+# auto-generated frontend bindings are not.
+**/cmd/desktop/build/bin/
+**/cmd/desktop/frontend/wailsjs/

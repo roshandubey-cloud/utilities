@@ -1,0 +1,21 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "sftp-loadtest-desktop",
+  "outputfilename": "sftp-loadtest-desktop",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:dev:watcher": "",
+  "frontend:dev:serverUrl": "",
+  "wailsjsdir": "./frontend",
+  "version": "2",
+  "author": {
+    "name": "Roshan Dubey",
+    "email": "rdship@gmail.com"
+  },
+  "info": {
+    "productName": "SFTP Load Test",
+    "productVersion": "0.4.0-dev",
+    "copyright": "MIT — https://github.com/roshandubey-cloud/utilities",
+    "comments": "Desktop variant of sftp-loadtest. No allocated UI port."
+  }
+}

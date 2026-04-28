@@ -26,37 +26,79 @@ hiccups.
 
 ## Quick start
 
+The tool ships in **two flavors**. Pick whichever fits how you want to run it.
+
+| | **Server** | **Desktop** |
+|---|---|---|
+| **What** | CLI binary that hosts the web UI on a TCP port | Native macOS / Linux / Windows app |
+| **Run model** | `./sftp-loadtest`, then open `localhost:8080` in a browser | Double-click the `.app` / `.exe` / `AppImage`, native window opens |
+| **Headless / systemd** | ✅ yes — purpose-built for it | ❌ no — needs a desktop session |
+| **Allocates a TCP port** | yes (default `127.0.0.1:8080`) | no |
+| **Multi-user / shared** | ✅ runs as a service, multiple ops can connect | one user per machine |
+| **Best for** | lab racks, CI, long-running scheduled tests, server installs | client laptops, ad-hoc tests, shipping to non-technical users |
+
+Both SKUs share the **same** load engine, UI, security model, and CSV report format. They are released in lockstep — every tagged release contains both.
+
 ### Pre-built binaries
 
-Direct downloads (always resolve to the **latest** release — bookmark-stable):
+Each download is a **single binary or a single `.app` bundle** — pick the row that matches your machine. The links below always resolve to the **latest** release (bookmark-stable). On the release page itself you'll also see versioned filenames like `sftp-loadtest-webui-v0.4.0-mac-apple-silicon.zip` for explicit version pinning.
 
-| Platform | Download |
+#### web-ui flavor (CLI binary, hosts the UI on a TCP port)
+
+| Platform / arch | Download (latest) |
 |---|---|
-| macOS (Apple Silicon + Intel) | [sftp-loadtest-mac.zip](https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-mac.zip) |
-| Linux (amd64 + arm64) | [sftp-loadtest-linux.zip](https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-linux.zip) |
-| Windows (amd64) | [sftp-loadtest-windows.zip](https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-windows.zip) |
+| macOS · Apple Silicon (arm64) | [sftp-loadtest-webui-mac-apple-silicon.zip](https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-webui-mac-apple-silicon.zip) |
+| macOS · Intel (amd64) | [sftp-loadtest-webui-mac-intel.zip](https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-webui-mac-intel.zip) |
+| Linux · amd64 | [sftp-loadtest-webui-linux-amd64.zip](https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-webui-linux-amd64.zip) |
+| Linux · arm64 | [sftp-loadtest-webui-linux-arm64.zip](https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-webui-linux-arm64.zip) |
+| Windows · amd64 | [sftp-loadtest-webui-windows-amd64.zip](https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-webui-windows-amd64.zip) |
+
+#### desktop-app flavor (native app, no allocated port)
+
+| Platform / arch | Download (latest) |
+|---|---|
+| macOS · Apple Silicon (arm64) | [sftp-loadtest-desktop-app-mac-apple-silicon.zip](https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-desktop-app-mac-apple-silicon.zip) |
+| macOS · Intel (amd64) | [sftp-loadtest-desktop-app-mac-intel.zip](https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-desktop-app-mac-intel.zip) |
+| Linux · amd64 | [sftp-loadtest-desktop-app-linux-amd64.zip](https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-desktop-app-linux-amd64.zip) |
+| Windows · amd64 | [sftp-loadtest-desktop-app-windows-amd64.zip](https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-desktop-app-windows-amd64.zip) |
+
+The desktop SKU stores reports and schedules under your platform's standard
+user-config directory (`~/Library/Application Support/sftp-loadtest/` on
+macOS, `~/.config/sftp-loadtest/` on Linux, `%APPDATA%\sftp-loadtest\` on
+Windows). It auto-creates `~/.ssh/known_hosts` and uses TOFU enrollment
+through the same Test Connection checkbox the server SKU has.
 
 All releases: [github.com/roshandubey-cloud/utilities/releases](https://github.com/roshandubey-cloud/utilities/releases/latest)
 
 ```sh
-# macOS (Apple Silicon)
-curl -LO https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-mac.zip
-unzip sftp-loadtest-mac.zip
-xattr -cr ./sftp-loadtest-mac-apple-silicon
-chmod +x  ./sftp-loadtest-mac-apple-silicon
+# macOS (Apple Silicon) — web-ui flavor
+curl -LO https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-webui-mac-apple-silicon.zip
+unzip sftp-loadtest-webui-mac-apple-silicon.zip
+xattr -cr ./sftp-loadtest-mac-apple-silicon && chmod +x ./sftp-loadtest-mac-apple-silicon
 ./sftp-loadtest-mac-apple-silicon -known-hosts ~/.ssh/known_hosts
 
-# Linux
-curl -LO https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-linux.zip
-unzip sftp-loadtest-linux.zip
+# macOS (Intel) — web-ui flavor
+curl -LO https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-webui-mac-intel.zip
+unzip sftp-loadtest-webui-mac-intel.zip
+xattr -cr ./sftp-loadtest-mac-intel && chmod +x ./sftp-loadtest-mac-intel
+./sftp-loadtest-mac-intel -known-hosts ~/.ssh/known_hosts
+
+# Linux (amd64) — web-ui flavor
+curl -LO https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-webui-linux-amd64.zip
+unzip sftp-loadtest-webui-linux-amd64.zip
 chmod +x ./sftp-loadtest-linux-amd64
 ./sftp-loadtest-linux-amd64 -known-hosts ~/.ssh/known_hosts
 
-# Windows (PowerShell)
-Invoke-WebRequest https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-windows.zip -OutFile sftp-loadtest-windows.zip
-Expand-Archive sftp-loadtest-windows.zip
-.\sftp-loadtest-windows\sftp-loadtest-windows-amd64.exe -known-hosts $env:USERPROFILE\.ssh\known_hosts
+# Windows (amd64) — web-ui flavor (PowerShell)
+Invoke-WebRequest https://github.com/roshandubey-cloud/utilities/releases/latest/download/sftp-loadtest-webui-windows-amd64.zip -OutFile sftp-loadtest-webui-windows-amd64.zip
+Expand-Archive sftp-loadtest-webui-windows-amd64.zip
+.\sftp-loadtest-webui-windows-amd64\sftp-loadtest-windows-amd64.exe -known-hosts $env:USERPROFILE\.ssh\known_hosts
 ```
+
+**desktop-app flavor:** download the zip for your platform from the second
+table above, unzip, and double-click. No flags needed — all options are
+configurable from the native window. macOS users get a Gatekeeper warning
+the first time (self-signed); right-click → Open, then "Open Anyway".
 
 > **Note:** SSH host-key verification is now mandatory. Pass either
 > `-known-hosts <path>` (recommended) or `-insecure-host-key` (lab use only).

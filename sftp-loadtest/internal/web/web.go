@@ -25,7 +25,7 @@ import (
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/sftpx"
 )
 
-//go:embed static/*
+//go:embed static
 var staticFS embed.FS
 
 // maxRetainedRuns bounds in-memory history so a long-running server doesn't
@@ -528,6 +528,7 @@ func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request) {
 			historical = append(historical, map[string]any{
 				"id":           m.ID,
 				"started_at":   m.StartedAt,
+				"stopped_at":   m.StoppedAt,
 				"active":       false,
 				"total_files":  m.TotalFiles,
 				"total_bytes":  m.TotalBytes,

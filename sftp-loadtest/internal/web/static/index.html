@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SFTP Load Test</title>
+
+<!-- Phase 1: new design system (Grafana-style, dark default + light hand-tuned). -->
+<link rel="stylesheet" href="/styles/tokens.css">
+<link rel="stylesheet" href="/styles/base.css">
+<link rel="stylesheet" href="/styles/components.css">
+<script type="module" src="/js/app.js"></script>
+
 <style>
   /* ========================================================
      Newspaper theme — modern 2026 data-desk aesthetic.
@@ -305,9 +312,126 @@
   }
   @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.35 } }
 </style>
+
+<!-- Phase 2: legacy class overrides — must load AFTER the inline <style> so it wins the cascade and remaps legacy tokens (--bg, --rule, --accent, etc.) onto the new design system. -->
+<link rel="stylesheet" href="/styles/legacy-overrides.css">
 </head>
 <body>
 <div class="app">
+
+  <!-- ===================================================================
+       NEW MODERN UI (Phase 1) — masthead + Test Connection panel.
+       Old masthead/host-strip/proc-badge/sched-banner are hidden via the
+       legacy-fallback CSS in components.css. The legacy grid remains
+       visible below for Configure-Run, Schedules, Reports until Phase 2-4
+       progressively migrates each card into the new design system.
+       =================================================================== -->
+  <header class="app-masthead" data-component="masthead">
+    <div class="masthead-inner">
+      <a href="#test" class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/></svg>
+        </span>
+        <span class="brand-name">SFTP Load Test</span>
+      </a>
+      <nav class="masthead-nav" aria-label="Primary">
+        <a href="#hero"         class="masthead-link" aria-current="page">Load tests</a>
+        <a href="#legacy-shell" class="masthead-link">Schedules &amp; reports</a>
+      </nav>
+      <div class="masthead-actions">
+        <span class="masthead-status" title="Server status">
+          <span class="masthead-status-dot" data-role="status-dot" data-state="idle" aria-hidden="true"></span>
+          <span data-role="status-text">Connecting…</span>
+        </span>
+        <div class="segmented" data-role="theme-switcher" aria-label="Theme">
+          <button type="button" data-theme="auto"  aria-pressed="false" title="Match system">Auto</button>
+          <button type="button" data-theme="light" aria-pressed="false" title="Light">Light</button>
+          <button type="button" data-theme="dark"  aria-pressed="false" title="Dark">Dark</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="app-content">
+
+    <!-- HERO — the actual product surface. The most recent run summary +
+         primary CTA to start a new run. Empty state used when no runs yet. -->
+    <section class="panel hero-run" data-component="hero-run" id="hero">
+      <div data-role="hero-content">
+        <!-- skeleton while runs.js fetches /api/runs -->
+        <div class="panel-body" style="display:flex;align-items:center;justify-content:center;min-height:160px;color:var(--text-tertiary)">
+          <span class="spinner" aria-hidden="true" style="margin-right:var(--sp-2)"></span>
+          <span class="body-secondary">Loading load-test history…</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECONDARY — Quick checks. Test Connection is a small utility, not the
+         product hero. Demoted visually: compact panel, secondary button. -->
+    <section class="panel panel-compact" data-component="connection" id="quick-checks">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <div class="panel-title">Quick checks</div>
+          <div class="panel-subtitle">Verify your SFTP target is reachable before configuring a run.</div>
+        </div>
+      </div>
+      <div class="panel-body" style="gap:var(--sp-3)">
+        <div class="field-row" style="--cols:3">
+          <div class="field">
+            <label class="label" for="conn-host">Host</label>
+            <input class="input" id="conn-host" data-role="host" type="text" placeholder="sftp.example.com" autocomplete="on">
+          </div>
+          <div class="field">
+            <label class="label" for="conn-port">Port</label>
+            <input class="input" id="conn-port" data-role="port" type="number" value="22" min="1">
+          </div>
+          <div class="field">
+            <label class="label" for="conn-folder">Folder <span class="label-hint">(optional)</span></label>
+            <input class="input" id="conn-folder" data-role="folder" type="text" placeholder="inbox">
+            <div class="row-tight" style="margin-top:var(--sp-1)">
+              <button type="button" class="btn btn-sm btn-ghost" data-role="folder-preset" data-value="inbox">inbox</button>
+              <button type="button" class="btn btn-sm btn-ghost" data-role="folder-preset" data-value="incoming">incoming</button>
+              <button type="button" class="btn btn-sm btn-ghost" data-role="folder-preset" data-value="upload">upload</button>
+            </div>
+          </div>
+        </div>
+        <div class="field-row" style="--cols:2">
+          <div class="field">
+            <label class="label" for="conn-user">Username <span class="label-hint">(optional)</span></label>
+            <input class="input" id="conn-user" data-role="username" type="text" placeholder="up1" autocomplete="username">
+          </div>
+          <div class="field">
+            <label class="label" for="conn-pass">Password <span class="label-hint">(optional)</span></label>
+            <input class="input" id="conn-pass" data-role="password" type="password" placeholder="••••" autocomplete="current-password">
+          </div>
+        </div>
+
+        <label class="toggle">
+          <input type="checkbox" data-role="tofu">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          <span class="toggle-text">Auto-add server key on first connect (TOFU)</span>
+        </label>
+
+        <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:var(--sp-3)">
+          <div class="row-tight" data-role="recent" aria-label="Recent connections"></div>
+          <div class="row-tight">
+            <button class="btn btn-ghost"     type="button" data-role="reset">Reset</button>
+            <button class="btn btn-secondary" type="button" data-role="submit">Test connection</button>
+          </div>
+        </div>
+
+        <div class="probe-result" data-role="result" data-state="idle" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- LEGACY MARKER — landing target for the masthead "Schedules & reports"
+         link and the hero "Start a new load test" CTA. Phase 2-4 will migrate
+         the cards below into the new design system. -->
+    <div class="legacy-banner" id="legacy-shell">
+      <span class="icon icon-sm" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 8v5"/><path d="M12 16.5h.01"/><circle cx="12" cy="12" r="9"/></svg></span>
+      <span><strong>Configure &amp; schedule below.</strong> The run configuration, scheduler, and reports tables are mid-redesign — they still work, they just haven't been re-themed yet.</span>
+    </div>
+  </main>
 
   <header class="masthead">
     <div class="meta" style="margin-bottom:8px">
