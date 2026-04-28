@@ -89,14 +89,25 @@ func TOFUCallback(path string, captured func(host, fingerprint string)) (ssh.Hos
 			return nil, fmt.Errorf("create known_hosts %s: %w", path, err)
 		}
 	}
-	strict, err := knownhosts.New(path)
-	if err != nil {
+	// Verify path is readable now so misconfiguration surfaces at setup time
+	// rather than at first dial. The actual strict view is loaded fresh on
+	// every callback invocation below to avoid a stale-snapshot race when
+	// concurrent first-time probes append to the same known_hosts file.
+	if _, err := knownhosts.New(path); err != nil {
 		return nil, fmt.Errorf("load known_hosts %s: %w", path, err)
 	}
-	var mu sync.Mutex // serialises appends so concurrent first-time dials don't race the file
+	var mu sync.Mutex // serialises strict-check + append so concurrent first-time dials cannot race
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-		// Try strict verification first. On a successful match this is the only
-		// thing that runs — already-known servers are silent, no re-prompt.
+		mu.Lock()
+		defer mu.Unlock()
+		// Reload the strict view fresh inside the critical section: between
+		// callback creation and now, another concurrent probe may have
+		// appended a new key for THIS host. Without reload we'd reject a
+		// key that's actually already trusted.
+		strict, sErr := knownhosts.New(path)
+		if sErr != nil {
+			return fmt.Errorf("reload known_hosts %s: %w", path, sErr)
+		}
 		strictErr := strict(hostname, remote, key)
 		if strictErr == nil {
 			return nil
@@ -109,9 +120,7 @@ func TOFUCallback(path string, captured func(host, fingerprint string)) (ssh.Hos
 				return fmt.Errorf("host key for %s has changed since the last connection — possible MITM, refusing (delete the offending line in %s only after verifying the new key out-of-band): %w",
 					hostname, path, strictErr)
 			}
-			// Host not seen before. Append + accept.
-			mu.Lock()
-			defer mu.Unlock()
+			// Host not seen before. Append + accept. Mutex is already held.
 			line := knownhosts.Line([]string{knownhosts.Normalize(hostname)}, key) + "\n"
 			f, ferr := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 			if ferr != nil {
@@ -159,11 +168,17 @@ func CapturePreviewCallback(path string, captured func(host, fingerprint string)
 			return nil, fmt.Errorf("create known_hosts %s: %w", path, err)
 		}
 	}
-	strict, err := knownhosts.New(path)
-	if err != nil {
+	// Validate readability now; reload on every call below for the same
+	// reason as TOFUCallback — a concurrent TOFU accept may append a key
+	// for this host between callback creation and our check.
+	if _, err := knownhosts.New(path); err != nil {
 		return nil, fmt.Errorf("load known_hosts %s: %w", path, err)
 	}
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		strict, sErr := knownhosts.New(path)
+		if sErr != nil {
+			return fmt.Errorf("reload known_hosts %s: %w", path, sErr)
+		}
 		strictErr := strict(hostname, remote, key)
 		if strictErr == nil {
 			return nil

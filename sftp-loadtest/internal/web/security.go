@@ -2,6 +2,7 @@ package web
 
 import (
 	"crypto/subtle"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -122,6 +123,50 @@ var rateLimitedPaths = map[string]bool{
 	"/api/stop":            true,
 }
 
+// trustedProxies, when non-nil, is the only set of source-IP CIDRs whose
+// X-Forwarded-For header is honoured for rate-limit attribution. When nil
+// (default) the rate limiter ignores X-Forwarded-For entirely and uses the
+// raw RemoteAddr — closing the spoof-bypass that earlier honoured the header
+// unconditionally.
+var trustedProxies []*net.IPNet
+
+// SetTrustedProxies parses CIDR strings and configures which source IPs are
+// allowed to forward client identity via X-Forwarded-For. Called once at
+// startup from main.go's -trust-proxy flag. Empty slice clears any previous
+// configuration.
+func SetTrustedProxies(cidrs []string) error {
+	out := make([]*net.IPNet, 0, len(cidrs))
+	for _, c := range cidrs {
+		_, n, err := net.ParseCIDR(strings.TrimSpace(c))
+		if err != nil {
+			return fmt.Errorf("trust-proxy %q: %w", c, err)
+		}
+		out = append(out, n)
+	}
+	trustedProxies = out
+	return nil
+}
+
+func sourceIPIsTrustedProxy(remoteAddr string) bool {
+	if len(trustedProxies) == 0 {
+		return false
+	}
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, n := range trustedProxies {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
 type tokenBucket struct {
 	tokens   float64
 	last     time.Time
@@ -180,13 +225,20 @@ func RateLimit(next http.Handler) http.Handler {
 		if err != nil {
 			ip = r.RemoteAddr
 		}
-		// Honor X-Forwarded-For only if it looks like one, since this server is
-		// expected to sit behind a tunnel/reverse-proxy in many deployments.
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if i := strings.IndexByte(xff, ','); i >= 0 {
-				xff = xff[:i]
+		// X-Forwarded-For is only trusted when the request originates from
+		// a configured trusted-proxy CIDR (-trust-proxy). Without that, any
+		// caller on the network could spoof the header and bypass the
+		// per-IP rate-limit by rotating fake values.
+		if sourceIPIsTrustedProxy(r.RemoteAddr) {
+			if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+				// Use the LEFTMOST entry — the original client identity. The
+				// trusted proxy appends its own IP to the right; we don't
+				// want to attribute load to the proxy itself.
+				if i := strings.IndexByte(xff, ','); i >= 0 {
+					xff = xff[:i]
+				}
+				ip = strings.TrimSpace(xff)
 			}
-			ip = strings.TrimSpace(xff)
 		}
 		key := ip + "|" + r.URL.Path
 		mu.Lock()

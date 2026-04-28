@@ -35,7 +35,20 @@ func main() {
 	knownHosts := flag.String("known-hosts", "", "OpenSSH-format known_hosts file used to verify SFTP server keys (recommended)")
 	insecureHostKey := flag.Bool("insecure-host-key", false, "DANGEROUS: disable SSH host-key verification entirely (only for ephemeral lab tests)")
 
+	trustProxy := flag.String("trust-proxy", "", "comma-separated CIDRs whose X-Forwarded-For header is honoured for rate-limit attribution; empty (default) ignores XFF entirely")
+
 	flag.Parse()
+
+	// Configure trusted-proxy CIDRs for the rate-limit middleware. Without
+	// this, any caller could rotate X-Forwarded-For values to bypass the
+	// per-IP bucket. Empty flag = trust nothing.
+	if *trustProxy != "" {
+		cidrs := strings.Split(*trustProxy, ",")
+		if err := web.SetTrustedProxies(cidrs); err != nil {
+			log.Fatalf("trust-proxy: %v", err)
+		}
+		log.Printf("trusted proxy CIDRs: %s", *trustProxy)
+	}
 
 	// Check (and raise if possible) the process file-descriptor soft limit
 	// before any SFTP connections are made. Surfaces the remediation command

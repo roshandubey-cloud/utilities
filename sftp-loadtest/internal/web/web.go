@@ -125,8 +125,9 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 	t0 := time.Now()
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
+		log.Printf("probe %s: tcp: %v", addr, err)
 		out["stage"] = "tcp"
-		out["error"] = err.Error()
+		out["error"] = friendlyProbeError("tcp", err)
 		out["tcp_ms"] = time.Since(t0).Milliseconds()
 		writeJSON(w, out)
 		return
@@ -192,8 +193,8 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := sftpx.DialWithOpts(req.Host, req.Port, req.Username, req.Password, dialOpts)
 	if err != nil {
+		log.Printf("probe %s user=%s: ssh: %v", addr, req.Username, err)
 		out["stage"] = "ssh_or_sftp"
-		out["error"] = err.Error()
 		out["ssh_ms"] = time.Since(t1).Milliseconds()
 		// If the failure was specifically the "user consent required" sentinel
 		// from CapturePreviewCallback AND we successfully captured a
@@ -207,8 +208,9 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 			out["requires_consent"] = true
 			out["captured_fingerprint"] = capturedFP
 			out["captured_for_host"] = req.Host
-			// User-friendly headline; the raw err.Error() is technical SSH stderr.
 			out["error"] = "Server presented a new host key. Verify the fingerprint and accept to continue."
+		} else {
+			out["error"] = friendlyProbeError("ssh_or_sftp", err)
 		}
 		writeJSON(w, out)
 		return
@@ -233,8 +235,9 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 		_, err := c.List(req.Folder)
 		out["list_ms"] = time.Since(t2).Milliseconds()
 		if err != nil {
+			log.Printf("probe %s user=%s: list %q: %v", addr, req.Username, req.Folder, err)
 			out["stage"] = "list"
-			out["error"] = fmt.Sprintf("list %q: %v", req.Folder, err)
+			out["error"] = friendlyProbeError("list", err)
 			writeJSON(w, out)
 			return
 		}
@@ -654,6 +657,44 @@ func (s *Server) handleReportCSV(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.csv"`, runID))
 	// Stream the file contents; client disconnects are swallowed as usual.
 	_, _ = io.Copy(w, f)
+}
+
+// friendlyProbeError translates raw SSH/SFTP/TCP error strings into a stable,
+// user-facing message. The original error is logged server-side via
+// log.Printf at the call site so operators can still debug, but the JSON
+// response no longer leaks library-specific stderr (handshake fingerprints,
+// SSH protocol versions, file paths in known_hosts wrapping). Stage is one
+// of "tcp", "ssh_or_sftp", "list".
+func friendlyProbeError(stage string, err error) string {
+	if err == nil {
+		return ""
+	}
+	s := err.Error()
+	low := strings.ToLower(s)
+	switch {
+	case strings.Contains(low, "no such host"):
+		return "Hostname could not be resolved."
+	case strings.Contains(low, "connection refused"):
+		return "Connection refused — verify the SFTP server is running on this port."
+	case strings.Contains(low, "i/o timeout"), strings.Contains(low, "deadline exceeded"):
+		return "Connection timed out — verify the host is reachable and not firewalled."
+	case strings.Contains(low, "network is unreachable"):
+		return "Network is unreachable from this host."
+	case strings.Contains(low, "host key has changed"), strings.Contains(low, "possible mitm"):
+		return "Host key mismatch — refusing (delete the offending known_hosts entry only after verifying the new key out-of-band)."
+	case strings.Contains(low, "knownhosts: key is unknown"), strings.Contains(low, "user consent required"):
+		return "Server presented a new host key. Verify the fingerprint and accept to continue."
+	case strings.Contains(low, "unable to authenticate"), strings.Contains(low, "authentication failed"):
+		return "Authentication failed — verify username and password."
+	case strings.Contains(low, "ssh: handshake failed"):
+		return "SSH handshake failed — check server config, credentials, or network."
+	case strings.Contains(low, "subsystem"):
+		return "Server accepted SSH but rejected the SFTP subsystem — verify SFTP is enabled."
+	case stage == "list":
+		return "Folder listing failed — verify the path exists and the user can read it."
+	default:
+		return "Connection failed — see server log for details."
+	}
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
