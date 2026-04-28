@@ -37,10 +37,10 @@ function initOne(textarea) {
 
   const visible = new Set(); // password show/hide, by row index
   let pasteMode = false;
-  // Default to compact mode whenever there are more than 3 rows: show the
-  // first row + a "Show N more" affordance, on the assumption that most
-  // users will paste a CSV rather than scroll through 10+ form rows.
-  let compactMode = rows.length > 3;
+  // Default to compact mode whenever there is more than one row. The vast
+  // majority of operators paste a CSV; showing every saved row inline buries
+  // the rest of the form. One sample row + "Show N more" stays out of the way.
+  let compactMode = rows.length > 1;
 
   function syncToTextarea() {
     const csv = rows
@@ -57,7 +57,7 @@ function initOne(textarea) {
   }
 
   function render() {
-    const visibleRows = (compactMode && rows.length > 3) ? rows.slice(0, 1) : rows;
+    const visibleRows = (compactMode && rows.length > 1) ? rows.slice(0, 1) : rows;
     const hiddenCount = rows.length - visibleRows.length;
     host.innerHTML = `
       <div class="users-editor-table" role="grid" aria-label="SFTP users">

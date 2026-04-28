@@ -929,16 +929,20 @@
 
 .records-empty {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
   gap: var(--sp-2);
-  padding: var(--sp-8) var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
   color: var(--text-tertiary);
   text-align: center;
 }
 .records-empty[hidden] { display: none; }
-.records-empty .hero-empty-icon { width: 48px; height: 48px; }
+.records-empty .hero-empty-icon { width: 24px; height: 24px; }
+/* Hide the table chrome when there's no data so the panel doesn't take up
+   480 px of vertical space while idle. */
+.records-tbl-wrap:has(.records-empty:not([hidden])) .records-tbl { display: none; }
+.records-tbl-wrap:has(.records-empty:not([hidden])) { max-height: none; min-height: 0; }
 
 
 /* ============================================================================
@@ -954,14 +958,25 @@
 }
 .users-editor-table { display: flex; flex-direction: column; gap: var(--sp-1); }
 
-.users-editor-head,
-.users-editor-row {
+.users-editor-head {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(140px, 1.2fr) minmax(220px, 2fr) 28px;
+  grid-template-columns: minmax(110px, 1fr) minmax(130px, 1.1fr) minmax(180px, 2fr) 28px;
+  gap: var(--sp-2);
+  align-items: center;
+}
+/* Rows use flex-wrap so a narrow column can reflow user/pass on row 1, the
+   patterns chip-input on row 2, then the remove button. Prevents the
+   "+ pattern" placeholder being clipped on tight widths. */
+.users-editor-row {
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--sp-2);
   align-items: start;
 }
-.users-editor-head { align-items: center; }
+.users-editor-row > [data-field="user"]     { flex: 1 1 110px; min-width: 0; }
+.users-editor-row > .users-editor-pass-wrap { flex: 1 1 130px; min-width: 0; }
+.users-editor-row > .users-editor-patterns  { flex: 2 1 180px; min-width: 0; }
+.users-editor-row > .users-editor-remove    { flex: 0 0 28px; }
 .users-editor-head {
   font-size: var(--fs-11);
   text-transform: uppercase;
@@ -1300,10 +1315,12 @@
   .wizard-step { padding: var(--sp-2) var(--sp-3); gap: var(--sp-2); }
 }
 
-/* Card filtering — only show cards tagged with the active step. */
-.grid[data-step="workload"] .card[data-step]:not([data-step="workload"]) { display: none; }
-.grid[data-step="schedule"] .card[data-step]:not([data-step="schedule"]) { display: none; }
-.grid[data-step="review"]   .card[data-step]:not([data-step="review"])   { display: none; }
+/* Step filtering — any element inside .grid carrying data-step is hidden
+   when the wizard is on a different step. Applies to legacy .card, the new
+   .panel, and any future step-aware element placed in either column. */
+.grid[data-step="workload"] [data-step]:not([data-step="workload"]) { display: none; }
+.grid[data-step="schedule"] [data-step]:not([data-step="schedule"]) { display: none; }
+.grid[data-step="review"]   [data-step]:not([data-step="review"])   { display: none; }
 
 
 /* ============================================================================

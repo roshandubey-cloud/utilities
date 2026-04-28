@@ -13,6 +13,7 @@ import { mountRecords } from './records.js';
 import { mountRunsHistory } from './runs-history.js';
 import { mountUsersEditors } from './users-editor.js';
 import { mountUploadRestructure } from './upload-restructure.js';
+import { mountRunActions } from './run-actions.js';
 import { mountWizard } from './wizard.js';
 
 initTheme();
@@ -32,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => {
     mountUploadRestructure();
     mountUsersEditors();
+    mountRunActions();
     mountWizard('[data-component="wizard"]');
   }, 0);
 });

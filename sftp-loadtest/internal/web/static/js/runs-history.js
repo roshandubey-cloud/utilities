@@ -13,6 +13,16 @@ const REFRESH_MS = 8000;
 export function mountRunsHistory(rootSelector) {
   const root = document.querySelector(rootSelector);
   if (!root) return;
+
+  // Relocate to the legacy right-column slot where Previous-runs lived so
+  // operators find it where it has always been. Tagged as a Review-step
+  // panel so the wizard's existing visibility filter handles show/hide.
+  const legacyRunsCard = document.querySelector('.card:has(#runs_body)') || document.getElementById('runs_body')?.closest('.card');
+  if (legacyRunsCard && legacyRunsCard.parentNode && root.parentNode !== legacyRunsCard.parentNode) {
+    legacyRunsCard.parentNode.insertBefore(root, legacyRunsCard.nextSibling);
+  }
+  root.dataset.step = 'review';
+
   const slot = root.querySelector('[data-role="content"]');
   const counter = root.querySelector('[data-role="count"]');
 

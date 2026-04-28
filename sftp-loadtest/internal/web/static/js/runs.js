@@ -37,7 +37,6 @@ function render(latest, errorMsg) {
         <div class="hero-subtitle">Generate uploads at a controlled rate, track processing time per file, capture downloads, stream a CSV report.</div>
       </div>
       <div class="hero-action-cta">
-        <button class="btn btn-secondary" type="button" data-role="export-cta" title="Save the current configuration as JSON">Export config</button>
         <button class="btn btn-primary btn-lg" type="button" data-role="start-cta">Start a new load test</button>
       </div>
     </div>`;
@@ -91,7 +90,6 @@ function wireCTAs(slot) {
       if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   }
-  wireExportCTA(slot);
 }
 
 // ---------- formatters ----------

@@ -1,46 +1,61 @@
-// external.js — open downloads / external links in the system browser when
-// running inside the Wails desktop app webview.
+// external.js — opens download / external links the right way for whichever
+// shell the UI is running inside.
 //
-// In a regular browser, <a href download> works fine — the browser shows a
-// save dialog, current page stays put. In a Wails webview, clicking the same
-// link navigates the embedded webview to the URL and the user gets stranded
-// (CSV renders as text, no back button). Wails exposes
-// window.runtime.BrowserOpenURL(url) which opens the URL in the system
-// default browser, where the download dialog works correctly.
+// In a regular browser, <a href download> + Content-Disposition: attachment
+// works natively — no script needed. In the Wails desktop webview the
+// embedded engine has no save dialog and trying to navigate to a wails://
+// URL via the system browser fails (the system browser doesn't know what
+// wails:// is). For desktop CSV saves we bypass HTTP entirely and call the
+// Go-side SaveRunCsv binding which uses Wails' SaveFileDialog.
 //
-// We install a single capture-phase click handler that intercepts any anchor
-// targeting /api/report.csv (or carrying download attribute / target=_blank /
-// data-external) and routes it through Wails when available.
+// Single capture-phase listener that intercepts CSV/download/external links.
+
+import { pushToast } from './toast.js';
 
 export function installExternalOpener() {
-  document.addEventListener('click', (ev) => {
+  document.addEventListener('click', async (ev) => {
     const a = ev.target.closest('a[href]');
     if (!a) return;
     const href = a.getAttribute('href') || '';
     if (!href || href.startsWith('#')) return;
-    const isDownload = a.hasAttribute('download');
-    const isExternal = a.dataset.external === '1';
     const isCsv      = href.includes('/api/report.csv');
-    const isBlank    = a.getAttribute('target') === '_blank';
-    if (!(isDownload || isExternal || isCsv || isBlank)) return;
+    const isExternal = a.dataset.external === '1';
+    const isDownload = a.hasAttribute('download');
+    if (!(isCsv || isExternal || isDownload)) return;
 
-    // Resolve to absolute URL — Wails can't open relative ones.
     let url;
     try { url = new URL(href, window.location.href).href; }
     catch { url = href; }
 
-    if (window.runtime && typeof window.runtime.BrowserOpenURL === 'function') {
+    const SaveCsv = window.go && window.go.main && window.go.main.App && window.go.main.App.SaveRunCsv;
+    const isWailsApp = !!(window.runtime && SaveCsv);
+
+    if (isWailsApp && isCsv) {
+      ev.preventDefault();
+      const runID = (() => {
+        try { return new URL(url).searchParams.get('run') || ''; }
+        catch { return ''; }
+      })();
+      try {
+        const result = await SaveCsv(runID);
+        if (result) {
+          pushToast(`Save failed: ${result}`, 'error');
+        } else {
+          pushToast('CSV saved', 'success');
+        }
+      } catch (e) {
+        pushToast(`Save error: ${e.message || e}`, 'error');
+      }
+      return;
+    }
+
+    if (isWailsApp && (isExternal || isDownload) && window.runtime.BrowserOpenURL) {
       ev.preventDefault();
       window.runtime.BrowserOpenURL(url);
       return;
     }
-    // Outside Wails (regular browser): default behaviour is fine.
-    // For safety, ensure target=_blank on CSV links so the page never navigates
-    // away mid-download — even though most browsers handle it via the
-    // Content-Disposition header.
-    if (isCsv && !isBlank) {
-      a.setAttribute('target', '_blank');
-      a.setAttribute('rel', 'noopener noreferrer');
-    }
+
+    // Plain browser: native download attribute + Content-Disposition is
+    // already correct. No DOM mutation needed.
   }, true);
 }

@@ -70,7 +70,7 @@ func main() {
 	stack = web.CSRFGuard(stack)
 	stack = web.RateLimit(stack)
 
-	app := NewApp(srv)
+	app := NewApp(srv, reportsDir)
 
 	err = wails.Run(&options.App{
 		Title:  "SFTP Load Test",
