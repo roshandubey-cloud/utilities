@@ -15,6 +15,7 @@ import { mountUsersEditors } from './users-editor.js';
 import { mountUploadRestructure } from './upload-restructure.js';
 import { mountRunActions } from './run-actions.js';
 import { mountStartPreflight } from './start-preflight.js';
+import { mountCeilingBanner } from './ceiling-banner.js';
 import { mountWizard } from './wizard.js';
 
 initTheme();
@@ -37,5 +38,6 @@ document.addEventListener('DOMContentLoaded', () => {
     mountRunActions();
     mountStartPreflight();
     mountWizard('[data-component="wizard"]');
+    mountCeilingBanner();
   }, 0);
 });

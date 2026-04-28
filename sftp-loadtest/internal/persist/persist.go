@@ -38,6 +38,14 @@ type RunMeta struct {
 	FilesPerMinute          int  `json:"files_per_minute"`
 	DownloadEnabled         bool `json:"download_enabled"`
 
+	// DispatchSkips records how many file uploads were SKIPPED at dispatch
+	// time because every parallel SSH slot was busy. Non-zero means the run
+	// hit a capacity ceiling and the actual upload rate fell below the
+	// requested files-per-minute target. Surfaced in the Previous-runs UI
+	// as a "Throttled" badge so operators immediately see when a config
+	// can't sustain its requested workload.
+	DispatchSkips int64 `json:"dispatch_skips"`
+
 	Disabled    []DisabledUser `json:"disabled,omitempty"`
 }
 

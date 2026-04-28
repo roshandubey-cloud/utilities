@@ -260,6 +260,7 @@ func sealAllAndWriteMeta(r *Run, reportsDir string) error {
 		OverallMBps:    snap.OverallMBps,
 		FailedFiles:    failed,
 		SucceededFiles: snap.TotalFiles - failed,
+		DispatchSkips:  r.DispatchSkips.Load(),
 	}
 	// Capture workload-shape from the live config so the Previous-runs
 	// overview tells the user what was attempted, not just what finished.

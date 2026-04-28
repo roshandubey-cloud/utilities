@@ -79,13 +79,19 @@ function rowMarkup(r) {
   const succeeded = total - failed;
   const successPct = total > 0 ? (succeeded / total) * 100 : 0;
   const successCls = successPct >= 99 ? 'ok' : successPct >= 85 ? 'warn' : 'bad';
+  const skips = Number(r.dispatch_skips || 0);
+  const attempted = total + skips;
+  const throttledPct = attempted > 0 ? (skips / attempted) * 100 : 0;
+  const throttledBadge = skips > 0
+    ? `<span class="badge badge-warning" title="${skips.toLocaleString()} file(s) skipped at dispatch time because every SSH slot was busy. Increase parallel_streams or add users to keep up at this fpm."><span class="dot"></span>Throttled · ${throttledPct.toFixed(1)}% skipped</span>`
+    : '';
   const csvUrl = `/api/report.csv?run=${encodeURIComponent(r.id)}`;
   return `
     <article class="runs-history-card">
       <header class="runs-history-card-head">
         <div class="runs-history-id">
           <div class="mono">${escapeHTML(r.id)}</div>
-          <div class="body-small" style="color:var(--text-tertiary)">${formatStarted(r.started_at)}${r.stopped_at ? ' · ' + formatDuration(r.started_at, r.stopped_at) : ''}</div>
+          <div class="body-small" style="color:var(--text-tertiary)">${formatStarted(r.started_at)}${r.stopped_at ? ' · ' + formatDuration(r.started_at, r.stopped_at) : ''}${throttledBadge ? ' · ' + throttledBadge : ''}</div>
         </div>
         <div class="runs-history-actions">
           <a class="btn btn-sm btn-ghost" href="${csvUrl}" download data-external="1">CSV</a>

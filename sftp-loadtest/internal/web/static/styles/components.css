@@ -1190,6 +1190,36 @@
 .runs-history-empty .hero-empty-icon { width: 48px; height: 48px; }
 
 
+/* ============================================================================
+   CEILING BANNER — non-dismissable warning shown during an active run when
+   the dispatcher has had to skip files because every SSH slot was busy.
+   ============================================================================ */
+
+.ceiling-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--warning-bg-soft);
+  border: var(--bw-1) solid var(--warning-border);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--r-3);
+  color: var(--text-primary);
+  font-size: var(--fs-13);
+  line-height: var(--lh-normal);
+}
+.ceiling-banner-icon {
+  display: inline-flex;
+  width: 18px; height: 18px;
+  flex-shrink: 0;
+  color: var(--warning-fg-soft);
+  margin-top: 1px;
+}
+.ceiling-banner-icon svg { width: 100%; height: 100%; }
+.ceiling-banner-text strong { color: var(--warning-fg-soft); }
+.ceiling-banner-text .mono { color: var(--text-secondary); }
+
+
 /* Pattern chips — flexible layout per row, wraps as more patterns added. */
 .users-editor-patterns {
   display: flex;

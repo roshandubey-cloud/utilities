@@ -714,6 +714,7 @@ func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request) {
 				"download_parallel_streams": m.DownloadParallelStreams,
 				"files_per_minute":          m.FilesPerMinute,
 				"download_enabled":          m.DownloadEnabled,
+				"dispatch_skips":            m.DispatchSkips,
 				"source":                    "disk",
 			})
 		}
