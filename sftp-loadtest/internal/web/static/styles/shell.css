@@ -562,6 +562,202 @@
   margin: 0 2px;
 }
 
+/* ============================================================================
+   Run detail view (β1) — full-pane replacement for the runs-history card.
+   Mounts as a sibling of .shell-main and toggles visibility.
+   ============================================================================ */
+
+.run-detail-view {
+  grid-area: main;
+  overflow-y: auto;
+  padding: var(--shell-content-pad);
+  background: var(--canvas);
+  color: var(--text-primary);
+}
+.run-detail-loading,
+.run-detail-error {
+  padding: var(--sp-6);
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: var(--fs-13);
+}
+
+.run-detail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-1);
+  margin-bottom: var(--sp-3);
+  border-bottom: var(--bw-1) solid var(--border-weak);
+}
+.run-detail-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+}
+.run-detail-title { flex: 1; min-width: 0; }
+.run-detail-id {
+  font-size: var(--fs-16);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+.run-detail-sub {
+  color: var(--text-secondary);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex-wrap: wrap;
+}
+.run-detail-actions { flex-shrink: 0; }
+
+.run-detail-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.run-detail-kpi {
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+  padding: var(--sp-2) var(--sp-3);
+}
+.run-detail-kpi .kpi-label {
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  text-transform: lowercase;
+  letter-spacing: var(--tracking-normal);
+}
+.run-detail-kpi .kpi-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-22);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.run-detail-kpi-ok   .kpi-value { color: var(--success-fg-soft); }
+.run-detail-kpi-warn .kpi-value { color: var(--warning-fg-soft); }
+.run-detail-kpi-bad  .kpi-value { color: var(--danger-fg-soft); }
+
+.run-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.run-detail-panel {
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.run-detail-panel-title {
+  font-size: var(--fs-12);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+  margin-bottom: var(--sp-2);
+}
+.run-detail-defs {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px var(--sp-3);
+  margin: 0;
+  font-size: var(--fs-13);
+}
+.run-detail-defs dt { color: var(--text-tertiary); font-weight: var(--fw-medium); }
+.run-detail-defs dd { margin: 0; color: var(--text-primary); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* Latency bars */
+.run-detail-latency { display: flex; flex-direction: column; gap: var(--sp-2); }
+.run-detail-latency-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+.run-detail-latency-label {
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+}
+.run-detail-latency-label .muted {
+  color: var(--text-tertiary);
+  margin-left: 6px;
+  font-size: var(--fs-11);
+}
+.run-detail-latency-bars {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--sp-2);
+}
+.run-detail-latency-empty {
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+.run-detail-latency-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.run-detail-latency-cell .cell-label {
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+}
+.run-detail-latency-cell .cell-bar {
+  height: 4px;
+  background: var(--surface-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.run-detail-latency-cell .cell-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--info);
+  border-radius: 2px;
+}
+.run-detail-latency-cell .cell-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+}
+
+.run-detail-records-chips {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-2);
+  flex-wrap: wrap;
+}
+.filter-chip {
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-pill);
+  padding: 2px 12px;
+  font-size: var(--fs-12);
+  font-family: var(--font-sans);
+  cursor: pointer;
+}
+.filter-chip[data-active="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+.run-detail-records-count {
+  margin-left: auto;
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+.run-detail-records {
+  font-size: var(--fs-12);
+  color: var(--text-primary);
+}
+
 /* ---------------- Narrow-viewport collapse ----------------
    Below 800 px the sidebar collapses to icon-only by default. */
 @media (max-width: 800px) {

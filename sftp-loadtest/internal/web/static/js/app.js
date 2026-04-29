@@ -8,6 +8,7 @@ import { mountShell } from './shell.js';
 import { mountSidebar } from './sidebar.js';
 import { mountLiveCharts } from './charts/live.js';
 import { mountCommandPalette } from './command-palette.js';
+import { mountRunDetail } from './run-detail.js';
 import { mountMasthead } from './masthead.js';
 import { mountHostBar } from './host.js';
 import { mountRunHeader } from './run-header.js';
@@ -55,6 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // and legacy.js has set window.__sftplBuildRequestBody so saved-
     // config snapshots work.
     mountCommandPalette();
+    mountRunDetail();
     // Sidebar mounts AFTER palette so saved-configs reflects any
     // load that fired during palette init (rare, but tidy).
     mountSidebar();

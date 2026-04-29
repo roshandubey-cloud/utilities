@@ -181,16 +181,14 @@ async function renderRuns(slot) {
   slot.querySelectorAll('[data-action="run"]').forEach((row) => {
     row.addEventListener('click', () => {
       const id = row.dataset.id;
-      // Reuse the records.js View-records hook: a click on
-      // [data-view] elsewhere triggers records.js to swap to that run.
+      // Open the β1 detail pane instead of just swapping the records
+      // table. The proxy with data-view-detail is intercepted by
+      // run-detail.js's capture-phase listener.
       const proxy = document.createElement('button');
-      proxy.dataset.view = id;
+      proxy.setAttribute('data-view-detail', id);
       document.body.appendChild(proxy);
       proxy.click();
       proxy.remove();
-      // Scroll the runs-history card into view.
-      const card = document.querySelector('[data-component="runs-history"]');
-      card?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
 }
