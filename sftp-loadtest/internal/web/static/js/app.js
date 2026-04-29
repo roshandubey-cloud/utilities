@@ -5,6 +5,7 @@
 import { initTheme } from './theme.js';
 import { installExternalOpener } from './external.js';
 import { mountShell } from './shell.js';
+import { mountLiveCharts } from './charts/live.js';
 import { mountMasthead } from './masthead.js';
 import { mountHostBar } from './host.js';
 import { mountRunHeader } from './run-header.js';
@@ -33,6 +34,9 @@ document.addEventListener('DOMContentLoaded', () => {
   mountHeroRun('[data-component="hero-run"]');
   mountConnectionCard('[data-component="connection"]');
   mountRecords('[data-component="records"]');
+  // Real-time charts mount inside the records panel — must come AFTER
+  // mountRecords so the panel exists.
+  mountLiveCharts('[data-component="records"]');
   mountRunsHistory('[data-component="runs-history"]');
   mountTrustedHosts('[data-component="trusted-hosts"]');
   // Order matters: upload-restructure relocates DOM, users-editors then
