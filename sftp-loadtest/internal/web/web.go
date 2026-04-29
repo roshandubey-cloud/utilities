@@ -20,6 +20,7 @@ import (
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/config"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/hostinfo"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/hostkeys"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/latency"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/persist"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/proc"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/report"
@@ -785,7 +786,30 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"records_in_memory":   run.Report.LiveCount(),
 		"records_flushed":     run.Report.FlushedCount(),
 		"proc":                procStats,
+		"latency": map[string]any{
+			"upload":     latencyStageJSON(run.UploadLatency.Snapshot()),
+			"upload_cor": latencyStageJSON(run.UploadLatencyCOR.Snapshot()),
+			"dial":       latencyStageJSON(run.DialLatency.Snapshot()),
+		},
 	})
+}
+
+// latencyStageJSON renders a histogram snapshot in the same shape the
+// persisted RunMeta uses, so live (/api/status) and historical
+// (/api/runs) consumers see the same field names.
+func latencyStageJSON(s latency.Snapshot) map[string]any {
+	if s.Count == 0 {
+		return nil
+	}
+	return map[string]any{
+		"count":    s.Count,
+		"p50_ns":   s.P50,
+		"p95_ns":   s.P95,
+		"p99_ns":   s.P99,
+		"p999_ns":  s.P999,
+		"max_ns":   s.Max,
+		"mean_ns":  s.Mean,
+	}
 }
 
 func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request) {
@@ -839,6 +863,7 @@ func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request) {
 				"dispatch_skips":            m.DispatchSkips,
 				"download_stalled":          m.DownloadStalled,
 				"interrupted":               m.Interrupted,
+				"latency":                   m.Latency,
 				"peak_cpu_percent":          m.PeakCPUPercent,
 				"avg_cpu_percent":           m.AvgCPUPercent,
 				"peak_fd_in_use":            m.PeakFDInUse,

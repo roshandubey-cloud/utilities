@@ -72,6 +72,12 @@ type RunMeta struct {
 	// the exact same advice.
 	Suggestions []Suggestion `json:"suggestions,omitempty"`
 
+	// Latency holds per-stage percentile snapshots captured by the
+	// runner's lock-free histograms. Populated at seal time so SLA
+	// reports against the persisted meta are deterministic and don't
+	// need to re-derive percentiles from the CSV.
+	Latency *LatencyReport `json:"latency,omitempty"`
+
 	// Interrupted is true when the meta was synthesised by the boot-time
 	// recovery path because the process exited before sealAllAndWriteMeta
 	// could run. Counts may be approximate (built from CSV rows still on
@@ -79,6 +85,32 @@ type RunMeta struct {
 	Interrupted bool `json:"interrupted,omitempty"`
 
 	Disabled []DisabledUser `json:"disabled,omitempty"`
+}
+
+// LatencyReport is the per-stage percentile summary for one run.
+// Values are nanoseconds for portability (JSON consumers / dashboards
+// can divide as they prefer). UploadCOR is the coordinated-omission-
+// corrected upload latency: end-time minus the dispatcher's *intended*
+// start, which includes any queue wait when the parallel-stream
+// semaphore was full. It is the latency a service consumer actually
+// perceives, in contrast to the raw transfer time on the SFTP wire.
+type LatencyReport struct {
+	Upload    *LatencyStage `json:"upload,omitempty"`
+	UploadCOR *LatencyStage `json:"upload_cor,omitempty"`
+	Dial      *LatencyStage `json:"dial,omitempty"`
+}
+
+// LatencyStage is one histogram's percentile points. Count is the
+// number of observations the percentiles were computed from. All time
+// fields are in nanoseconds.
+type LatencyStage struct {
+	Count uint64 `json:"count"`
+	P50   int64  `json:"p50_ns"`
+	P95   int64  `json:"p95_ns"`
+	P99   int64  `json:"p99_ns"`
+	P999  int64  `json:"p999_ns"`
+	Max   int64  `json:"max_ns"`
+	Mean  int64  `json:"mean_ns"`
 }
 
 // Suggestion is one finding the analyzer produced. Severity drives sort

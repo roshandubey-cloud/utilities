@@ -1274,6 +1274,34 @@
 }
 
 
+/* Per-stage latency block — three columns under the run header showing
+   p50/p95/p99/p99.9 for upload, COR-corrected upload, and dial. */
+.runs-history-latency {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: var(--bw-1) dashed var(--border-subtle);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+.runs-history-lat-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.runs-history-lat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  color: var(--text-primary);
+}
+.runs-history-lat-row .muted { color: var(--text-tertiary); }
+@media (max-width: 720px) {
+  .runs-history-latency { grid-template-columns: 1fr; }
+}
+
+
 /* ============================================================================
    TRUSTED HOSTS — list of accepted SSH host keys with Forget controls.
    ============================================================================ */

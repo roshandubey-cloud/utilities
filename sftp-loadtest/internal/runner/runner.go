@@ -16,6 +16,7 @@ import (
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/analyze"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/config"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/generator"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/latency"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/metrics"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/persist"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/proc"
@@ -221,6 +222,47 @@ func (e *errCounters) snapshot() map[string]int64 {
 	return out
 }
 
+// writeLatencyRows appends one comment row per percentile point to the
+// CSV trailer. Nil stages are silently skipped (histogram had no
+// observations) so the trailer stays clean for runs that exercised only
+// some of the stages.
+func writeLatencyRows(b *strings.Builder, name string, s *persist.LatencyStage) {
+	if s == nil {
+		return
+	}
+	ms := func(ns int64) string {
+		// Two decimals of millisecond is plenty for SLA reporting and
+		// keeps the trailer readable; nanosecond precision is in the
+		// JSON sidecar for anyone who wants it.
+		return fmt.Sprintf("%.2f", float64(ns)/1e6)
+	}
+	b.WriteString(fmt.Sprintf("# latency_%s_count,%d\n", name, s.Count))
+	b.WriteString(fmt.Sprintf("# latency_%s_p50_ms,%s\n", name, ms(s.P50)))
+	b.WriteString(fmt.Sprintf("# latency_%s_p95_ms,%s\n", name, ms(s.P95)))
+	b.WriteString(fmt.Sprintf("# latency_%s_p99_ms,%s\n", name, ms(s.P99)))
+	b.WriteString(fmt.Sprintf("# latency_%s_p999_ms,%s\n", name, ms(s.P999)))
+	b.WriteString(fmt.Sprintf("# latency_%s_max_ms,%s\n", name, ms(s.Max)))
+	b.WriteString(fmt.Sprintf("# latency_%s_mean_ms,%s\n", name, ms(s.Mean)))
+}
+
+// snapshotToStage adapts a latency.Snapshot into the JSON-tagged shape
+// the persist package serialises. Returns nil when the histogram has no
+// observations so the runs-history UI can hide empty stages.
+func snapshotToStage(s latency.Snapshot) *persist.LatencyStage {
+	if s.Count == 0 {
+		return nil
+	}
+	return &persist.LatencyStage{
+		Count: s.Count,
+		P50:   s.P50,
+		P95:   s.P95,
+		P99:   s.P99,
+		P999:  s.P999,
+		Max:   s.Max,
+		Mean:  s.Mean,
+	}
+}
+
 // sampleHostStats runs as a goroutine for the duration of a run. Every 2s
 // it reads proc/runtime metrics and updates the peak/avg accumulators on
 // the Run. Cheap (single ReadMemStats + dirent scan), so 2s gives a useful
@@ -381,6 +423,14 @@ func sealAllAndWriteMeta(r *Run, reportsDir string) error {
 			LastAt:      d.LastAt,
 		})
 	}
+	// Snapshot the lock-free latency histograms into RunMeta so the
+	// percentile points are persisted alongside the CSV and surfaced in
+	// the UI's runs-history card without re-deriving from raw rows.
+	meta.Latency = &persist.LatencyReport{
+		Upload:    snapshotToStage(r.UploadLatency.Snapshot()),
+		UploadCOR: snapshotToStage(r.UploadLatencyCOR.Snapshot()),
+		Dial:      snapshotToStage(r.DialLatency.Snapshot()),
+	}
 	// Run the analyzer against the now-fully-populated meta. The result is
 	// what the CSV trailer and the Previous-runs UI both render — keeping
 	// the narrative identical across consumers.
@@ -428,6 +478,11 @@ func appendCSVAnalysis(path string, m persist.RunMeta) error {
 	b.WriteString(fmt.Sprintf("# parallel_streams,%d\n", m.ParallelStreams))
 	b.WriteString(fmt.Sprintf("# files_per_minute,%d\n", m.FilesPerMinute))
 	b.WriteString(fmt.Sprintf("# upload_users,%d\n", m.UploadUsers))
+	if m.Latency != nil {
+		writeLatencyRows(&b, "upload", m.Latency.Upload)
+		writeLatencyRows(&b, "upload_cor", m.Latency.UploadCOR)
+		writeLatencyRows(&b, "dial", m.Latency.Dial)
+	}
 	if len(m.Suggestions) == 0 {
 		b.WriteString("# suggestions,(none — run hit its target without stress)\n")
 	} else {
@@ -485,6 +540,28 @@ type Run struct {
 	// DispatchSkips counts ticks where the semaphore was full and we had to
 	// skip an upload. Surfaces capacity bottlenecks to the UI.
 	DispatchSkips atomic.Int64
+
+	// Latency histograms — fixed-memory log-bucket accumulators that feed
+	// p50/p95/p99/p99.9 into RunMeta and the live /api/status payload.
+	//
+	//   UploadLatency:    end - actualStart for every successful upload.
+	//                      Pure transfer time as observed at the client.
+	//
+	//   UploadLatencyCOR: end - intendedStart, where intendedStart is the
+	//                      dispatcher tick this file *should* have left
+	//                      on. When skips push a file's actual start
+	//                      later than its intended start, the COR view
+	//                      surfaces that queue-wait — closing the
+	//                      coordinated-omission gap that makes naive
+	//                      throughput numbers look better than reality.
+	//
+	//   DialLatency:      time taken to redial a dropped pool slot. Most
+	//                      uploads reuse a warm connection so this
+	//                      histogram is sparse, but its tail tells the
+	//                      operator how expensive cold reconnects are.
+	UploadLatency    latency.Histogram
+	UploadLatencyCOR latency.Histogram
+	DialLatency      latency.Histogram
 
 	// Host-stats peaks captured by sampleHostStats every 2s while the run
 	// is active. The seal path reads these to populate RunMeta and feed
@@ -554,19 +631,23 @@ type poolSlot struct {
 	client *sftpx.Client
 }
 
-// get returns a live client for this slot, redialing if needed.
-func (s *poolSlot) get() (*sftpx.Client, error) {
+// get returns a live client for this slot, redialing if needed. dialDur
+// is non-zero only when this call had to actually redial — callers feed
+// it into the dial-latency histogram so the cold-reconnect cost is
+// observable separately from steady-state upload latency.
+func (s *poolSlot) get() (client *sftpx.Client, dialDur time.Duration, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.client != nil {
-		return s.client, nil
+		return s.client, 0, nil
 	}
-	c, err := sftpx.Dial(s.host, s.port, s.user, s.pass)
-	if err != nil {
-		return nil, err
+	t0 := time.Now()
+	c, derr := sftpx.Dial(s.host, s.port, s.user, s.pass)
+	if derr != nil {
+		return nil, time.Since(t0), derr
 	}
 	s.client = c
-	return s.client, nil
+	return s.client, time.Since(t0), nil
 }
 
 // markDead closes + nils the client so the next get() redials. Called by
@@ -593,13 +674,14 @@ type clientPool struct {
 // get picks a slot round-robin and lazily redials if it's dead. If the
 // round-robin pick's slot is unreachable, falls through to the other slots
 // in the same pool before giving up — a single dead slot doesn't stall the
-// user.
-func (p *clientPool) get() (*sftpx.Client, *poolSlot, error) {
+// user. Returns the dial duration on the slot that won (zero when the
+// slot was already warm) so callers can feed it into a latency histogram.
+func (p *clientPool) get() (*sftpx.Client, *poolSlot, time.Duration, error) {
 	p.mu.Lock()
 	n := len(p.slots)
 	if n == 0 {
 		p.mu.Unlock()
-		return nil, nil, errors.New("pool empty")
+		return nil, nil, 0, errors.New("pool empty")
 	}
 	start := p.idx
 	p.idx = (p.idx + 1) % n
@@ -608,15 +690,15 @@ func (p *clientPool) get() (*sftpx.Client, *poolSlot, error) {
 	var firstErr error
 	for attempt := 0; attempt < n; attempt++ {
 		slot := p.slots[(start+attempt)%n]
-		c, err := slot.get()
+		c, dialDur, err := slot.get()
 		if err == nil {
-			return c, slot, nil
+			return c, slot, dialDur, nil
 		}
 		if firstErr == nil {
 			firstErr = err
 		}
 	}
-	return nil, nil, fmt.Errorf("all pool slots unreachable (last: %w)", firstErr)
+	return nil, nil, 0, fmt.Errorf("all pool slots unreachable (last: %w)", firstErr)
 }
 
 func (p *clientPool) closeAll() {
@@ -1000,7 +1082,10 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 			basename := name[:hash]
 			seen[name] = struct{}{}
 
-			c, slot, err := pool.get()
+			c, slot, dialDur, err := pool.get()
+			if dialDur > 0 {
+				r.DialLatency.Add(dialDur)
+			}
 			start := time.Now()
 			result := report.DownloadResult{
 				DownloadUser: u.Username,
@@ -1192,12 +1277,19 @@ func (r *Run) runNormal(ctx context.Context, deadline time.Time) {
 					continue
 				}
 				size := pickSize(minB, maxB)
+				// Capture the dispatcher tick time as the file's
+				// "intended" start. uploadOne uses it for the
+				// coordinated-omission-corrected latency view: when
+				// the actual SSH dial starts later than this — because
+				// every slot was busy waiting in the semaphore queue —
+				// the COR latency includes that queue wait.
+				intended := now
 				r.uploadsWG.Add(1)
-				go func(u config.UserCreds, size int64) {
+				go func(u config.UserCreds, size int64, intended time.Time) {
 					defer r.uploadsWG.Done()
 					defer func() { <-sem }()
-					r.uploadOne(u, size, "normal")
-				}(u, size)
+					r.uploadOne(u, size, "normal", intended)
+				}(u, size, intended)
 			}
 		}
 	}
@@ -1224,11 +1316,16 @@ func (r *Run) runLargeFile(ctx context.Context, deadline time.Time) {
 			return false
 		}
 		size := pickSize(minB, maxB)
+		// Large-file uploads fire on a coarse interval timer; the
+		// intended-start is the moment we decide to send. There is no
+		// queueing semaphore, so COR latency tracks total cost from
+		// the timer firing through the upload completing.
+		intended := time.Now()
 		r.uploadsWG.Add(1)
-		go func(u config.UserCreds, size int64) {
+		go func(u config.UserCreds, size int64, intended time.Time) {
 			defer r.uploadsWG.Done()
-			r.uploadOne(u, size, "large")
-		}(u, size)
+			r.uploadOne(u, size, "large", intended)
+		}(u, size, intended)
 		return true
 	}
 
@@ -1268,7 +1365,7 @@ func stageToCode(stage string) string {
 	}
 }
 
-func (r *Run) uploadOne(u config.UserCreds, size int64, kind string) {
+func (r *Run) uploadOne(u config.UserCreds, size int64, kind string, intendedStart time.Time) {
 	// pick pattern round-robin-ish using nano clock
 	pat := u.Patterns[int(time.Now().UnixNano())%len(u.Patterns)]
 	name := generator.NameFromPattern(pat)
@@ -1322,10 +1419,13 @@ func (r *Run) uploadOne(u config.UserCreds, size int64, kind string) {
 		recordFailure(rec, "POOL_EMPTY", "no connection pool for user", 0)
 		return
 	}
-	c, slot, err := pool.get()
+	c, slot, dialDur, err := pool.get()
 	if err != nil {
 		recordFailure(rec, "POOL_EMPTY", err.Error(), 0)
 		return
+	}
+	if dialDur > 0 {
+		r.DialLatency.Add(dialDur)
 	}
 	n, stage, err := c.Upload(remote, generator.FastReader(size, content))
 	end := time.Now()
@@ -1345,6 +1445,13 @@ func (r *Run) uploadOne(u config.UserCreds, size int64, kind string) {
 	r.Metrics.Record(end, n, dur)
 	r.Watcher.Register(u.Username, name)
 	r.disable.onSuccess(u.Username, "upload")
+	// Latency observations: raw transfer time + COR-corrected (total
+	// time from the moment the dispatcher *intended* to send this file,
+	// which captures any queue wait introduced by a busy semaphore).
+	r.UploadLatency.Add(dur)
+	if !intendedStart.IsZero() {
+		r.UploadLatencyCOR.Add(end.Sub(intendedStart))
+	}
 }
 
 func (r *Run) teardown() {

@@ -126,8 +126,44 @@ function rowMarkup(r) {
                <div class="body-small">disabled</div>`}
         </div>
       </div>
+      ${latencyMarkup(r)}
       ${analysisMarkup(r)}
     </article>`;
+}
+
+// Renders the per-stage latency percentile points the runner persisted.
+// Hidden entirely when the run pre-dates this feature (no latency on the
+// payload). Upload-COR is shown next to Upload so the operator can read
+// the queue-wait skew at a glance.
+function latencyMarkup(r) {
+  const lat = r.latency;
+  if (!lat) return '';
+  const ms = (ns) => ns == null ? '—' : (ns / 1e6).toFixed(ns >= 100e6 ? 0 : ns >= 10e6 ? 1 : 2);
+  function stage(label, s, hint) {
+    if (!s) return `
+      <div class="runs-history-lat-stage">
+        <div class="eyebrow">${escapeHTML(label)}</div>
+        <div class="metric-default" style="color:var(--text-tertiary)">—</div>
+        <div class="body-small">${escapeHTML(hint || 'no observations')}</div>
+      </div>`;
+    return `
+      <div class="runs-history-lat-stage">
+        <div class="eyebrow">${escapeHTML(label)}</div>
+        <div class="runs-history-lat-row body-small tabular">
+          <span><span class="muted">p50</span> ${ms(s.p50_ns)}<span class="muted"> ms</span></span>
+          <span><span class="muted">p95</span> ${ms(s.p95_ns)}<span class="muted"> ms</span></span>
+          <span><span class="muted">p99</span> ${ms(s.p99_ns)}<span class="muted"> ms</span></span>
+          <span><span class="muted">p99.9</span> ${ms(s.p999_ns)}<span class="muted"> ms</span></span>
+        </div>
+        <div class="body-small" style="color:var(--text-tertiary)">${s.count.toLocaleString()} samples · max ${ms(s.max_ns)} ms${hint ? ' · ' + escapeHTML(hint) : ''}</div>
+      </div>`;
+  }
+  return `
+    <div class="runs-history-latency">
+      ${stage('Upload latency', lat.upload, 'wire time')}
+      ${stage('Upload latency · COR', lat.upload_cor, 'incl. queue wait')}
+      ${stage('Dial', lat.dial, 'cold reconnects')}
+    </div>`;
 }
 
 // Renders the host-capacity line + the analyzer's suggestions.
