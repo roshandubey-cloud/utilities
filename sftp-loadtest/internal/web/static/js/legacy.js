@@ -924,3 +924,12 @@ setInterval(pollSchedules, 5000);
 poll();
 pollRuns();
 pollSchedules();
+
+// Expose two of legacy.js's internal helpers so the new modules can
+// snapshot/restore the form without re-implementing the legacy field
+// vocabulary. Public is the wrong word — these are deliberate hooks
+// into the legacy bridge layer, not a stable contract.
+try {
+  window.__sftplBuildRequestBody = buildRequestBody;
+  window.__sftplImportConfigPayload = importConfigPayload;
+} catch {}

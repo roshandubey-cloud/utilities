@@ -6,6 +6,7 @@ import { initTheme } from './theme.js';
 import { installExternalOpener } from './external.js';
 import { mountShell } from './shell.js';
 import { mountLiveCharts } from './charts/live.js';
+import { mountCommandPalette } from './command-palette.js';
 import { mountMasthead } from './masthead.js';
 import { mountHostBar } from './host.js';
 import { mountRunHeader } from './run-header.js';
@@ -49,5 +50,9 @@ document.addEventListener('DOMContentLoaded', () => {
     mountStartPreflight();
     mountWizard('[data-component="wizard"]');
     mountCeilingBanner();
+    // Palette mounts last — by now the shell's Cmd+K button exists
+    // and legacy.js has set window.__sftplBuildRequestBody so saved-
+    // config snapshots work.
+    mountCommandPalette();
   }, 0);
 });
