@@ -15,296 +15,395 @@
 
 <style>
   /* ========================================================
-     Newspaper theme — modern 2026 data-desk aesthetic.
-     System-font stack only (no web-font fetch, no JS libs).
-     ------------------------------------------------------
-     Serif stack for masthead, section kickers, and metric
-     values (Iowan Old Style → Charter → Georgia → Times).
-     Sans for body and forms, mono for raw data.
+     Legacy-card stylesheet for the workbench redesign.
+     Drop-in replacement for the old newspaper theme: same
+     selectors, same legacy IDs, but every property resolves
+     through the modern tokens.css design system. No serif,
+     no editorial uppercase, no cream backgrounds — dense
+     workbench at every density.
      ======================================================== */
-  :root {
-    --serif: "Iowan Old Style", "Apple Garamond", Charter, Georgia, "Times New Roman", serif;
-    --sans:  system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    --mono:  ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-
-    --bg:        #f7f3ec;   /* newsprint cream */
-    --surface:   #fdfaf3;   /* page */
-    --surface-2: #efe9de;   /* pull-quote / muted panel */
-    --border:    #d9d1c0;   /* warm hairline */
-    --rule:      #1a1a1a;   /* strong rule (masthead) */
-    --text:      #16181c;   /* ink */
-    --muted:     #6c6a62;   /* slug line */
-    --accent:    #a32020;   /* classic red — used for "running" state + failures */
-    --accent-soft: #f5e6e6;
-    --ok:        #2f6b2f;
-    --warn:      #8a6a1e;
-    --err:       #a32020;
-    --slow:      #f5ead1;
-    --shadow: 0 0 0 transparent; /* newspaper = no soft shadows; rules do the work */
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg:        #121319;
-      --surface:   #15171e;
-      --surface-2: #1c1f27;
-      --border:    #2a2e38;
-      --rule:      #e7e4dc;
-      --text:      #e9e4d7;     /* warm off-white — not pure white */
-      --muted:     #a29c8e;
-      --accent:    #e06a6f;     /* warmer rose in dark mode */
-      --accent-soft: #2b1618;
-      --ok:        #6ecf8c;
-      --warn:      #e2c06b;
-      --err:       #e06a6f;
-      --slow:      #3a311c;
-      --shadow: 0 0 0 transparent;
-    }
-  }
-
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
-  body { font-family: var(--sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
-  .app { max-width: 1280px; margin: 0 auto; padding: 28px 30px 96px; }
-
-  /* ===================== MASTHEAD ===================== */
-  .masthead { border-top: 3px solid var(--rule); padding-top: 14px; margin-bottom: 22px; position: relative; }
-  .masthead::after {
-    content: ""; display: block; height: 1px; background: var(--rule);
-    margin-top: 10px; opacity: 0.85;
+  html, body { margin: 0; padding: 0; background: var(--canvas); color: var(--text-primary); }
+  body {
+    font-family: var(--font-sans);
+    font-size: var(--fs-13);
+    line-height: var(--lh-normal);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
+  .app { max-width: 1280px; margin: 0 auto; padding: var(--sp-4) var(--sp-5) var(--sp-12); }
+
+  /* ===================== MASTHEAD =====================
+     Old newspaper masthead with serif clamp(32–56 px) and
+     small-caps becomes a thin, dense product strip — the
+     kind a real software app puts at the top of its
+     window. Title sits at 14 px, no decoration. */
+  .masthead { padding-top: 0; margin-bottom: var(--sp-4); position: relative; border-top: none; }
+  .masthead::after { display: none; }
   .masthead h1 {
-    font-family: var(--serif); font-weight: 700;
-    font-size: clamp(32px, 4.2vw, 56px); line-height: 0.95;
-    letter-spacing: -0.015em; margin: 0; text-align: center;
-    font-variant: small-caps;
+    font-family: var(--font-sans);
+    font-weight: var(--fw-semibold);
+    font-size: var(--fs-14);
+    line-height: 1.2;
+    letter-spacing: var(--tracking-normal);
+    margin: 0;
+    text-align: left;
+    color: var(--text-primary);
+    font-variant: normal;
+    text-transform: none;
   }
   .masthead .dek {
-    font-family: var(--serif); font-style: italic; font-size: 15px;
-    text-align: center; color: var(--muted); margin-top: 6px;
+    font-family: var(--font-sans);
+    font-style: normal;
+    font-size: var(--fs-12);
+    text-align: left;
+    color: var(--text-secondary);
+    margin-top: 2px;
+    line-height: var(--lh-normal);
   }
   .masthead .meta {
     display: flex; justify-content: space-between; align-items: center;
-    font-family: var(--sans); font-size: 11px; text-transform: uppercase;
-    letter-spacing: 0.14em; color: var(--muted); margin-top: 10px;
+    font-family: var(--font-sans); font-size: var(--fs-11);
+    text-transform: none; letter-spacing: var(--tracking-normal);
+    color: var(--text-tertiary); margin-top: var(--sp-2);
+    font-weight: var(--fw-medium);
   }
-  .masthead .meta .edition { font-weight: 600; color: var(--text); }
-  .masthead .meta .sep { margin: 0 6px; opacity: 0.5; }
+  .masthead .meta .edition { font-weight: var(--fw-semibold); color: var(--text-primary); }
+  .masthead .meta .sep { margin: 0 var(--sp-1); opacity: 0.5; }
 
   /* ===================== GRID ===================== */
-  .grid { display: grid; grid-template-columns: minmax(0, 440px) minmax(0, 1fr); gap: 28px; }
-  @media (max-width: 960px) { .grid { grid-template-columns: 1fr; gap: 20px; } }
+  .grid { display: grid; grid-template-columns: minmax(0, 440px) minmax(0, 1fr); gap: var(--sp-5); }
+  @media (max-width: 960px) { .grid { grid-template-columns: 1fr; gap: var(--sp-4); } }
 
-  /* ===================== CARD / SECTION ===================== */
+  /* ===================== CARD / SECTION =====================
+     Same .card markup, but tighter and using surface tokens. */
   .card {
-    background: var(--surface); border: 1px solid var(--border);
-    margin-bottom: 20px; overflow: hidden;
+    background: var(--surface);
+    border: var(--bw-1) solid var(--border-weak);
+    border-radius: var(--r-2);
+    margin-bottom: var(--sp-4);
+    overflow: hidden;
   }
   .card > header {
-    display: flex; align-items: baseline; gap: 10px;
-    padding: 10px 14px 10px;
-    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    border-bottom: var(--bw-1) solid var(--border-weak);
     background: var(--surface);
-    font-family: var(--serif); font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.14em;
-    font-size: 12px; color: var(--text);
+    font-family: var(--font-sans);
+    font-weight: var(--fw-semibold);
+    text-transform: none;
+    letter-spacing: var(--tracking-normal);
+    font-size: var(--fs-13);
+    color: var(--text-primary);
   }
-  .card > header .toggle-label { display: flex; align-items: center; gap: 8px; flex: 1; cursor: pointer; user-select: none; }
+  .card > header .toggle-label { display: flex; align-items: center; gap: var(--sp-2); flex: 1; cursor: pointer; user-select: none; }
   .card > header input[type=checkbox] { accent-color: var(--accent); }
   .card > header .pill {
-    margin-left: auto; font-family: var(--sans); font-weight: 500;
-    font-size: 10.5px; letter-spacing: 0.08em; color: var(--muted);
-    padding: 2px 0;
+    margin-left: auto; font-family: var(--font-sans);
+    font-weight: var(--fw-medium); font-size: var(--fs-11);
+    letter-spacing: var(--tracking-normal); color: var(--text-tertiary);
+    padding: 0;
+    text-transform: none;
   }
-  .card > header .pill::before { content: "— "; opacity: 0.6; }
-  .card > .body { padding: 14px 16px 18px; }
+  .card > header .pill::before { content: ""; display: none; }
+  .card > .body { padding: var(--sp-3) var(--sp-3) var(--sp-4); }
   .card.off > .body { display: none; }
-  .card.off > header { opacity: 0.6; }
+  .card.off > header { opacity: 0.55; }
 
-  /* ===================== FORM ===================== */
-  label { display: block; font-family: var(--sans); font-size: 11px;
-    color: var(--muted); margin: 0 0 4px; font-weight: 500;
-    text-transform: uppercase; letter-spacing: 0.09em; }
-  input[type=text], input[type=number], textarea, select {
-    width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 3px;
-    background: var(--surface); color: var(--text); font-size: 13px;
-    font-family: var(--mono); transition: border-color 0.12s, box-shadow 0.12s;
+  /* ===================== FORM =====================
+     Sentence-case labels, dense inputs, mono only on data fields. */
+  label {
+    display: block; font-family: var(--font-sans);
+    font-size: var(--fs-12); color: var(--text-secondary);
+    margin: 0 0 var(--sp-1); font-weight: var(--fw-medium);
+    text-transform: none; letter-spacing: var(--tracking-normal);
+  }
+  input[type=text], input[type=number], input[type=password], input[type=datetime-local],
+  textarea, select {
+    width: 100%; padding: var(--sp-2) var(--sp-2);
+    border: var(--bw-1) solid var(--input-border);
+    border-radius: var(--r-2);
+    background: var(--input-bg); color: var(--input-fg);
+    font-size: var(--fs-13); font-family: var(--font-sans);
+    transition: border-color var(--t-fast), box-shadow var(--t-fast), background-color var(--t-fast);
+  }
+  /* Mono only where the value is data the operator reads as data:
+     hostnames, ports (numeric), folder paths, user CSVs. */
+  input#host, input#port, input#folder, input#conn-host, input#conn-port,
+  input#conn-folder, input#upload-folder, input#dfolder, textarea.csv-users {
+    font-family: var(--font-mono);
+  }
+  input:hover:not(:focus):not(:disabled),
+  textarea:hover:not(:focus),
+  select:hover:not(:disabled) {
+    border-color: var(--input-border-hover);
+    background: var(--input-bg-hover);
   }
   input:focus, textarea:focus, select:focus {
-    outline: none; border-color: var(--rule); box-shadow: 0 0 0 2px var(--accent-soft);
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: var(--focus-ring-strong);
   }
   textarea { min-height: 88px; resize: vertical; }
-  select { font-family: var(--sans); cursor: pointer; }
-  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
-  .row + .row, .row + label, label + .row { margin-top: 12px; }
-  .hint { color: var(--muted); font-size: 12.5px; margin-top: 6px;
-    font-family: var(--serif); font-style: italic; line-height: 1.45; }
-  .hint code { background: var(--surface-2); padding: 1px 5px; border-radius: 2px;
-    font-size: 11.5px; font-family: var(--mono); font-style: normal; }
-  .hint b { font-style: normal; font-weight: 700; color: var(--text); }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; align-items: center; }
+  select { font-family: var(--font-sans); cursor: pointer; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--sp-3); }
+  .row + .row, .row + label, label + .row { margin-top: var(--sp-3); }
+  .hint {
+    color: var(--text-secondary);
+    font-size: var(--fs-12);
+    margin-top: var(--sp-1);
+    font-family: var(--font-sans);
+    font-style: normal;
+    line-height: var(--lh-normal);
+  }
+  .hint code {
+    background: var(--surface-2);
+    border: var(--bw-1) solid var(--border-weak);
+    padding: 1px 5px; border-radius: var(--r-1);
+    font-size: var(--fs-12); font-family: var(--font-mono); font-style: normal;
+    color: var(--text-primary);
+  }
+  .hint b { font-style: normal; font-weight: var(--fw-semibold); color: var(--text-primary); }
+  .chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-1); align-items: center; }
   .chip-btn {
-    background: var(--surface); border: 1px solid var(--border); color: var(--text);
-    padding: 2px 10px; border-radius: 999px; font-size: 11.5px; font-family: var(--mono);
-    cursor: pointer; transition: background 0.12s, border-color 0.12s, color 0.12s;
+    background: var(--surface);
+    border: var(--bw-1) solid var(--border-weak);
+    color: var(--text-secondary);
+    padding: 2px 10px; border-radius: var(--r-pill);
+    font-size: var(--fs-12); font-family: var(--font-mono);
+    cursor: pointer;
+    transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
   }
-  .chip-btn:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-  .chip-btn.del { color: var(--muted); padding: 2px 8px; font-family: var(--sans); }
-  /* Subtle visual cue that the field auto-masks when unfocused. */
+  .chip-btn:hover { background: var(--action-hover); border-color: var(--border-medium); color: var(--text-primary); }
+  .chip-btn.del { color: var(--text-tertiary); padding: 2px 8px; font-family: var(--font-sans); }
+  /* Visual cue that the user-CSV field auto-masks on blur. */
   textarea.csv-users:not(:focus) { background: var(--surface-2); }
-  textarea.csv-users:focus { background: var(--surface); }
+  textarea.csv-users:focus { background: var(--input-bg); }
 
-  /* ===================== BUTTONS ===================== */
-  .actions { display: flex; gap: 12px; align-items: center; padding: 18px 2px 0; flex-wrap: wrap; }
+  /* ===================== BUTTONS =====================
+     Sentence-case, no caps, dense. The legacy `button.primary`
+     and `button.ghost` classes remain so existing markup still
+     styles, but the visual language is now app-class. */
+  .actions { display: flex; gap: var(--sp-2); align-items: center; padding: var(--sp-4) 0 0; flex-wrap: wrap; }
   button {
-    font: inherit; cursor: pointer; border-radius: 2px; border: 1px solid var(--rule);
-    padding: 8px 18px; font-weight: 600; font-family: var(--sans);
-    letter-spacing: 0.05em; text-transform: uppercase; font-size: 12px;
-    transition: background 0.12s, color 0.12s, border-color 0.12s;
+    font: inherit; cursor: pointer;
+    border-radius: var(--r-2);
+    border: var(--bw-1) solid var(--border-medium);
+    padding: 6px 14px;
+    font-weight: var(--fw-medium); font-family: var(--font-sans);
+    letter-spacing: var(--tracking-normal); text-transform: none;
+    font-size: var(--fs-13);
+    background: var(--surface); color: var(--text-primary);
+    transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
   }
-  button.primary { background: var(--rule); color: var(--surface); }
-  button.primary:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
-  button.ghost { background: transparent; color: var(--text); }
-  button.ghost:hover:not(:disabled) { background: var(--surface-2); }
-  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  button:hover:not(:disabled) { background: var(--action-hover); border-color: var(--border-strong); }
+  button.primary {
+    background: var(--accent); color: var(--accent-fg); border-color: var(--accent);
+  }
+  button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+  button.ghost {
+    background: transparent; color: var(--text-primary); border-color: transparent;
+  }
+  button.ghost:hover:not(:disabled) { background: var(--action-hover); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
   a.link {
-    color: var(--text); text-decoration: underline;
-    text-underline-offset: 3px; text-decoration-thickness: 1px;
-    font-family: var(--sans); font-size: 12px; text-transform: uppercase;
-    letter-spacing: 0.08em; font-weight: 600;
+    color: var(--text-link); text-decoration: none;
+    text-underline-offset: 3px;
+    font-family: var(--font-sans); font-size: var(--fs-12);
+    text-transform: none; letter-spacing: var(--tracking-normal);
+    font-weight: var(--fw-medium);
   }
-  a.link:hover { color: var(--accent); }
-  #err { color: var(--err); margin: 10px 2px 0; font-size: 13px; min-height: 18px;
-    font-family: var(--serif); font-style: italic; }
+  a.link:hover { color: var(--text-link-hover); text-decoration: underline; }
+  #err {
+    color: var(--danger-fg-soft);
+    margin: var(--sp-2) 0 0;
+    font-size: var(--fs-13); min-height: 18px;
+    font-family: var(--font-sans); font-style: normal;
+  }
 
   /* ===================== STATS (data desk) ===================== */
   .stats {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 0; border-top: 1px solid var(--border); border-left: 1px solid var(--border);
+    gap: 0;
+    border-top: var(--bw-1) solid var(--border-weak);
+    border-left: var(--bw-1) solid var(--border-weak);
+    background: var(--surface);
   }
   .stat {
-    padding: 12px 14px; display: flex; flex-direction: column; gap: 4px;
-    border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    padding: var(--sp-2) var(--sp-3);
+    display: flex; flex-direction: column; gap: 2px;
+    border-right: var(--bw-1) solid var(--border-weak);
+    border-bottom: var(--bw-1) solid var(--border-weak);
     background: var(--surface);
   }
   .stat .k {
-    font-family: var(--sans); font-size: 10px; color: var(--muted);
-    text-transform: uppercase; letter-spacing: 0.12em; font-weight: 600;
+    font-family: var(--font-sans); font-size: var(--fs-11);
+    color: var(--text-tertiary);
+    text-transform: none; letter-spacing: var(--tracking-normal);
+    font-weight: var(--fw-medium);
   }
   .stat .v {
-    font-family: var(--serif); font-size: 26px; font-weight: 700;
-    font-variant-numeric: tabular-nums; line-height: 1.05; letter-spacing: -0.01em;
+    font-family: var(--font-sans); font-size: var(--fs-22);
+    font-weight: var(--fw-semibold);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.05;
+    letter-spacing: var(--tracking-tight);
+    color: var(--text-primary);
   }
-  .stat.bad .v { color: var(--err); }
-  .stat.ok  .v { color: var(--ok); }
+  .stat.bad .v { color: var(--danger-fg-soft); }
+  .stat.ok  .v { color: var(--success-fg-soft); }
 
-  /* ===================== TABLES =====================
-     Row heights stay stable (nowrap), but columns auto-size to their content
-     and the container scrolls horizontally when the total width exceeds the
-     viewport. No ellipsis — every cell shows its full value; no header gets
-     truncated. Real tool, real data. */
-  table { border-collapse: separate; border-spacing: 0; font-size: 12px; min-width: 100%; }
+  /* ===================== TABLES ===================== */
+  table { border-collapse: separate; border-spacing: 0; font-size: var(--fs-12); min-width: 100%; }
   th, td {
-    text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border);
-    font-family: var(--mono);
+    text-align: left; padding: 6px 10px;
+    border-bottom: var(--bw-1) solid var(--border-weak);
+    font-family: var(--font-mono);
     white-space: nowrap;
+    color: var(--text-primary);
   }
   th {
-    background: var(--surface-2); position: sticky; top: 0;
-    font-family: var(--sans); font-weight: 700; color: var(--muted);
-    z-index: 1; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
-    border-bottom: 2px solid var(--rule);
-    white-space: nowrap; /* never break header labels across lines */
+    background: var(--surface-2);
+    position: sticky; top: 0;
+    font-family: var(--font-sans);
+    font-weight: var(--fw-semibold); color: var(--text-secondary);
+    z-index: 1;
+    font-size: var(--fs-11);
+    letter-spacing: var(--tracking-normal); text-transform: none;
+    border-bottom: var(--bw-1) solid var(--border-medium);
+    white-space: nowrap;
   }
   .tbl-wrap {
     max-height: 380px; overflow: auto;
-    border: 1px solid var(--border); background: var(--surface); min-height: 120px;
+    border: var(--bw-1) solid var(--border-weak);
+    border-radius: var(--r-2);
+    background: var(--surface); min-height: 120px;
   }
-  tr.slow { background: var(--slow); }
-  tbody tr:hover { background: var(--surface-2); }
-  .err-text { color: var(--err); font-weight: 600; }
-  .muted { color: var(--muted); }
-  .kind-large { background: var(--rule); color: var(--surface);
-    padding: 1px 7px; border-radius: 2px; font-size: 10.5px; font-weight: 700;
-    letter-spacing: 0.08em; font-family: var(--sans); }
+  tr.slow { background: var(--warning-bg-soft); }
+  tbody tr:hover { background: var(--action-hover); }
+  .err-text { color: var(--danger-fg-soft); font-weight: var(--fw-semibold); }
+  .muted { color: var(--text-tertiary); }
+  .kind-large {
+    background: var(--info-bg-soft); color: var(--info-fg-soft);
+    border: var(--bw-1) solid var(--info-border);
+    padding: 1px 7px; border-radius: var(--r-1);
+    font-size: var(--fs-11); font-weight: var(--fw-semibold);
+    letter-spacing: var(--tracking-normal); font-family: var(--font-sans);
+    text-transform: none;
+  }
   .sched-tag {
-    display: inline-block; background: var(--accent-soft); color: var(--accent);
-    padding: 1px 8px; border-radius: 2px; font-size: 10.5px; font-weight: 700;
-    letter-spacing: 0.08em; font-family: var(--sans); margin-right: 6px;
+    display: inline-block;
+    background: var(--accent); color: var(--accent-fg);
+    padding: 1px 8px; border-radius: var(--r-1);
+    font-size: var(--fs-11); font-weight: var(--fw-semibold);
+    letter-spacing: var(--tracking-normal);
+    font-family: var(--font-sans); margin-right: var(--sp-1);
+    text-transform: none;
   }
   .sched-banner {
-    border: 1px solid var(--accent); background: var(--accent-soft); color: var(--text);
-    padding: 10px 14px; margin-bottom: 14px; font-family: var(--sans); font-size: 13px;
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    border: var(--bw-1) solid var(--accent);
+    background: var(--surface-2); color: var(--text-primary);
+    padding: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-3);
+    font-family: var(--font-sans); font-size: var(--fs-13);
+    display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+    border-radius: var(--r-2);
   }
-  .sched-banner b { color: var(--accent); letter-spacing: 0.04em; }
-  .sched-banner a.link { font-size: 11px; }
-  .code-chip { display: inline-block; padding: 1px 6px; border-radius: 2px;
-    background: var(--surface-2); font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .sched-banner b { color: var(--accent); letter-spacing: var(--tracking-normal); }
+  .sched-banner a.link { font-size: var(--fs-12); }
+  .code-chip {
+    display: inline-block; padding: 1px 6px; border-radius: var(--r-1);
+    background: var(--surface-2); font-size: var(--fs-12); color: var(--text-secondary);
+    font-family: var(--font-mono);
+  }
 
-  /* Uploads table — min-widths only, so cells expand to fit their values.
-     Horizontal scroll kicks in when the total row width exceeds the card.
-     Right-align numeric columns so the decimal points line up. */
+  /* Records table — keep right-align on numeric columns. */
   #rec_tbl { min-width: 100%; }
-  #rec_tbl td:nth-child(6), #rec_tbl th:nth-child(6),      /* Size (KB) */
-  #rec_tbl td:nth-child(7), #rec_tbl th:nth-child(7),      /* Up MB/s */
-  #rec_tbl td:nth-child(10), #rec_tbl th:nth-child(10),    /* Proc Time (min) */
-  #rec_tbl td:nth-child(13), #rec_tbl th:nth-child(13),    /* DL Wait (s) */
-  #rec_tbl td:nth-child(14), #rec_tbl th:nth-child(14)     /* DL MB/s */
+  #rec_tbl td:nth-child(6), #rec_tbl th:nth-child(6),
+  #rec_tbl td:nth-child(7), #rec_tbl th:nth-child(7),
+  #rec_tbl td:nth-child(10), #rec_tbl th:nth-child(10),
+  #rec_tbl td:nth-child(13), #rec_tbl th:nth-child(13),
+  #rec_tbl td:nth-child(14), #rec_tbl th:nth-child(14)
     { text-align: right; font-variant-numeric: tabular-nums; }
-  #rec_tbl th:nth-child(3), #rec_tbl td:nth-child(3) { min-width: 260px; } /* File */
-  #rec_tbl th:nth-child(8), #rec_tbl td:nth-child(8) { min-width: 160px; } /* TrackID */
+  #rec_tbl th:nth-child(3), #rec_tbl td:nth-child(3) { min-width: 260px; }
+  #rec_tbl th:nth-child(8), #rec_tbl td:nth-child(8) { min-width: 160px; }
 
   /* ===================== EMPTY / CHIPS ===================== */
-  .empty { display: flex; align-items: center; justify-content: center;
-    height: 100%; color: var(--muted); font-size: 13px; padding: 28px;
-    text-align: center; font-family: var(--serif); font-style: italic; }
-  .errors-line { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11.5px;
-    color: var(--muted); padding: 10px 2px 0; font-family: var(--mono); }
-  .errors-line .chip { background: var(--surface-2); border: 1px solid var(--border);
-    padding: 2px 9px; border-radius: 2px; }
-  .errors-line .chip b { color: var(--err); font-weight: 700; }
+  .empty {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%; color: var(--text-tertiary); font-size: var(--fs-13);
+    padding: var(--sp-6);
+    text-align: center;
+    font-family: var(--font-sans); font-style: normal;
+  }
+  .errors-line {
+    display: flex; flex-wrap: wrap; gap: var(--sp-1);
+    font-size: var(--fs-12); color: var(--text-secondary);
+    padding: var(--sp-2) 0 0; font-family: var(--font-mono);
+  }
+  .errors-line .chip {
+    background: var(--surface-2);
+    border: var(--bw-1) solid var(--border-weak);
+    padding: 2px 9px; border-radius: var(--r-1);
+  }
+  .errors-line .chip b { color: var(--danger-fg-soft); font-weight: var(--fw-semibold); }
 
   /* ===================== HOST CAPACITY STRIP =====================
-     Newspaper-style "fact box" sitting under the masthead. Static — what the
-     machine *can* do — separate from the live proc badge which shows what
-     the tool *is* doing right now. */
+     Demoted to a thin status-bar-ish row at the top — same data,
+     much less weight. This will move into the new shell's status bar
+     in α2; for α1 it stays where it is. */
   .host-strip {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
-    margin-bottom: 22px;
+    border: var(--bw-1) solid var(--border-weak);
+    border-radius: var(--r-2);
+    background: var(--surface);
+    margin-bottom: var(--sp-3);
   }
   .host-cell {
-    padding: 10px 14px; border-right: 1px solid var(--border);
-    display: flex; flex-direction: column; gap: 3px;
+    padding: var(--sp-2) var(--sp-3);
+    border-right: var(--bw-1) solid var(--border-weak);
+    display: flex; flex-direction: column; gap: 2px;
   }
   .host-cell:last-child { border-right: none; }
   .host-cell .hk {
-    font-family: var(--sans); font-size: 10px; color: var(--muted);
-    text-transform: uppercase; letter-spacing: 0.12em; font-weight: 600;
+    font-family: var(--font-sans); font-size: var(--fs-11);
+    color: var(--text-tertiary);
+    text-transform: none; letter-spacing: var(--tracking-normal);
+    font-weight: var(--fw-medium);
   }
   .host-cell .hv {
-    font-family: var(--serif); font-size: 16px; font-weight: 700;
-    font-variant-numeric: tabular-nums; line-height: 1.15;
+    font-family: var(--font-mono); font-size: var(--fs-13);
+    font-weight: var(--fw-medium);
+    font-variant-numeric: tabular-nums; line-height: 1.2;
+    color: var(--text-primary);
   }
-  .host-cell .hv.warn { color: var(--warn); }
-  .host-cell .hv.bad  { color: var(--err); }
+  .host-cell .hv.warn { color: var(--warning-fg-soft); }
+  .host-cell .hv.bad  { color: var(--danger-fg-soft); }
 
-  /* ===================== PROC BADGE ===================== */
+  /* ===================== PROC BADGE (corner) ===================== */
   .proc-badge {
-    position: fixed; bottom: 14px; right: 16px; z-index: 20;
-    background: var(--rule); color: var(--surface);
-    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.02em;
-    padding: 6px 14px; border-radius: 2px;
-    display: flex; gap: 14px; align-items: center;
+    position: fixed; bottom: var(--sp-3); right: var(--sp-4); z-index: 20;
+    background: var(--surface-3);
+    border: var(--bw-1) solid var(--border-medium);
+    color: var(--text-primary);
+    font-family: var(--font-mono); font-size: var(--fs-11);
+    letter-spacing: var(--tracking-normal);
+    padding: 5px 12px; border-radius: var(--r-2);
+    display: flex; gap: var(--sp-3); align-items: center;
+    box-shadow: var(--shadow-2);
   }
-  .proc-badge .lbl { opacity: 0.55; text-transform: uppercase; letter-spacing: 0.1em; font-size: 9.5px; }
-  .proc-badge .hot { color: var(--accent); font-weight: 700; }
+  .proc-badge .lbl {
+    color: var(--text-tertiary);
+    text-transform: none; letter-spacing: var(--tracking-normal);
+    font-size: var(--fs-11);
+  }
+  .proc-badge .hot { color: var(--accent); font-weight: var(--fw-semibold); }
   @media (max-width: 640px) { .proc-badge { display: none; } }
 
   /* ===================== LIVE PILL ===================== */
   #live_pill {
-    font-family: var(--sans); font-weight: 700; font-size: 10.5px;
-    letter-spacing: 0.14em; text-transform: uppercase;
+    font-family: var(--font-sans); font-weight: var(--fw-semibold);
+    font-size: var(--fs-12); letter-spacing: var(--tracking-normal);
+    text-transform: none; color: var(--text-secondary);
   }
   #live_pill.running { color: var(--accent); }
   #live_pill.running::before {
@@ -312,7 +411,7 @@
     background: var(--accent); border-radius: 50%; margin-right: 6px;
     vertical-align: 1px; animation: pulse 1.6s ease-in-out infinite;
   }
-  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.35 } }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }
 </style>
 
 <!-- Phase 2: legacy class overrides — must load AFTER the inline <style> so it wins the cascade and remaps legacy tokens (--bg, --rule, --accent, etc.) onto the new design system. -->
