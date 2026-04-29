@@ -5,6 +5,7 @@
 import { initTheme } from './theme.js';
 import { installExternalOpener } from './external.js';
 import { mountShell } from './shell.js';
+import { mountSidebar } from './sidebar.js';
 import { mountLiveCharts } from './charts/live.js';
 import { mountCommandPalette } from './command-palette.js';
 import { mountMasthead } from './masthead.js';
@@ -54,5 +55,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // and legacy.js has set window.__sftplBuildRequestBody so saved-
     // config snapshots work.
     mountCommandPalette();
+    // Sidebar mounts AFTER palette so saved-configs reflects any
+    // load that fired during palette init (rare, but tidy).
+    mountSidebar();
   }, 0);
 });
