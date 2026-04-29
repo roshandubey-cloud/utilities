@@ -6,18 +6,20 @@ import { test, expect } from '@playwright/test';
 test.describe('theme toggle', () => {
   test('three theme buttons exist', async ({ page }) => {
     await page.goto('/');
-    // The buttons live inside the masthead; the theme group is labelled
-    // "Theme" via aria-label.
-    const group = page.locator('[role="group"][aria-label*="Theme" i], .theme-toggle, [data-component="masthead"]');
+    // The buttons live inside the topbar's [role="group"][aria-label="Theme"].
+    // The legacy masthead carried a duplicate switcher; it's hidden by the
+    // shell now but still present in the DOM, so we pick the first match
+    // (the visible one).
+    const group = page.locator('[role="group"][aria-label*="Theme" i]').first();
     await expect(group).toBeVisible();
     for (const label of ['Auto', 'Light', 'Dark']) {
-      await expect(page.getByRole('button', { name: label })).toBeVisible();
+      await expect(page.getByRole('button', { name: label }).first()).toBeVisible();
     }
   });
 
   test('switching to dark applies a dark color scheme', async ({ page }) => {
     await page.goto('/');
-    await page.getByRole('button', { name: 'Dark' }).click();
+    await page.getByRole('button', { name: 'Dark' }).first().click();
     // The theme module sets html.dataset.theme or similar; assert that
     // the page background becomes a dark color.
     const isDark = await page.evaluate(() => {
@@ -34,7 +36,7 @@ test.describe('theme toggle', () => {
 
   test('theme choice persists across reload', async ({ page }) => {
     await page.goto('/');
-    await page.getByRole('button', { name: 'Dark' }).click();
+    await page.getByRole('button', { name: 'Dark' }).first().click();
     await page.reload();
     const isDark = await page.evaluate(() => {
       const bg = getComputedStyle(document.body).backgroundColor;

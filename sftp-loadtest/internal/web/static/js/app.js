@@ -4,6 +4,7 @@
 
 import { initTheme } from './theme.js';
 import { installExternalOpener } from './external.js';
+import { mountShell } from './shell.js';
 import { mountMasthead } from './masthead.js';
 import { mountHostBar } from './host.js';
 import { mountRunHeader } from './run-header.js';
@@ -23,6 +24,9 @@ initTheme();
 installExternalOpener();
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Wrap existing markup in the shell first so theme + mounts can find
+  // the topbar's elements where they belong.
+  mountShell();
   mountMasthead('[data-component="masthead"]');
   mountRunHeader('[data-component="run-header"]');
   mountHostBar('[data-component="host-bar"]');

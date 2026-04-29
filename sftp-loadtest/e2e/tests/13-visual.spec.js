@@ -7,14 +7,14 @@ import { test } from '@playwright/test';
 
 test('landing — light theme', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Light' }).click();
+  await page.getByRole('button', { name: 'Light' }).first().click();
   await page.waitForTimeout(200);
   await page.screenshot({ path: 'playwright-report/landing-light.png', fullPage: true });
 });
 
 test('landing — dark theme', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Dark' }).click();
+  await page.getByRole('button', { name: 'Dark' }).first().click();
   await page.waitForTimeout(200);
   await page.screenshot({ path: 'playwright-report/landing-dark.png', fullPage: true });
 });

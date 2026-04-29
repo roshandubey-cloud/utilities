@@ -1,0 +1,357 @@
+/* ============================================================================
+   shell.css — α2 of the v0.9.0 redesign.
+
+   Defines the workbench grid: thin top bar, left sidebar, main pane, bottom
+   status bar. The sidebar is collapsible. The main pane scrolls; the bars
+   stick to viewport edges. No cream backgrounds, no centered article column.
+
+   This file ONLY defines layout primitives. Component visuals come from
+   components.css and the inline-stylesheet legacy bridge in index.html.
+   ============================================================================ */
+
+:root {
+  --shell-topbar-h:    44px;
+  --shell-statusbar-h: 28px;
+  --shell-sidebar-w:   260px;
+  --shell-sidebar-collapsed-w: 56px;
+  --shell-content-pad: var(--sp-4);
+}
+
+/* ---------------- Outer shell grid ----------------
+   Covers the full viewport. Three rows (topbar, body, statusbar) and two
+   columns (sidebar, main). The body row consumes all remaining height.
+*/
+.app-shell {
+  display: grid;
+  grid-template-rows: var(--shell-topbar-h) 1fr var(--shell-statusbar-h);
+  grid-template-columns: var(--shell-sidebar-w) 1fr;
+  grid-template-areas:
+    "topbar topbar"
+    "sidebar main"
+    "statusbar statusbar";
+  width: 100%;
+  min-height: 100vh;
+  background: var(--canvas);
+  color: var(--text-primary);
+}
+.app-shell[data-sidebar="collapsed"] {
+  grid-template-columns: var(--shell-sidebar-collapsed-w) 1fr;
+}
+
+/* ---------------- Topbar ---------------- */
+.shell-topbar {
+  grid-area: topbar;
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-3);
+  height: var(--shell-topbar-h);
+  background: var(--surface);
+  border-bottom: var(--bw-1) solid var(--border-weak);
+  font-size: var(--fs-13);
+}
+.shell-topbar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  text-decoration: none;
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-2);
+  height: 30px;
+}
+.shell-topbar-brand:hover { background: var(--action-hover); }
+.shell-topbar-brand-mark {
+  width: 18px; height: 18px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--accent);
+}
+.shell-topbar-brand-mark svg { width: 100%; height: 100%; }
+.shell-topbar-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px var(--sp-2);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
+}
+.shell-topbar-status-led {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.shell-topbar-status[data-state="idle"]    .shell-topbar-status-led { background: var(--text-tertiary); }
+.shell-topbar-status[data-state="active"]  .shell-topbar-status-led { background: var(--success-fg-soft); animation: ledPulse 1.6s ease-in-out infinite; }
+.shell-topbar-status[data-state="warn"]    .shell-topbar-status-led { background: var(--warning-fg-soft); }
+.shell-topbar-status[data-state="error"]   .shell-topbar-status-led { background: var(--danger-fg-soft); }
+@keyframes ledPulse { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }
+.shell-topbar-spacer { flex: 1; }
+.shell-topbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.shell-topbar-run-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+/* Quiet topbar buttons — sentence case, icon optional. */
+.shell-topbar .btn-icon {
+  appearance: none;
+  border: var(--bw-1) solid var(--border-weak);
+  background: var(--surface);
+  color: var(--text-secondary);
+  border-radius: var(--r-2);
+  padding: 5px 10px;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+  text-transform: none;
+  letter-spacing: var(--tracking-normal);
+}
+.shell-topbar .btn-icon:hover:not(:disabled) {
+  background: var(--action-hover); color: var(--text-primary); border-color: var(--border-medium);
+}
+.shell-topbar .btn-icon[data-variant="primary"] {
+  background: var(--accent); color: var(--accent-fg); border-color: var(--accent);
+}
+.shell-topbar .btn-icon[data-variant="primary"]:hover:not(:disabled) {
+  background: var(--accent-hover); border-color: var(--accent-hover);
+}
+.shell-topbar .btn-icon[data-variant="danger"] {
+  color: var(--danger-fg-soft);
+  border-color: var(--danger-border);
+}
+.shell-topbar .btn-icon[data-variant="danger"]:hover:not(:disabled) {
+  background: var(--danger-bg-soft); color: var(--danger-fg-soft); border-color: var(--danger);
+}
+.shell-topbar .btn-icon[disabled] { opacity: 0.4; cursor: not-allowed; }
+.shell-topbar .kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: var(--r-1);
+  border: var(--bw-1) solid var(--border-weak);
+  background: var(--surface-2);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  margin-left: 4px;
+}
+
+/* Re-skin the existing theme segmented control inside the topbar. */
+.shell-topbar .segmented {
+  display: inline-flex;
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+  overflow: hidden;
+  padding: 2px;
+  gap: 2px;
+}
+.shell-topbar .segmented button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 3px 10px;
+  border-radius: var(--r-1);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+}
+.shell-topbar .segmented button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text-primary);
+}
+.shell-topbar .segmented button:hover:not([aria-pressed="true"]) {
+  color: var(--text-primary);
+}
+
+/* ---------------- Sidebar ---------------- */
+.shell-sidebar {
+  grid-area: sidebar;
+  position: sticky;
+  top: var(--shell-topbar-h);
+  align-self: start;
+  height: calc(100vh - var(--shell-topbar-h) - var(--shell-statusbar-h));
+  background: var(--surface);
+  border-right: var(--bw-1) solid var(--border-weak);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--sp-3) 0;
+}
+.shell-sidebar-section {
+  margin-bottom: var(--sp-3);
+}
+.shell-sidebar-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--sp-3) var(--sp-1);
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  font-weight: var(--fw-semibold);
+}
+.shell-sidebar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 5px var(--sp-3);
+  font-size: var(--fs-13);
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+}
+.shell-sidebar-row:hover { background: var(--action-hover); color: var(--text-primary); }
+.shell-sidebar-row[aria-selected="true"] {
+  background: var(--action-selected);
+  color: var(--text-primary);
+  border-left-color: var(--accent);
+}
+.shell-sidebar-row .row-icon {
+  width: 14px; height: 14px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.shell-sidebar-row .row-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shell-sidebar-row .row-meta {
+  font-size: var(--fs-11); color: var(--text-tertiary); flex-shrink: 0;
+}
+.shell-sidebar-empty {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
+  font-style: normal;
+}
+
+.shell-sidebar-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  background: transparent;
+  border: var(--bw-1) solid transparent;
+  border-radius: var(--r-2);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.shell-sidebar-toggle:hover { background: var(--action-hover); color: var(--text-primary); border-color: var(--border-weak); }
+
+/* Collapsed mode hides labels + section headers, keeps icons. */
+.app-shell[data-sidebar="collapsed"] .shell-sidebar-section-header,
+.app-shell[data-sidebar="collapsed"] .shell-sidebar-row .row-label,
+.app-shell[data-sidebar="collapsed"] .shell-sidebar-row .row-meta,
+.app-shell[data-sidebar="collapsed"] .shell-sidebar-empty {
+  display: none;
+}
+.app-shell[data-sidebar="collapsed"] .shell-sidebar-row {
+  justify-content: center;
+}
+
+/* ---------------- Main pane ---------------- */
+.shell-main {
+  grid-area: main;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--shell-content-pad);
+  /* Inside the main pane the legacy .app container takes over. */
+}
+.shell-main .app {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* ---------------- Status bar ---------------- */
+.shell-statusbar {
+  grid-area: statusbar;
+  position: sticky;
+  bottom: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-3);
+  height: var(--shell-statusbar-h);
+  background: var(--surface);
+  border-top: var(--bw-1) solid var(--border-weak);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+}
+.shell-statusbar-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  border-right: var(--bw-1) solid var(--border-weak);
+  height: 100%;
+}
+.shell-statusbar-cell:last-child { border-right: none; }
+.shell-statusbar-cell .label {
+  color: var(--text-tertiary);
+  font-family: var(--font-sans);
+  font-size: var(--fs-11);
+}
+.shell-statusbar-cell .value {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.shell-statusbar-spacer { flex: 1; }
+
+/* ---------------- Hide legacy chrome that the shell now owns ----------------
+   The legacy newspaper masthead, dek, host-strip, and proc-badge are
+   redundant once the shell topbar + statusbar carry the same data. We hide
+   them here rather than delete from index.html so any test that asserts on
+   their existence (or the JS that mounts them) continues to work. */
+.shell-mounted .app > header.masthead,
+.shell-mounted .app > .host-strip,
+.shell-mounted .proc-badge {
+  display: none !important;
+}
+
+/* The new-design app-masthead also disappears (its job moves to topbar). */
+.shell-mounted [data-component="masthead"] {
+  display: none !important;
+}
+
+/* The host-bar component is also redundant because statusbar carries
+   hostname/cores/ram/FD now. Hide it but keep the markup for tests. */
+.shell-mounted [data-component="host-bar"] {
+  display: none !important;
+}
+
+/* ---------------- Narrow-viewport collapse ----------------
+   Below 800 px the sidebar collapses to icon-only by default. */
+@media (max-width: 800px) {
+  .app-shell:not([data-sidebar="open"]) {
+    grid-template-columns: var(--shell-sidebar-collapsed-w) 1fr;
+  }
+  .app-shell:not([data-sidebar="open"]) .shell-sidebar-section-header,
+  .app-shell:not([data-sidebar="open"]) .shell-sidebar-row .row-label,
+  .app-shell:not([data-sidebar="open"]) .shell-sidebar-row .row-meta,
+  .app-shell:not([data-sidebar="open"]) .shell-sidebar-empty {
+    display: none;
+  }
+  .app-shell:not([data-sidebar="open"]) .shell-sidebar-row {
+    justify-content: center;
+  }
+}
