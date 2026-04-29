@@ -8,20 +8,30 @@
 
 import { apiFetch } from './api.js';
 
-const REFRESH_MS = 8000;
+// Polling cadence. Was 8 s — operators sat staring at a stale "no
+// completed runs yet" empty state for the better part of a minute
+// after a 5-second smoke run finished. 3 s is a fair compromise: the
+// panel typically updates within one beat of the run finishing while
+// the request rate stays trivial.
+const REFRESH_MS = 3000;
 
 export function mountRunsHistory(rootSelector) {
   const root = document.querySelector(rootSelector);
   if (!root) return;
 
   // Relocate to the legacy right-column slot where Previous-runs lived so
-  // operators find it where it has always been. Tagged as a Review-step
-  // panel so the wizard's existing visibility filter handles show/hide.
+  // operators find it where it has always been.
+  //
+  // We deliberately do NOT set data-step on the relocated panel. Earlier
+  // builds tagged it data-step="review" on the theory that historical
+  // runs should appear last; in practice operators want to see Previous
+  // runs while CONFIGURING a new one (to pick what to repeat, to
+  // compare expected vs achieved). The panel is reference data and
+  // stays visible at every wizard step.
   const legacyRunsCard = document.querySelector('.card:has(#runs_body)') || document.getElementById('runs_body')?.closest('.card');
   if (legacyRunsCard && legacyRunsCard.parentNode && root.parentNode !== legacyRunsCard.parentNode) {
     legacyRunsCard.parentNode.insertBefore(root, legacyRunsCard.nextSibling);
   }
-  root.dataset.step = 'review';
 
   const slot = root.querySelector('[data-role="content"]');
   const counter = root.querySelector('[data-role="count"]');

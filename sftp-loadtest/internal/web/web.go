@@ -232,10 +232,13 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 		}
 		dialOpts.HostKeyCallback = cb
 	case req.TrustOnFirstUse:
-		out["stage"] = "ssh_or_sftp"
-		out["error"] = "trust_on_first_use requires the tool-managed trust store or -known-hosts <path>"
-		writeJSON(w, out)
-		return
+		// trust_on_first_use without a trust mechanism: when the server
+		// is in -insecure-host-key mode there's no host-key verification
+		// happening anyway, so TOFU is a no-op rather than an error.
+		// Silently honour the request — the Start preflight calls this
+		// path on every run, and turning it into a hard error trapped
+		// operators in lab/insecure setups behind an unactionable toast.
+		// dialOpts stays empty → process-wide insecure callback is used.
 	case store != nil:
 		dialOpts.HostKeyCallback = store.CaptureCallback(func(ck hostkeys.CapturedKey) {
 			capturedFP = ck.Fingerprint

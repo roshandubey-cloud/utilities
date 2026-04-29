@@ -599,12 +599,12 @@
         <div class="body">
           <div class="row">
             <div>
-              <label>Host</label>
+              <label for="host">Host</label>
               <input id="host" type="text" placeholder="sftp.example.com" list="host_history" autocomplete="on">
               <datalist id="host_history"></datalist>
             </div>
             <div>
-              <label>Port</label>
+              <label for="port">Port</label>
               <input id="port" type="number" value="22" list="port_history" autocomplete="on">
               <datalist id="port_history"></datalist>
             </div>
@@ -618,7 +618,7 @@
           </div>
           <div id="probe_result" class="hint" style="margin:6px 0 0"></div>
           <div style="margin-top:10px">
-            <label>Upload folder (remote)</label>
+            <label for="folder">Upload folder (remote)</label>
             <input id="folder" type="text" placeholder="inbox">
             <div class="chips">
               <button type="button" class="chip-btn" data-fill="folder" data-value="inbox">inbox</button>
@@ -626,13 +626,13 @@
             <div class="hint">Click the chip or type your own path.</div>
           </div>
           <div class="row">
-            <div><label>Parallel streams / user</label><input id="parallel" type="number" value="2" min="1"></div>
-            <div><label>Duration (hours)</label><input id="duration" type="number" value="1" step="0.25" min="0.01"></div>
+            <div><label for="parallel">Parallel streams / user</label><input id="parallel" type="number" value="2" min="1"></div>
+            <div><label for="duration">Duration (hours)</label><input id="duration" type="number" value="1" step="0.25" min="0.01"></div>
           </div>
           <div class="row">
-            <div><label title="How often the tool re-lists each upload user's inbox (looking for #trackid renames) AND each download user's outbox (looking for files to pull). Lower = faster detection, more SFTP overhead.">Poll interval (sec)</label><input id="poll" type="number" value="3" min="1"></div>
-            <div><label>Track-ID timeout (min)</label><input id="timeout_min" type="number" value="10" min="1"></div>
-            <div><label title="Disable a user account after this many consecutive failed ops. 0 = off.">Disable user after (fails)</label><input id="max_fails" type="number" value="3" min="0"></div>
+            <div><label for="poll" title="How often the tool re-lists each upload user's inbox (looking for #trackid renames) AND each download user's outbox (looking for files to pull). Lower = faster detection, more SFTP overhead.">Poll interval (sec)</label><input id="poll" type="number" value="3" min="1"></div>
+            <div><label for="timeout_min">Track-ID timeout (min)</label><input id="timeout_min" type="number" value="10" min="1"></div>
+            <div><label for="max_fails" title="Disable a user account after this many consecutive failed ops. 0 = off.">Disable user after (fails)</label><input id="max_fails" type="number" value="3" min="0"></div>
           </div>
           <div class="hint">
             Set the track-ID timeout to however long your SFTP server might take to process a file. The tool polls patiently and records the <b>actual</b> processing time once the server renames the file; a file only gets the <code>TRACKID_TIMEOUT</code> error code if it never shows up before this limit. <b>Wall-clock cost:</b> after the upload phase ends, the run keeps draining for up to this much longer to give pending track-IDs time to resolve — a 4 h timeout means the run can stay "active" up to ~4 h past its scheduled end.
@@ -650,10 +650,10 @@
         </header>
         <div class="body">
           <div class="row">
-            <div><label>Files per minute</label><input id="fpm" type="number" value="60" min="1"></div>
-            <div><label>Min size (MB)</label><input id="nmin" type="number" value="1" min="1"></div>
-            <div><label>Max size (MB)</label><input id="nmax" type="number" value="5" min="1"></div>
-            <div><label>Content</label>
+            <div><label for="fpm">Files per minute</label><input id="fpm" type="number" value="60" min="1"></div>
+            <div><label for="nmin">Min size (MB)</label><input id="nmin" type="number" value="1" min="1"></div>
+            <div><label for="nmax">Max size (MB)</label><input id="nmax" type="number" value="5" min="1"></div>
+            <div><label for="ncontent">Content</label>
               <select id="ncontent">
                 <option value="binary">binary</option>
                 <option value="ascii">ascii</option>
@@ -661,7 +661,7 @@
               </select>
             </div>
           </div>
-          <label style="margin-top:10px">Users (CSV) <span class="muted">— username,password,pattern1*,pattern2*,…</span></label>
+          <label for="normal_users" style="margin-top:10px">Users (CSV) <span class="muted">— username,password,pattern1*,pattern2*,…</span></label>
           <textarea class="csv-users" id="normal_users" placeholder="user1,pass1,invoice*,order*&#10;user2,pass2,report*.csv"></textarea>
           <div class="hint">Filenames: the trailing <code>*</code> in a pattern is replaced with <code>&lt;nanos&gt;_&lt;rnd&gt;</code>. The original extension is preserved — <code>invoice*</code> → <code>invoice&lt;nanos&gt;_&lt;rnd&gt;.txt</code>; <code>report*.csv</code> → <code>report&lt;nanos&gt;_&lt;rnd&gt;.csv</code>. Passwords auto-reveal while you're editing the field and re-mask as soon as you click away.</div>
         </div>
@@ -677,14 +677,14 @@
         </header>
         <div class="body">
           <div class="row">
-            <div><label>Min size</label><input id="lmin" type="number" value="100" min="1"></div>
-            <div><label>Max size</label><input id="lmax" type="number" value="500" min="1"></div>
-            <div><label>Unit</label>
+            <div><label for="lmin">Min size</label><input id="lmin" type="number" value="100" min="1"></div>
+            <div><label for="lmax">Max size</label><input id="lmax" type="number" value="500" min="1"></div>
+            <div><label for="lunit">Unit</label>
               <select id="lunit"><option>MB</option><option>GB</option></select>
             </div>
-            <div><label>Every (minutes)</label><input id="interval" type="number" value="30" min="1"></div>
+            <div><label for="interval">Every (minutes)</label><input id="interval" type="number" value="30" min="1"></div>
           </div>
-          <label style="margin-top:10px">Users (CSV)</label>
+          <label for="large_users" style="margin-top:10px">Users (CSV)</label>
           <textarea class="csv-users" id="large_users" placeholder="user1,pass1,large*"></textarea>
         </div>
       </section>
@@ -700,13 +700,13 @@
         <div class="body">
           <div class="row">
             <div>
-              <label>Download folder (remote)</label>
+              <label for="dfolder">Download folder (remote)</label>
               <input id="dfolder" type="text" placeholder="outbox">
               <div class="chips">
                 <button type="button" class="chip-btn" data-fill="dfolder" data-value="outbox">outbox</button>
               </div>
             </div>
-            <div><label>Parallel streams / user</label><input id="dparallel" type="number" value="2" min="1"></div>
+            <div><label for="dparallel">Parallel streams / user</label><input id="dparallel" type="number" value="2" min="1"></div>
           </div>
           <div class="hint">
             Click a suggestion or type your own. Leave blank to reuse the upload folder.
@@ -734,7 +734,7 @@
           <div class="hint">
             <b>Server requirements:</b> in <i>track-id</i> mode the server must add the <code>#&lt;id&gt;</code> suffix; in <i>filename</i> mode the server must place the file (with our marker preserved) in the download user's <code>folder</code>. Without that routing this card records zero downloads.
           </div>
-          <label style="margin-top:10px">Download users (CSV)</label>
+          <label for="download_users" style="margin-top:10px">Download users (CSV)</label>
           <textarea class="csv-users" id="download_users" placeholder="dl1,pwd1,*&#10;dl2,pwd2,*"></textarea>
         </div>
       </section>
@@ -779,11 +779,11 @@
 
           <div class="row" style="margin-top:14px">
             <div style="flex:2">
-              <label>Schedule run at</label>
+              <label for="sched_at">Schedule run at</label>
               <input id="sched_at" type="datetime-local" step="60">
             </div>
             <div style="flex:3">
-              <label>Note (optional)</label>
+              <label for="sched_note">Note (optional)</label>
               <input id="sched_note" type="text" placeholder="nightly soak against prod-sftp-1">
             </div>
           </div>

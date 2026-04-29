@@ -12,7 +12,11 @@
 import { apiFetch } from './api.js';
 import { pushToast } from './toast.js';
 
-const REFRESH_MS = 8000;
+// Trusted hosts changes the moment an operator accepts a TOFU prompt
+// or clicks Forget; an 8 s poll left the panel showing stale state for
+// most of that interval. 3 s feels instantaneous to a human and the
+// request rate is still trivial.
+const REFRESH_MS = 3000;
 
 export function mountTrustedHosts(rootSelector) {
   const root = document.querySelector(rootSelector);
@@ -20,9 +24,9 @@ export function mountTrustedHosts(rootSelector) {
   const slot = root.querySelector('[data-role="content"]');
   const counter = root.querySelector('[data-role="count"]');
 
-  // Tag for the wizard's existing visibility filter so the panel hides on
-  // the run-config wizard steps and reappears with Review.
-  root.dataset.step = 'review';
+  // No wizard tag: trusted hosts is reference data the operator may
+  // want to manage at any point (e.g. before clicking Start to forget a
+  // server they no longer trust). Always visible.
 
   async function refresh() {
     try {
