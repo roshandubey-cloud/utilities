@@ -51,10 +51,16 @@ function formatRam(mb) {
   if (!mb) return '—';
   return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
 }
+// macOS reports the "unlimited" hard limit as math.MaxInt64
+// (9,223,372,036,854,775,807). Anything above ~1 billion is effectively
+// no limit; format that as ∞ so the host strip stops showing a 19-digit
+// integer next to a comfortable 10,240.
+const FD_UNLIMITED_THRESHOLD = 1_000_000_000;
 function formatFD(soft, hard) {
   if (!soft) return '—';
-  if (hard && hard !== soft) return `${soft.toLocaleString()} / ${hard.toLocaleString()}`;
-  return soft.toLocaleString();
+  const fmt = (n) => (n >= FD_UNLIMITED_THRESHOLD ? '∞' : n.toLocaleString());
+  if (hard && hard !== soft) return `${fmt(soft)} / ${fmt(hard)}`;
+  return fmt(soft);
 }
 function pickBestLink(ifs) {
   if (!Array.isArray(ifs)) return null;

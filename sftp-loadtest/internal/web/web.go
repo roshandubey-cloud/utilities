@@ -835,16 +835,60 @@ func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request) {
 		}
 		liveIDs[id] = true
 		snap := run.Metrics.Snapshot()
-		live = append(live, map[string]any{
+		// If a run is no longer active AND its meta JSON has already
+		// been sealed to disk, prefer the historical entry: it carries
+		// the full analyzer narrative (suggestions, infra peaks,
+		// latency) the live state hasn't computed yet. The live entry's
+		// only value during a finished-but-still-in-memory run is
+		// freshness, and the seal has already produced the finalised
+		// values.
+		if !run.IsActive() && s.reportsDir != "" {
+			if hist := historicalForLiveID(s.reportsDir, run.ID); hist != nil {
+				live = append(live, runMetaToMap(*hist, false, "memory+disk"))
+				continue
+			}
+		}
+		// Enrich the live entry with the same field set the historical
+		// (post-seal) entry carries, so a just-completed run shown in
+		// the Previous-runs card has its full analysis (latency, infra
+		// peaks, dispatch skips) rather than looking like a stub until
+		// the in-memory entry is eventually evicted. Source-of-truth
+		// for these is whatever the live Run currently holds.
+		entry := map[string]any{
 			"id":           run.ID,
 			"started_at":   run.StartedAt,
-			"started_by":   run.StartedBy, // "manual" or "schedule"
+			"started_by":   run.StartedBy,
 			"active":       run.IsActive(),
 			"total_files":  snap.TotalFiles,
 			"total_bytes":  snap.TotalBytes,
 			"overall_mbps": snap.OverallMBps,
+			"failed_files": run.FailedFiles.Load(),
+			"dispatch_skips": run.DispatchSkips.Load(),
 			"source":       "memory",
-		})
+		}
+		if run.Cfg != nil {
+			entry["upload_users"] = len(run.Cfg.NormalUsers)
+			entry["parallel_streams"] = run.Cfg.ParallelStreams
+			if run.Cfg.Normal != nil {
+				entry["files_per_minute"] = run.Cfg.Normal.FilesPerMinute
+			}
+			if run.Cfg.Download != nil {
+				entry["download_enabled"] = true
+				entry["download_users"] = len(run.Cfg.DownloadUsers)
+				entry["download_parallel_streams"] = run.Cfg.Download.ParallelStreams
+				if run.Cfg.Download.MatchMode != "" {
+					entry["download_match_mode"] = run.Cfg.Download.MatchMode
+				}
+			}
+		}
+		// Latency: snapshot the live histograms so percentile points
+		// appear immediately on the card, not just after the seal.
+		entry["latency"] = map[string]any{
+			"upload":     latencyStageJSON(run.UploadLatency.Snapshot()),
+			"upload_cor": latencyStageJSON(run.UploadLatencyCOR.Snapshot()),
+			"dial":       latencyStageJSON(run.DialLatency.Snapshot()),
+		}
+		live = append(live, entry)
 	}
 	s.mu.Unlock()
 	// Historical runs from disk (skip any that are already in-memory).
@@ -855,37 +899,7 @@ func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request) {
 			if liveIDs[m.ID] {
 				continue
 			}
-			historical = append(historical, map[string]any{
-				"id":                        m.ID,
-				"started_at":                m.StartedAt,
-				"stopped_at":                m.StoppedAt,
-				"active":                    false,
-				"total_files":               m.TotalFiles,
-				"total_bytes":               m.TotalBytes,
-				"overall_mbps":              m.OverallMBps,
-				"failed_files":              m.FailedFiles,
-				"succeeded_files":           m.SucceededFiles,
-				"upload_users":              m.UploadUsers,
-				"download_users":            m.DownloadUsers,
-				"parallel_streams":          m.ParallelStreams,
-				"download_parallel_streams": m.DownloadParallelStreams,
-				"files_per_minute":          m.FilesPerMinute,
-				"download_enabled":          m.DownloadEnabled,
-				"download_match_mode":       m.DownloadMatchMode,
-				"dispatch_skips":            m.DispatchSkips,
-				"download_stalled":          m.DownloadStalled,
-				"interrupted":               m.Interrupted,
-				"latency":                   m.Latency,
-				"peak_cpu_percent":          m.PeakCPUPercent,
-				"avg_cpu_percent":           m.AvgCPUPercent,
-				"peak_fd_in_use":            m.PeakFDInUse,
-				"peak_goroutines":           m.PeakGoroutines,
-				"peak_heap_mb":              m.PeakHeapMB,
-				"peak_window_mbps":          m.PeakWindowMBps,
-				"num_cpu":                   m.NumCPU,
-				"suggestions":               m.Suggestions,
-				"source":                    "disk",
-			})
+			historical = append(historical, runMetaToMap(m, false, "disk"))
 		}
 	}
 	// Newest first: reverse live, append historical (already sorted newest-first).
@@ -1005,5 +1019,57 @@ func writeJSON(w http.ResponseWriter, v any) {
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(v)
+}
+
+// historicalForLiveID looks up the on-disk meta for a run that is also
+// present in memory. Returns nil when the seal hasn't completed yet —
+// the caller should fall back to the live-stub view in that case.
+func historicalForLiveID(reportsDir, id string) *persist.RunMeta {
+	metas, _ := persist.ListMeta(reportsDir)
+	for i := range metas {
+		if metas[i].ID == id {
+			return &metas[i]
+		}
+	}
+	return nil
+}
+
+// runMetaToMap renders a RunMeta in the JSON shape the runs-history UI
+// expects. Pulled out of /api/runs so live and historical entries pass
+// through the same builder — when a finished-but-still-in-memory run
+// has its seal complete on disk, the live branch can use this same
+// function to render the historical fields.
+func runMetaToMap(m persist.RunMeta, _live bool, source string) map[string]any {
+	return map[string]any{
+		"id":                        m.ID,
+		"started_at":                m.StartedAt,
+		"stopped_at":                m.StoppedAt,
+		"active":                    false,
+		"total_files":               m.TotalFiles,
+		"total_bytes":               m.TotalBytes,
+		"overall_mbps":              m.OverallMBps,
+		"failed_files":              m.FailedFiles,
+		"succeeded_files":           m.SucceededFiles,
+		"upload_users":              m.UploadUsers,
+		"download_users":            m.DownloadUsers,
+		"parallel_streams":          m.ParallelStreams,
+		"download_parallel_streams": m.DownloadParallelStreams,
+		"files_per_minute":          m.FilesPerMinute,
+		"download_enabled":          m.DownloadEnabled,
+		"download_match_mode":       m.DownloadMatchMode,
+		"dispatch_skips":            m.DispatchSkips,
+		"download_stalled":          m.DownloadStalled,
+		"interrupted":               m.Interrupted,
+		"latency":                   m.Latency,
+		"peak_cpu_percent":          m.PeakCPUPercent,
+		"avg_cpu_percent":           m.AvgCPUPercent,
+		"peak_fd_in_use":            m.PeakFDInUse,
+		"peak_goroutines":           m.PeakGoroutines,
+		"peak_heap_mb":              m.PeakHeapMB,
+		"peak_window_mbps":          m.PeakWindowMBps,
+		"num_cpu":                   m.NumCPU,
+		"suggestions":               m.Suggestions,
+		"source":                    source,
+	}
 }
 
