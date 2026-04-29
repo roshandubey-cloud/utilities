@@ -377,6 +377,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/schedule/cancel", s.handleScheduleCancel)
 	mux.HandleFunc("/api/hostkeys", s.handleHostKeys)
 	mux.HandleFunc("/api/hostkeys/remove", s.handleHostKeysRemove)
+	mux.HandleFunc("/api/cluster/start", s.handleClusterStart)
+	mux.HandleFunc("/api/cluster/status", s.handleClusterStatus)
+	mux.HandleFunc("/api/cluster/stop", s.handleClusterStop)
 	return mux
 }
 
