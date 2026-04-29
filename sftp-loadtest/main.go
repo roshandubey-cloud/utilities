@@ -17,6 +17,7 @@ import (
 
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/fdlimit"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/hostkeys"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/persist"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/sftpx"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/web"
 )
@@ -125,6 +126,14 @@ func main() {
 
 	tlsEnabled := *tlsCert != "" && *tlsKey != ""
 	authEnabled := *authUser != "" && *authPass != ""
+
+	// Crash-resume: if the previous process exited mid-run, the streamed
+	// CSV survives but the meta JSON was never written. Synthesise stub
+	// metas (marked interrupted=true) so historical runs aren't silently
+	// lost. Best-effort — failures here never block startup.
+	if recovered, err := persist.RecoverInterrupted(absDir); err == nil && len(recovered) > 0 {
+		log.Printf("recovered %d interrupted run(s) from %s: %v", len(recovered), absDir, recovered)
+	}
 
 	srv := web.NewServer(absDir, absSchedules)
 	defer srv.Shutdown()

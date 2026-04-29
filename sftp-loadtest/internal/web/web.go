@@ -838,6 +838,7 @@ func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request) {
 				"download_enabled":          m.DownloadEnabled,
 				"dispatch_skips":            m.DispatchSkips,
 				"download_stalled":          m.DownloadStalled,
+				"interrupted":               m.Interrupted,
 				"peak_cpu_percent":          m.PeakCPUPercent,
 				"avg_cpu_percent":           m.AvgCPUPercent,
 				"peak_fd_in_use":            m.PeakFDInUse,

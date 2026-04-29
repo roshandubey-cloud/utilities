@@ -85,13 +85,16 @@ function rowMarkup(r) {
   const throttledBadge = skips > 0
     ? `<span class="badge badge-warning" title="${skips.toLocaleString()} file(s) skipped at dispatch time because every SSH slot was busy. Increase parallel_streams or add users to keep up at this fpm."><span class="dot"></span>Throttled · ${throttledPct.toFixed(1)}% skipped</span>`
     : '';
+  const interruptedBadge = r.interrupted
+    ? `<span class="badge badge-warning" title="The process exited before this run could finalise. Counts were reconstructed from the on-disk CSV; in-flight state at crash time is lost."><span class="dot"></span>Interrupted</span>`
+    : '';
   const csvUrl = `/api/report.csv?run=${encodeURIComponent(r.id)}`;
   return `
     <article class="runs-history-card">
       <header class="runs-history-card-head">
         <div class="runs-history-id">
           <div class="mono">${escapeHTML(r.id)}</div>
-          <div class="body-small" style="color:var(--text-tertiary)">${formatStarted(r.started_at)}${r.stopped_at ? ' · ' + formatDuration(r.started_at, r.stopped_at) : ''}${throttledBadge ? ' · ' + throttledBadge : ''}</div>
+          <div class="body-small" style="color:var(--text-tertiary)">${formatStarted(r.started_at)}${r.stopped_at ? ' · ' + formatDuration(r.started_at, r.stopped_at) : ''}${throttledBadge ? ' · ' + throttledBadge : ''}${interruptedBadge ? ' · ' + interruptedBadge : ''}</div>
         </div>
         <div class="runs-history-actions">
           <a class="btn btn-sm btn-ghost" href="${csvUrl}" download data-external="1">CSV</a>

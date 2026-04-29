@@ -72,6 +72,12 @@ type RunMeta struct {
 	// the exact same advice.
 	Suggestions []Suggestion `json:"suggestions,omitempty"`
 
+	// Interrupted is true when the meta was synthesised by the boot-time
+	// recovery path because the process exited before sealAllAndWriteMeta
+	// could run. Counts may be approximate (built from CSV rows still on
+	// disk); the run did NOT complete cleanly.
+	Interrupted bool `json:"interrupted,omitempty"`
+
 	Disabled []DisabledUser `json:"disabled,omitempty"`
 }
 
