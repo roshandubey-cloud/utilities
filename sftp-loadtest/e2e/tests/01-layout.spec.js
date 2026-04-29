@@ -22,8 +22,13 @@ test('quick checks panel visible with all fields', async ({ page }) => {
   await expect(page.locator('#conn-folder')).toBeVisible();
 });
 
-test('hero run start panel visible', async ({ page }) => {
-  await expect(page.locator('[data-component="hero-run"]')).toBeVisible();
+test('topbar Run button is the primary call to action', async ({ page }) => {
+  // The legacy hero-run "Run a load test" panel is now suppressed by the
+  // shell — the topbar carries the primary Run / Stop. We assert the
+  // topbar variant is reachable and rendered as the primary tone.
+  const tbRun = page.locator('[data-role="topbar-run"]');
+  await expect(tbRun).toBeVisible();
+  await expect(tbRun).toHaveAttribute('data-variant', 'primary');
 });
 
 test('records / live activity panel slot exists', async ({ page }) => {

@@ -375,6 +375,13 @@ body.wails-desktop .shell-topbar .segmented { -webkit-app-region: no-drag; }
   display: none !important;
 }
 
+/* The hero-run "Run a load test" panel duplicates the topbar Run button.
+   Hide it inside the shell so the main pane leads with the actual work
+   (live charts + records) rather than a marketing-style call to action. */
+.shell-mounted [data-component="hero-run"] {
+  display: none !important;
+}
+
 /* ============================================================================
    Workbench charts — pure-SVG sparklines mounted above the records panel.
    Two side-by-side panels on desktop, stacked on narrow viewports.
