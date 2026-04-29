@@ -758,6 +758,60 @@
   color: var(--text-primary);
 }
 
+/* ============================================================================
+   Cluster mode UI (β2) — Distribute load row in upload card.
+   ============================================================================ */
+
+.cluster-distribute-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-2);
+  border: var(--bw-1) dashed var(--border-medium);
+  border-radius: var(--r-2);
+  margin-bottom: var(--sp-3);
+  flex-wrap: wrap;
+}
+.cluster-distribute-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+  font-size: var(--fs-13);
+  color: var(--text-primary);
+  font-weight: var(--fw-medium);
+  text-transform: none;
+  letter-spacing: var(--tracking-normal);
+  margin: 0;
+}
+.cluster-distribute-toggle input { accent-color: var(--accent); }
+.cluster-distribute-status {
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
+  flex: 1;
+  font-family: var(--font-sans);
+}
+.cluster-distribute-status[data-kind="warn"] { color: var(--warning-fg-soft); }
+
+/* Sidebar workers row state badge — small pill for on/off. */
+.shell-sidebar-row [data-role="worker-state"] {
+  font-size: var(--fs-11);
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  font-family: var(--font-mono);
+}
+.shell-sidebar-row [data-role="worker-state"][data-enabled="true"] {
+  background: var(--success-bg-soft);
+  color: var(--success-fg-soft);
+  border: var(--bw-1) solid var(--success-border);
+}
+.shell-sidebar-row [data-role="worker-state"][data-enabled="false"] {
+  background: var(--surface-2);
+  color: var(--text-tertiary);
+  border: var(--bw-1) solid var(--border-weak);
+}
+
 /* ---------------- Narrow-viewport collapse ----------------
    Below 800 px the sidebar collapses to icon-only by default. */
 @media (max-width: 800px) {
