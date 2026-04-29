@@ -35,8 +35,9 @@ type RunMeta struct {
 	DownloadUsers           int  `json:"download_users"`
 	ParallelStreams         int  `json:"parallel_streams"`
 	DownloadParallelStreams int  `json:"download_parallel_streams"`
-	FilesPerMinute          int  `json:"files_per_minute"`
-	DownloadEnabled         bool `json:"download_enabled"`
+	FilesPerMinute          int    `json:"files_per_minute"`
+	DownloadEnabled         bool   `json:"download_enabled"`
+	DownloadMatchMode       string `json:"download_match_mode,omitempty"`
 
 	// DispatchSkips records how many file uploads were SKIPPED at dispatch
 	// time because every parallel SSH slot was busy. Non-zero means the run

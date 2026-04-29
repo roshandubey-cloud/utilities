@@ -28,6 +28,15 @@ type FileRecord struct {
 	Error        string
 	ErrorCode    string // stable code: POOL_EMPTY, DIAL, AUTH, CREATE, WRITE, CLOSE, PANIC, TRACKID_TIMEOUT, DOWNLOAD
 
+	// FilenameID is the 12-char marker the runner injected into the
+	// upload filename when the run is configured for filename-mode
+	// round-trip tracking (Download.MatchMode == "filename"). The
+	// download worker matches files in the destination outbox by
+	// scanning for this marker as a substring, so it works even when
+	// the SFTP server prefixes or suffixes the filename in transit.
+	// Empty in trackid mode (the default).
+	FilenameID string
+
 	// Download phase — populated if download test is enabled and this file
 	// (matched by trackID) was selected for download.
 	DownloadUser      string
@@ -74,11 +83,12 @@ func IsReliablePerFileSpeed(bytes int64, dur time.Duration) bool {
 // pointers so a finalized row can be nil'd out after being flushed to disk
 // by the streaming writer — keeps RAM flat on long high-fpm runs.
 type Store struct {
-	mu         sync.Mutex
-	records    []*FileRecord
-	byKey      map[string]int  // user|filename -> index
-	byBasename map[string]int  // filename -> index
-	byMinute   map[int64][]int // unix-minute of StartTime -> record indexes
+	mu           sync.Mutex
+	records      []*FileRecord
+	byKey        map[string]int  // user|filename -> index
+	byBasename   map[string]int  // filename -> index
+	byFilenameID map[string]int  // filename-mode marker -> index
+	byMinute     map[int64][]int // unix-minute of StartTime -> record indexes
 	stream     *CSVStreamWriter
 	// Monotonic counters for observability.
 	flushed int64
@@ -100,6 +110,7 @@ func NewStore() *Store {
 	return &Store{
 		byKey:         map[string]int{},
 		byBasename:    map[string]int{},
+		byFilenameID:  map[string]int{},
 		byMinute:      map[int64][]int{},
 		recentTailCap: RecentTailCap,
 	}
@@ -117,6 +128,9 @@ func (s *Store) AddUpload(r FileRecord) {
 	s.records = append(s.records, &rec)
 	s.byKey[rec.User+"|"+rec.Filename] = idx
 	s.byBasename[rec.Filename] = idx
+	if rec.FilenameID != "" {
+		s.byFilenameID[rec.FilenameID] = idx
+	}
 	if !rec.StartTime.IsZero() {
 		m := rec.StartTime.Unix() / 60
 		s.byMinute[m] = append(s.byMinute[m], idx)
@@ -146,6 +160,35 @@ func (s *Store) AttachTrackID(user, filename, trackID string, detectedAt time.Ti
 	if !r.EndTime.IsZero() {
 		r.TrackIDWait = detectedAt.Sub(r.EndTime)
 	}
+}
+
+// AttachDownloadByFilenameID attaches a DownloadResult to whichever
+// upload record was tagged with the given marker token. Used by the
+// filename-mode download worker: it scans an arbitrary outbox name for
+// the embedded marker and looks the record up here. Returns false when
+// no upload in this run owned this marker (orphan) or the record has
+// already been flushed to disk.
+func (s *Store) AttachDownloadByFilenameID(marker string, d DownloadResult) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx, ok := s.byFilenameID[marker]
+	if !ok {
+		return false
+	}
+	r := s.records[idx]
+	if r == nil {
+		return false
+	}
+	r.DownloadUser = d.DownloadUser
+	r.DownloadStartTime = d.StartTime
+	r.DownloadEndTime = d.EndTime
+	r.DownloadSizeBytes = d.SizeBytes
+	r.DownloadSpeedMBps = d.SpeedMBps
+	r.DownloadError = d.Error
+	if !d.AvailableAt.IsZero() && !d.StartTime.IsZero() {
+		r.DownloadWait = d.StartTime.Sub(d.AvailableAt)
+	}
+	return true
 }
 
 // AttachDownloadByBasename attaches a DownloadResult to whichever upload
@@ -376,7 +419,7 @@ type EffectiveSpeedFn func(bytes int64, startTime time.Time, dur time.Duration) 
 // CSVHeader is the canonical column list, exported so both the bulk and
 // streaming writers agree.
 var CSVHeader = []string{
-	"user", "kind", "filename", "start_time", "end_time", "duration_sec",
+	"user", "kind", "filename", "filename_id", "start_time", "end_time", "duration_sec",
 	"size_bytes", "expected_bytes", "incomplete",
 	"upload_mbps", "upload_mbps_source",
 	"track_id", "track_id_detected_at", "track_id_wait_sec", "processing_time_min",
@@ -409,6 +452,7 @@ func buildRow(r FileRecord, slowdownMins map[int64]bool, eff EffectiveSpeedFn) [
 		r.User,
 		r.Kind,
 		r.Filename,
+		r.FilenameID,
 		r.StartTime.Format(time.RFC3339Nano),
 		r.EndTime.Format(time.RFC3339Nano),
 		strconv.FormatFloat(upDur.Seconds(), 'f', 3, 64),

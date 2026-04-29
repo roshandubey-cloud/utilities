@@ -500,6 +500,10 @@ type startReq struct {
 	DownloadEnabled         bool   `json:"download_enabled"`
 	DownloadFolder          string `json:"download_folder"`
 	DownloadParallelStreams int    `json:"download_parallel_streams"`
+	// DownloadMatchMode picks how outbox files pair back to uploads:
+	// "trackid" (default; server adds "#<id>" suffix) or "filename"
+	// (server preserves a marker the runner injects into the upload).
+	DownloadMatchMode string `json:"download_match_mode"`
 	DownloadUsersCSV        string `json:"download_users_csv"`
 }
 
@@ -546,6 +550,7 @@ func buildRunConfig(req startReq) (*config.RunConfig, error) {
 		cfg.Download = &config.DownloadLoad{
 			Folder:          req.DownloadFolder,
 			ParallelStreams: req.DownloadParallelStreams,
+			MatchMode:       req.DownloadMatchMode,
 		}
 		users, err := config.ParseUsersCSV(strings.NewReader(req.DownloadUsersCSV))
 		if err != nil {
@@ -863,6 +868,7 @@ func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request) {
 				"download_parallel_streams": m.DownloadParallelStreams,
 				"files_per_minute":          m.FilesPerMinute,
 				"download_enabled":          m.DownloadEnabled,
+				"download_match_mode":       m.DownloadMatchMode,
 				"dispatch_skips":            m.DispatchSkips,
 				"download_stalled":          m.DownloadStalled,
 				"interrupted":               m.Interrupted,

@@ -60,7 +60,33 @@ type LargeFileLoad struct {
 type DownloadLoad struct {
 	Folder          string // remote folder each download user reads from; defaults to UploadFolder if empty
 	ParallelStreams int    // per download user
+
+	// MatchMode picks how the download worker pairs an outbox file
+	// back to the upload that produced it.
+	//
+	//   ""        — defaults to MatchModeTrackID (the historical
+	//                behaviour). The upload watcher waits for the
+	//                server to rename the inbox file to "<name>#<id>";
+	//                downloads strip "#<id>" and look up by basename.
+	//
+	//   "trackid" — explicit form of the default.
+	//
+	//   "filename"— for SFTP servers that do NOT generate a track-id
+	//                suffix. The runner injects "_slt_<12-char>_" into
+	//                each upload filename and the download worker
+	//                substring-matches that marker against whatever
+	//                name the file ends up with in the outbox. Robust
+	//                against servers that prefix or suffix the
+	//                filename in transit. The track-id watcher is
+	//                bypassed entirely in this mode.
+	MatchMode string
 }
+
+// MatchMode constants for DownloadLoad.MatchMode.
+const (
+	MatchModeTrackID  = "trackid"
+	MatchModeFilename = "filename"
+)
 
 type UserCreds struct {
 	Username string

@@ -14,6 +14,38 @@ import (
 // The trailing * is replaced with a unix-nanosecond timestamp plus a tiny random tail
 // so concurrent uploads never collide.
 func NameFromPattern(pattern string) string {
+	return nameFromPatternImpl(pattern, "")
+}
+
+// MarkerPrefix and MarkerSuffix delimit the embedded round-trip-tracking
+// token in filename mode. The pair is unique enough that a substring
+// regex on a downloaded file can extract the token even when the server
+// has prepended or appended its own bytes.
+const (
+	MarkerPrefix = "_slt_"
+	MarkerSuffix = "_"
+	// MarkerLen is the length of the random part. 12 lowercase
+	// alphanumeric characters → 36^12 ≈ 4.7×10^18 keyspace, collision-
+	// safe at billion-scale even within a single run.
+	MarkerLen = 12
+)
+
+// NameFromPatternWithMarker generates a filename in the same shape as
+// NameFromPattern but injects the marker block (`_slt_<token>_`) just
+// before the extension. Used by filename-mode round-trip tracking so
+// the download phase can find the file regardless of how the server
+// renamed it on the way through.
+//
+// Example: NameFromPatternWithMarker("invoice*.csv", "a3k7q9zwbf2m")
+//          → "invoice<ts>_<rand>_slt_a3k7q9zwbf2m_.csv"
+func NameFromPatternWithMarker(pattern, marker string) string {
+	if marker == "" {
+		return NameFromPattern(pattern)
+	}
+	return nameFromPatternImpl(pattern, MarkerPrefix+marker+MarkerSuffix)
+}
+
+func nameFromPatternImpl(pattern, markerBlock string) string {
 	ts := time.Now().UnixNano()
 	ext := path.Ext(pattern)
 
@@ -26,7 +58,64 @@ func NameFromPattern(pattern string) string {
 	if ext == "" {
 		ext = ".txt"
 	}
-	return base + itoa(ts) + "_" + itoa(int64(mathrand.Intn(1<<24))) + ext
+	return base + itoa(ts) + "_" + itoa(int64(mathrand.Intn(1<<24))) + markerBlock + ext
+}
+
+// NewMarkerToken returns a fresh 12-character lowercase alphanumeric
+// token. crypto/rand-backed because the keyspace argument only holds if
+// tokens are unpredictable; using mathrand here would let two parallel
+// dispatch ticks at the same UnixNano collide more often than the math
+// suggests.
+func NewMarkerToken() string {
+	const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+	var buf [MarkerLen]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		// rand.Read is documented to never fail on the standard sources;
+		// if it ever does, falling back to mathrand keeps uploads
+		// flowing rather than panicking the dispatcher.
+		for i := range buf {
+			buf[i] = alphabet[mathrand.Intn(len(alphabet))]
+		}
+		return string(buf[:])
+	}
+	for i := range buf {
+		buf[i] = alphabet[int(buf[i])%len(alphabet)]
+	}
+	return string(buf[:])
+}
+
+// ExtractMarker pulls the round-trip token out of a filename. Returns
+// ("", false) when the marker is absent — the download worker uses that
+// to count the file as an orphan in filename mode (server-side leftover
+// from another run, or a file with stripped/replaced filename).
+//
+// The lookup is case-insensitive on the filename so case-folding
+// servers (Windows-backed shares, some legacy SFTP appliances) still
+// produce a match.
+func ExtractMarker(filename string) (string, bool) {
+	low := strings.ToLower(filename)
+	i := strings.Index(low, MarkerPrefix)
+	if i < 0 {
+		return "", false
+	}
+	start := i + len(MarkerPrefix)
+	if start+MarkerLen > len(low) {
+		return "", false
+	}
+	candidate := low[start : start+MarkerLen]
+	// The character right after must be the suffix delimiter. Without
+	// this check a file that happens to contain `_slt_xxxxxxxxxxxxYYY`
+	// would match incorrectly when the server compressed the suffix.
+	if start+MarkerLen >= len(low) || low[start+MarkerLen] != MarkerSuffix[0] {
+		return "", false
+	}
+	for _, c := range candidate {
+		isAlnum := (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+		if !isAlnum {
+			return "", false
+		}
+	}
+	return candidate, true
 }
 
 func itoa(n int64) string {

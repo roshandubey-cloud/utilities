@@ -175,5 +175,115 @@ func TestRunner_FailingUserDisablesNotCrashes(t *testing.T) {
 	}
 }
 
+// TestRunner_FilenameModeRoundTrip exercises the v0.8.1 round-trip
+// tracking mode. The runner injects a 12-char marker into upload names;
+// the mock self-loops uploads into the same user's outbox; the download
+// worker must find each file by its marker (NOT by a "#trackid" suffix
+// — the watcher is bypassed in this mode) and attribute the download
+// back to the originating upload row.
+//
+// We're checking three invariants together:
+//   1. Generator embeds the marker in the upload filename.
+//   2. Store.AttachDownloadByFilenameID gets called and matches.
+//   3. Records seal cleanly without the watcher (synthetic TrackID
+//      keeps isRecordFinal happy).
+func TestRunner_FilenameModeRoundTrip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test (mockserver) skipped under -short")
+	}
+	srv, err := mocksftp.Start(mocksftp.Options{
+		Addr:   "127.0.0.1:0",
+		Delay:  50 * time.Millisecond,
+		Logger: log.New(io.Discard, "", 0),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Stop()
+	host, portStr, _ := net.SplitHostPort(srv.Addr().String())
+	port, _ := strconv.Atoi(portStr)
+	sftpx.SetHostKeyCallback(ssh.InsecureIgnoreHostKey())
+
+	cfg := &config.RunConfig{
+		Host:            host,
+		Port:            port,
+		UploadFolder:    "inbox",
+		ParallelStreams: 2,
+		DurationHours:   3.0 / 3600.0, // 3 s — long enough for the mock to self-loop several files
+		PollInterval:    250 * time.Millisecond,
+		TrackIDTimeout:  5 * time.Second,
+		Normal: &config.NormalLoad{
+			FilesPerMinute: 600,
+			MinSizeMB:      1,
+			MaxSizeMB:      1,
+		},
+		NormalUsers: []config.UserCreds{
+			{Username: "u1", Password: "p", Patterns: []string{"f-*"}},
+		},
+		Download: &config.DownloadLoad{
+			Folder:          "outbox",
+			ParallelStreams: 2,
+			MatchMode:       config.MatchModeFilename,
+		},
+		DownloadUsers: []config.UserCreds{
+			{Username: "u1", Password: "p", Patterns: []string{"*"}},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	run, err := runner.Start(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	select {
+	case <-run.Done():
+	case <-ctx.Done():
+		t.Fatal("run did not complete in time")
+	}
+
+	snap := run.Metrics.Snapshot()
+	if snap.TotalFiles < 5 {
+		t.Errorf("expected >=5 uploads, got %d", snap.TotalFiles)
+	}
+	if got := run.FailedFiles.Load(); got != 0 {
+		t.Errorf("filename-mode round-trip should not fail; got %d failures", got)
+	}
+
+	// Walk the records and confirm:
+	//   (a) every upload has a non-empty FilenameID and a synthetic TrackID
+	//   (b) at least one record received a matching download (the marker
+	//       lookup actually fired).
+	rows := run.Report.Snapshot()
+	if len(rows) == 0 {
+		t.Fatal("no records produced")
+	}
+	withMarker := 0
+	withDownload := 0
+	for _, r := range rows {
+		if r.FilenameID == "" {
+			t.Errorf("record %s has empty FilenameID in filename mode", r.Filename)
+			continue
+		}
+		if r.TrackID == "" || (len(r.TrackID) > 0 && r.TrackID[:9] != "FILENAME:") {
+			t.Errorf("record %s should carry FILENAME:* TrackID, got %q", r.Filename, r.TrackID)
+		}
+		withMarker++
+		if !r.DownloadEndTime.IsZero() {
+			withDownload++
+		}
+	}
+	if withMarker == 0 {
+		t.Error("no records carried a marker — filename mode is not engaging")
+	}
+	// We don't require ALL files to have round-tripped (the mock has a 50ms
+	// routing delay; the last few uploads may not have come back before
+	// the run ended), but at least one round-trip must complete or the
+	// download path is broken.
+	if withDownload == 0 {
+		t.Error("no records received a download — marker-lookup attach never fired")
+	}
+}
+
 // _ keeps the fmt import alive if we add diagnostic prints later.
 var _ = fmt.Sprintf

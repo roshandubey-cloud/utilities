@@ -409,6 +409,9 @@ func sealAllAndWriteMeta(r *Run, reportsDir string) error {
 			meta.DownloadEnabled = true
 			meta.DownloadUsers = len(r.Cfg.DownloadUsers)
 			meta.DownloadParallelStreams = r.Cfg.Download.ParallelStreams
+			if r.Cfg.Download.MatchMode != "" {
+				meta.DownloadMatchMode = r.Cfg.Download.MatchMode
+			}
 		}
 	}
 	for _, d := range r.DisabledUsers() {
@@ -1068,18 +1071,36 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 			r.disable.onFailure(u.Username, "download", "DOWNLOAD")
 			continue
 		}
+		// Match-mode picks how each outbox entry is paired back to an
+		// upload row. Trackid mode (default) waits for the server to
+		// rename "<name>" to "<name>#<id>" and matches by stripped
+		// basename. Filename mode skips the # filter and pulls our
+		// injected marker from the filename — works against any server
+		// that preserves at least the marker substring.
+		filenameMode := r.Cfg.Download != nil && r.Cfg.Download.MatchMode == config.MatchModeFilename
 		for _, e := range entries {
 			name := e.Name()
 			if _, done := seen[name]; done {
 				continue
 			}
-			// Only consider files that have a trackid suffix — these are the
-			// ones the server has finished routing. Pre-#trackid files aren't ready.
-			hash := strings.Index(name, "#")
-			if hash <= 0 {
-				continue
+			var basename, marker string
+			if filenameMode {
+				m, ok := generator.ExtractMarker(name)
+				if !ok {
+					continue // not one of ours, or another run's leftover
+				}
+				marker = m
+				basename = name
+			} else {
+				// Only consider files that have a trackid suffix — these are
+				// the ones the server has finished routing. Pre-#trackid
+				// files aren't ready.
+				hash := strings.Index(name, "#")
+				if hash <= 0 {
+					continue
+				}
+				basename = name[:hash]
 			}
-			basename := name[:hash]
 			seen[name] = struct{}{}
 
 			c, slot, dialDur, err := pool.get()
@@ -1111,10 +1132,18 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 					r.disable.onSuccess(u.Username, "download")
 				}
 			}
-			// Attribute back to the originating upload row by basename. If we
-			// didn't upload this file during this run (server-side leftover),
-			// count it as orphan and skip the row update.
-			if ok := r.Report.AttachDownloadByBasename(basename, result); !ok {
+			// Attribute back to the originating upload row. Trackid mode
+			// matches by basename (after stripping "#<id>"); filename
+			// mode looks the marker up directly. In either path, a
+			// miss means the server delivered a file we did not
+			// upload — count it as orphan and move on.
+			var attached bool
+			if filenameMode {
+				attached = r.Report.AttachDownloadByFilenameID(marker, result)
+			} else {
+				attached = r.Report.AttachDownloadByBasename(basename, result)
+			}
+			if !attached {
 				r.DownloadOrphans.Add(1)
 			}
 			r.DownloadCompleted.Add(1)
@@ -1368,7 +1397,17 @@ func stageToCode(stage string) string {
 func (r *Run) uploadOne(u config.UserCreds, size int64, kind string, intendedStart time.Time) {
 	// pick pattern round-robin-ish using nano clock
 	pat := u.Patterns[int(time.Now().UnixNano())%len(u.Patterns)]
-	name := generator.NameFromPattern(pat)
+	// In filename mode the download phase will look this file up by a
+	// 12-char marker we inject into the name. Generate the marker
+	// upfront so we can both name the file with it AND record it on
+	// the upload row for byFilenameID lookup later.
+	var filenameMarker, name string
+	if r.Cfg.Download != nil && r.Cfg.Download.MatchMode == config.MatchModeFilename {
+		filenameMarker = generator.NewMarkerToken()
+		name = generator.NameFromPatternWithMarker(pat, filenameMarker)
+	} else {
+		name = generator.NameFromPattern(pat)
+	}
 	remote := path.Join(r.Cfg.UploadFolder, name)
 
 	// Content type only applies to the "normal" load today; large-file uploads
@@ -1385,6 +1424,7 @@ func (r *Run) uploadOne(u config.UserCreds, size int64, kind string, intendedSta
 		Filename:     name,
 		StartTime:    start,
 		ExpectedSize: size,
+		FilenameID:   filenameMarker, // empty in trackid mode
 	}
 
 	recordFailure := func(rec report.FileRecord, code, msg string, bytesSent int64) {
@@ -1441,9 +1481,23 @@ func (r *Run) uploadOne(u config.UserCreds, size int64, kind string, intendedSta
 	rec.SizeBytes = n
 	dur := end.Sub(start)
 	rec.SpeedMBps = report.RawSpeedMBps(n, dur)
+	// Filename mode short-circuits the trackid stage: there is no
+	// server-side rename to wait for, so the upload is final the moment
+	// the SFTP write returns OK. We set a synthetic TrackID derived
+	// from the marker so isRecordFinal sees a non-empty value (its
+	// existing predicate treats empty TrackID as "not yet ready").
+	if filenameMarker != "" {
+		rec.TrackID = "FILENAME:" + filenameMarker
+		rec.TrackIDAt = end
+	}
 	r.Report.AddUpload(rec)
 	r.Metrics.Record(end, n, dur)
-	r.Watcher.Register(u.Username, name)
+	if filenameMarker == "" {
+		// Trackid mode: register with the watcher so it polls for the
+		// "<name>#<id>" rename. No-op in filename mode — the watcher is
+		// not part of that round-trip path.
+		r.Watcher.Register(u.Username, name)
+	}
 	r.disable.onSuccess(u.Username, "upload")
 	// Latency observations: raw transfer time + COR-corrected (total
 	// time from the moment the dispatcher *intended* to send this file,

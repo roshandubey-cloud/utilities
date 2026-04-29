@@ -274,6 +274,7 @@ function restoreConfig() {
         $(k).dispatchEvent(new Event('change'));
       }
     });
+    if (saved.download_match_mode) setDownloadMatchMode(saved.download_match_mode);
   } catch {}
   // Reflect the persisted save-passwords toggle into the UI on load.
   const cb = $('save_passwords');
@@ -292,8 +293,18 @@ function saveConfig() {
     }
   });
   TOGGLES.forEach(k => { const el = $(k); if (el) out[k] = el.checked; });
+  out.download_match_mode = getDownloadMatchMode();
   try { localStorage.setItem(LS_KEY, JSON.stringify(out)); } catch {}
 }
+
+// Re-save the form when the operator flips the round-trip mode so the
+// choice survives a page reload without waiting for another field to
+// trigger a save.
+document.addEventListener('change', (ev) => {
+  if (ev.target && ev.target.name === 'download_match_mode') {
+    saveConfig();
+  }
+});
 
 // clearStoredCredentials wipes localStorage entries that hold or could hold
 // passwords, and blanks the password column in every CSV textarea on screen.
@@ -678,8 +689,23 @@ function buildRequestBody() {
     download_enabled: $('download_enabled').checked,
     download_folder: $('dfolder').value.trim(),
     download_parallel_streams: parseInt($('dparallel').value) || 1,
+    download_match_mode: getDownloadMatchMode(),
     download_users_csv: getCsvRaw('download_users'),
   };
+}
+
+// getDownloadMatchMode reads the round-trip-tracking radio. Defaults to
+// "trackid" so a missing radio (older imports / DOM hiccup) preserves
+// today's behaviour rather than silently flipping to filename mode.
+function getDownloadMatchMode() {
+  const checked = document.querySelector('input[name="download_match_mode"]:checked');
+  return checked ? checked.value : 'trackid';
+}
+
+function setDownloadMatchMode(v) {
+  const id = v === 'filename' ? 'dmm_filename' : 'dmm_trackid';
+  const el = document.getElementById(id);
+  if (el) el.checked = true;
 }
 
 // ---------- export / import full config ----------
@@ -748,6 +774,7 @@ function importConfigPayload(cfg) {
   chkSet('download_enabled', cfg.download_enabled);
   strSet('dfolder', cfg.download_folder);
   strSet('dparallel', cfg.download_parallel_streams);
+  if (cfg.download_match_mode !== undefined) setDownloadMatchMode(cfg.download_match_mode);
   if (cfg.download_users_csv !== undefined) setCsvRaw('download_users', cfg.download_users_csv);
   saveConfig();
 }

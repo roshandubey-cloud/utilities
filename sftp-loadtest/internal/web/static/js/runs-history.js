@@ -121,7 +121,7 @@ function rowMarkup(r) {
           <div class="eyebrow">Download</div>
           ${r.download_enabled
             ? `<div class="metric-default tabular">${r.download_users || 0}<span class="runs-history-pct"> users</span></div>
-               <div class="body-small">${r.download_parallel_streams || '?'} streams</div>`
+               <div class="body-small">${r.download_parallel_streams || '?'} streams${r.download_match_mode === 'filename' ? ' · filename match' : ''}</div>`
             : `<div class="metric-default" style="color:var(--text-tertiary)">—</div>
                <div class="body-small">disabled</div>`}
         </div>
