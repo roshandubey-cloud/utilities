@@ -91,12 +91,23 @@ func main() {
 			// frontend single-sourced.
 			Handler: stack,
 		},
-		BackgroundColour: &options.RGBA{R: 250, G: 247, B: 240, A: 1}, // newspaper cream
+		// Background matches the workbench dark canvas (--canvas: #0d0e12)
+		// so the briefly-empty webview before the page loads doesn't flash
+		// the system default. Light-theme users see a one-frame dark
+		// flash on first load, which is preferable to a flash of newspaper
+		// cream now that the design system is workbench-first.
+		BackgroundColour: &options.RGBA{R: 13, G: 14, B: 18, A: 1},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
 		Bind:             []interface{}{app},
 		Mac: &mac.Options{
-			TitleBar: mac.TitleBarHiddenInset(),
+			// HiddenInset gives a transparent titlebar with traffic
+			// lights inset from the window edge, full-size content
+			// underneath. Combined with the workbench topbar this
+			// produces the unified-titlebar look every native macOS
+			// productivity app uses (VS Code, Tower, Linear).
+			TitleBar:   mac.TitleBarHiddenInset(),
+			Appearance: mac.NSAppearanceNameDarkAqua,
 			About: &mac.AboutInfo{
 				Title:   "SFTP Load Test",
 				Message: "SFTP load testing tool — desktop edition.\nMIT licensed.\nhttps://github.com/roshandubey-cloud/utilities",
@@ -104,12 +115,13 @@ func main() {
 			},
 		},
 		Windows: &windows.Options{
-			// Standard chrome with the close / minimize / maximize triplet —
-			// Wails defaults to this, but we set the block explicitly so the
-			// behaviour is obvious to anyone reading this file later.
+			// Workbench look on Windows: dark frame matches the canvas,
+			// no webview transparency (kills text rendering on dark theme),
+			// keep the close/minimize/maximize triplet visible.
 			DisableWindowIcon:    false,
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
+			Theme:                windows.Dark,
 		},
 		Linux: &linux.Options{
 			Icon: appIcon,

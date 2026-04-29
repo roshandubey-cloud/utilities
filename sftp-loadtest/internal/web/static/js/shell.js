@@ -21,6 +21,20 @@ import { getTheme, setTheme } from './theme.js';
 export function mountShell() {
   if (document.querySelector('.app-shell')) return; // already mounted
 
+  // Wails desktop sets window.runtime; flag the body so shell.css can
+  // reserve room on the topbar for macOS traffic-lights and apply
+  // any other native-window adjustments.
+  if (typeof window !== 'undefined' && window.runtime) {
+    document.body.classList.add('wails-desktop');
+    if (/Mac/i.test(navigator.platform || '')) {
+      document.body.classList.add('wails-mac');
+    } else if (/Win/i.test(navigator.platform || '')) {
+      document.body.classList.add('wails-windows');
+    } else {
+      document.body.classList.add('wails-linux');
+    }
+  }
+
   // ---- 1. Build the shell scaffold and adopt existing body content ----
   const body = document.body;
   const shell = document.createElement('div');

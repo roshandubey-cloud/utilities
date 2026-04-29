@@ -52,7 +52,18 @@
   background: var(--surface);
   border-bottom: var(--bw-1) solid var(--border-weak);
   font-size: var(--fs-13);
+  /* Wails: the macOS title-bar uses HiddenInset which leaves the
+     traffic-light controls visible at top-left, overlapping the first
+     ~78 px of the topbar. Pad on Mac so the brand sits clear of them. */
+  --wails-draggable: drag;
 }
+body.wails-mac .shell-topbar { padding-left: 84px; }
+body.wails-mac .shell-topbar-brand { user-select: none; -webkit-app-region: no-drag; }
+body.wails-desktop .shell-topbar { -webkit-app-region: drag; }
+body.wails-desktop .shell-topbar button,
+body.wails-desktop .shell-topbar input,
+body.wails-desktop .shell-topbar a,
+body.wails-desktop .shell-topbar .segmented { -webkit-app-region: no-drag; }
 .shell-topbar-brand {
   display: inline-flex;
   align-items: center;
