@@ -101,15 +101,21 @@ export function mountConfigureRedesign() {
       </section>
     </div>
 
-    <aside class="configure-rail" data-section="summary" aria-label="Run summary">
-      <div class="configure-rail-sticky">
-        <div class="cfg-section-eyebrow">4 · Run summary</div>
-        <h2 class="cfg-section-title">Run summary</h2>
-        <p class="cfg-section-sub">Live preview — updates as you edit.</p>
-        <dl class="cfg-summary-defs" data-role="summary-defs"></dl>
-        <div class="cfg-summary-foot" data-role="summary-foot"></div>
-      </div>
-    </aside>
+    <!-- Slim sticky run-summary strip. Replaces the wide right rail; reads
+         as one row at the bottom of Configure with an inline play/stop
+         icon button (mirrors the topbar Run/Stop). The chips collapse
+         off-screen on narrow widths but the play button stays. -->
+    <div class="cfg-summary-bar" data-section="summary" aria-label="Run summary">
+      <button type="button" class="cfg-summary-go" data-role="summary-go"
+              aria-label="Start run" title="Start run (⌘↵)">
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"
+             data-role="summary-icon-play"><path d="M5 3l8 5-8 5V3z"/></svg>
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"
+             data-role="summary-icon-stop" style="display:none"><rect x="4" y="4" width="8" height="8" rx="1"/></svg>
+      </button>
+      <dl class="cfg-summary-chips" data-role="summary-defs"></dl>
+      <div class="cfg-summary-flows-inline" data-role="summary-foot"></div>
+    </div>
   `;
 
   // Mount layout INTO the configure view, before .grid (so .grid can be
@@ -263,31 +269,89 @@ export function mountConfigureRedesign() {
   // children must remain in the DOM because legacy.js reads from them.
   grid.classList.add('configure-legacy-residue');
 
-  // --- SUMMARY rail wiring ---------------------------------------------
+  // --- SUMMARY bar wiring -----------------------------------------------
+  // The slim bottom strip carries: [▶/■ go] · target · folder · users · fpm · duration · files · flow chips.
+  // It mirrors the topbar Run/Stop so the operator never has to scroll
+  // back up to launch — the bar travels with the page (sticky bottom).
   const defs = layout.querySelector('[data-role="summary-defs"]');
-  const foot = layout.querySelector('[data-role="summary-foot"]');
+  const flowsEl = layout.querySelector('[data-role="summary-foot"]');
+  const goBtn = layout.querySelector('[data-role="summary-go"]');
+  const iconPlay = goBtn?.querySelector('[data-role="summary-icon-play"]');
+  const iconStop = goBtn?.querySelector('[data-role="summary-icon-stop"]');
+
+  // Wire go button — delegate to the (now relocated) #startBtn / #stopBtn.
+  // Read state from the topbar status pill so play/stop stays in sync
+  // with whatever drove the last state change (preflight modal, ⌘↵ key,
+  // legacy click, etc.).
+  function syncGoState() {
+    if (!goBtn) return;
+    const status = document.querySelector('.shell-topbar-status');
+    const active = status && status.dataset.state === 'active';
+    goBtn.dataset.mode = active ? 'stop' : 'play';
+    goBtn.setAttribute('aria-label', active ? 'Stop run' : 'Start run');
+    goBtn.setAttribute('title', active ? 'Stop the active run (⌘.)' : 'Start run (⌘↵)');
+    if (iconPlay) iconPlay.style.display = active ? 'none' : '';
+    if (iconStop) iconStop.style.display = active ? '' : 'none';
+  }
+  if (goBtn) {
+    goBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      const status = document.querySelector('.shell-topbar-status');
+      const active = status && status.dataset.state === 'active';
+      // Prefer the topbar Run/Stop buttons — they're properly disabled-
+      // gated by pollStatus and route through the same handlers as the
+      // legacy form. Fall back to the legacy buttons if the topbar isn't
+      // wired (early boot / unit-test stub).
+      const topbarRole = active ? 'topbar-stop' : 'topbar-run';
+      const topbar = document.querySelector(`[data-role="${topbarRole}"]`);
+      const legacy = document.getElementById(active ? 'stopBtn' : 'startBtn');
+      const target = (topbar && !topbar.disabled) ? topbar
+                   : (legacy && !legacy.disabled) ? legacy
+                   : (topbar || legacy);
+      target?.click();
+    });
+    // Watch the topbar status pill for state changes — pollStatus updates
+    // its data-state every tick, so a MutationObserver catches go/stop.
+    const status = document.querySelector('.shell-topbar-status');
+    if (status) {
+      const mo = new MutationObserver(syncGoState);
+      mo.observe(status, { attributes: true, attributeFilter: ['data-state'] });
+    }
+    syncGoState();
+  }
+
   function renderSummary() {
     const cfg = pullConfig();
     const ufpm = Number(cfg.files_per_minute || 0);
     const dur  = Number(cfg.duration_hours || 0);
     const eta  = dur ? formatHours(dur) : '—';
     const totalFiles = ufpm && dur ? Math.round(ufpm * dur * 60) : 0;
+    const userParts = [];
+    const nu = csvCount(cfg.normal_users_csv);   if (nu) userParts.push(`${nu}n`);
+    const lu = csvCount(cfg.large_users_csv);    if (lu) userParts.push(`${lu}l`);
+    const du = csvCount(cfg.download_users_csv); if (du) userParts.push(`${du}d`);
+    const userText = userParts.length ? userParts.join(' · ') : '0';
     defs.innerHTML = `
-      <dt>Target</dt><dd class="mono">${escapeHTML((cfg.host || '—'))}:${escapeHTML(String(cfg.port || ''))}</dd>
-      <dt>Folder</dt><dd class="mono">${escapeHTML(cfg.upload_folder || '—')}</dd>
-      <dt>Users</dt><dd>${csvCount(cfg.normal_users_csv)} normal · ${csvCount(cfg.large_users_csv)} large · ${csvCount(cfg.download_users_csv)} dl</dd>
-      <dt>Files / min</dt><dd>${escapeHTML(String(ufpm))}</dd>
-      <dt>Duration</dt><dd>${escapeHTML(eta)}</dd>
-      <dt>Streams / user</dt><dd>${escapeHTML(String(cfg.parallel_streams || 1))}</dd>
-      <dt>Approx. files</dt><dd>${totalFiles ? totalFiles.toLocaleString() : '—'}</dd>
+      <span class="cfg-chip" data-role="chip-target"><span class="cfg-chip-key">target</span>
+        <span class="cfg-chip-val mono">${escapeHTML((cfg.host || '—'))}:${escapeHTML(String(cfg.port || ''))}</span></span>
+      <span class="cfg-chip"><span class="cfg-chip-key">folder</span>
+        <span class="cfg-chip-val mono">${escapeHTML(cfg.upload_folder || '—')}</span></span>
+      <span class="cfg-chip"><span class="cfg-chip-key">users</span>
+        <span class="cfg-chip-val">${escapeHTML(userText)}</span></span>
+      <span class="cfg-chip"><span class="cfg-chip-key">fpm</span>
+        <span class="cfg-chip-val">${escapeHTML(String(ufpm))}</span></span>
+      <span class="cfg-chip"><span class="cfg-chip-key">dur</span>
+        <span class="cfg-chip-val">${escapeHTML(eta)}</span></span>
+      <span class="cfg-chip"><span class="cfg-chip-key">files</span>
+        <span class="cfg-chip-val">${totalFiles ? totalFiles.toLocaleString() : '—'}</span></span>
     `;
     const flows = [];
-    if (cfg.normal_enabled)   flows.push('Normal');
-    if (cfg.large_enabled)    flows.push('Large');
-    if (cfg.download_enabled) flows.push('Download');
-    foot.innerHTML = flows.length
-      ? `<span class="cfg-summary-flows">${flows.map((f) => `<span class="cfg-summary-chip">${f}</span>`).join('')}</span>`
-      : '<span class="cfg-summary-empty">No flow enabled — toggle one above.</span>';
+    if (cfg.normal_enabled)   flows.push('N');
+    if (cfg.large_enabled)    flows.push('L');
+    if (cfg.download_enabled) flows.push('D');
+    flowsEl.innerHTML = flows.length
+      ? flows.map((f) => `<span class="cfg-flow-dot" data-flow="${f}">${f}</span>`).join('')
+      : '<span class="cfg-flow-empty" title="No flow enabled — toggle one above">—</span>';
   }
   renderSummary();
   setInterval(renderSummary, SUMMARY_REFRESH_MS);

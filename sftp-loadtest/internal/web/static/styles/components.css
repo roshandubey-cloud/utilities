@@ -2106,16 +2106,14 @@ button.primary:hover:not(:disabled),
    ============================================================================ */
 
 .configure-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
-  gap: var(--sp-4);
-  align-items: start;
-  padding-bottom: var(--sp-6);
-}
-@media (max-width: 1180px) {
-  .configure-layout {
-    grid-template-columns: 1fr;
-  }
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  align-items: stretch;
+  /* Bottom padding leaves room for the sticky summary bar to sit above
+     the page edge without overlapping the last section. */
+  padding-bottom: calc(var(--sp-8) + 36px);
+  position: relative;
 }
 
 .configure-main {
@@ -2441,36 +2439,125 @@ button.primary:hover:not(:disabled),
   font-size: var(--fs-13);
 }
 
-/* --- Right rail: Run summary ----------------------------------------- */
-.configure-rail {
-  position: relative;
-}
-.configure-rail-sticky {
+/* --- Slim sticky run-summary strip ----------------------------------- */
+/* One-row pill that travels with the bottom of the Configure scroll
+   container. Carries: [▶/■ go] · key/val chips · flow dots. Replaces
+   the old full-height right rail so the form gets full width. */
+.cfg-summary-bar {
   position: sticky;
-  top: calc(var(--shell-topbar-h, 44px) + var(--sp-4));
+  bottom: var(--sp-3);
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: var(--sp-3) auto 0;
+  max-width: calc(100% - var(--sp-4));
+  padding: 6px 10px 6px 6px;
   background:
     var(--panel-glass-bg),
     var(--surface);
-  border: var(--bw-1) solid var(--border-weak);
-  border-radius: var(--panel-radius);
-  padding: var(--sp-4) var(--sp-5);
+  border: var(--bw-1) solid var(--border-medium);
+  border-radius: 999px;
   box-shadow:
     inset 0 1px 0 var(--panel-sheen-top),
     inset 0 -1px 0 var(--panel-sheen-bottom),
-    var(--shadow-2);
+    0 8px 22px rgba(0, 0, 0, 0.32);
   backdrop-filter: var(--panel-blur);
   -webkit-backdrop-filter: var(--panel-blur);
+  z-index: 5;
 }
-[data-theme="light"] .configure-rail-sticky,
-:root:not([data-theme]) .configure-rail-sticky {
-  border-color: rgba(15, 23, 42, 0.06);
+[data-theme="light"] .cfg-summary-bar,
+:root:not([data-theme]) .cfg-summary-bar {
   box-shadow:
     inset 0 1px 0 var(--panel-sheen-top),
-    0 1px 2px rgba(15, 23, 42, 0.06),
-    0 12px 32px rgba(15, 23, 42, 0.10);
+    0 6px 18px rgba(15, 23, 42, 0.10);
 }
-@media (max-width: 1100px) {
-  .configure-rail-sticky { position: static; }
+.cfg-summary-go {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--accent);
+  color: var(--accent-fg);
+  transition: background var(--t-fast), transform var(--t-fast);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.22),
+    0 1px 2px rgba(0,0,0,0.12);
+}
+.cfg-summary-go:hover { background: var(--accent-hover); }
+.cfg-summary-go:active { transform: scale(0.95); }
+.cfg-summary-go[data-mode="stop"] {
+  background: var(--danger);
+  color: #fff;
+}
+.cfg-summary-go svg { display: block; }
+
+.cfg-summary-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  min-width: 0;
+}
+.cfg-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--fs-12);
+  white-space: nowrap;
+}
+.cfg-chip-key {
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-loose);
+  font-weight: var(--fw-semibold);
+}
+.cfg-chip-val {
+  color: var(--text-primary);
+  font-weight: var(--fw-medium);
+}
+.cfg-chip-val.mono { font-family: var(--font-mono); }
+
+.cfg-summary-flows-inline {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: var(--sp-2);
+  padding-left: var(--sp-2);
+  border-left: var(--bw-1) solid var(--border-weak);
+  flex-shrink: 0;
+}
+.cfg-flow-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  font-size: var(--fs-10);
+  font-weight: var(--fw-semibold);
+  background: var(--accent);
+  color: var(--accent-fg);
+  letter-spacing: 0;
+}
+.cfg-flow-empty {
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
+}
+
+/* On narrow viewports, drop the chips and keep just the play button +
+   flow dots so the bar stays compact. */
+@media (max-width: 720px) {
+  .cfg-summary-chips { display: none; }
 }
 
 .cfg-summary-defs {

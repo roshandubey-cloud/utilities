@@ -14,20 +14,22 @@ test.beforeEach(async ({ page }) => {
   await page.waitForTimeout(400);
 });
 
-test('Configure renders the four section headers', async ({ page }) => {
+test('Configure renders the three main section headers + slim run-summary bar', async ({ page }) => {
   const view = page.locator('.shell-main [data-view="configure"]');
   await expect(view.locator('.cfg-section[data-section="target"]')).toBeVisible();
   await expect(view.locator('.cfg-section[data-section="workload"]')).toBeVisible();
   await expect(view.locator('.cfg-section[data-section="limits"]')).toBeVisible();
-  await expect(view.locator('.configure-rail[data-section="summary"]')).toBeVisible();
+  await expect(view.locator('.cfg-summary-bar[data-section="summary"]')).toBeVisible();
   // Each section title is named for its mental model.
   await expect(view.locator('.cfg-section[data-section="target"] .cfg-section-title')).toContainText(/target/i);
   await expect(view.locator('.cfg-section[data-section="workload"] .cfg-section-title')).toContainText(/workload/i);
   await expect(view.locator('.cfg-section[data-section="limits"] .cfg-section-title')).toContainText(/aggressively|long|how/i);
-  await expect(view.locator('.configure-rail[data-section="summary"] .cfg-section-title')).toContainText(/run summary/i);
+  // The slim bar carries a play button — primary launch affordance
+  // (mirrors the topbar Run/Stop) and stays in view as the user scrolls.
+  await expect(view.locator('.cfg-summary-bar [data-role="summary-go"]')).toBeVisible();
 });
 
-test('Run-summary rail reflects the host the user typed', async ({ page }) => {
+test('Run-summary bar reflects the host the user typed', async ({ page }) => {
   await page.locator('#conn-host').fill('sftp.example.com');
   await page.locator('#conn-port').fill('22');
   // The summary rebuilds via window.__sftplBuildRequestBody, which reads
@@ -41,8 +43,38 @@ test('Run-summary rail reflects the host the user typed', async ({ page }) => {
     document.getElementById('port').dispatchEvent(new Event('change', { bubbles: true }));
   });
   // Summary updates on a 1.5 s timer — give it time.
-  const defs = page.locator('.configure-rail [data-role="summary-defs"]');
+  const defs = page.locator('.cfg-summary-bar [data-role="summary-defs"]');
   await expect(defs).toContainText('sftp.example.com', { timeout: 3000 });
+});
+
+test('Run-summary play button delegates to the matching topbar Run/Stop control', async ({ page }) => {
+  // Pin the topbar status to "idle" so the go button is in play mode,
+  // then assert that clicking it forwards to the topbar Run button
+  // (which is the canonical state-aware control). Using the topbar
+  // (not legacy #startBtn) lets the click survive even when the
+  // legacy form button is disabled by the runner state machine.
+  await page.evaluate(() => {
+    // Force the topbar to a known idle state for this test. pollStatus
+    // may overwrite this on its next tick (1s cadence) but we click
+    // synchronously below so the window is plenty.
+    const s = document.querySelector('.shell-topbar-status');
+    if (s) s.dataset.state = 'idle';
+    const tbRun = document.querySelector('[data-role="topbar-run"]');
+    const tbStop = document.querySelector('[data-role="topbar-stop"]');
+    if (tbRun) tbRun.disabled = false;
+    window.__topbarRunClicks = 0;
+    window.__topbarStopClicks = 0;
+    tbRun?.addEventListener('click', () => { window.__topbarRunClicks++; }, true);
+    tbStop?.addEventListener('click', () => { window.__topbarStopClicks++; }, true);
+  });
+  // Wait for the MutationObserver in configure-redesign to flip the go
+  // button to play mode after the data-state edit above.
+  const go = page.locator('.cfg-summary-bar [data-role="summary-go"]');
+  await expect(go).toHaveAttribute('data-mode', 'play');
+  await go.click();
+  const counts = await page.evaluate(() => ({ r: window.__topbarRunClicks, s: window.__topbarStopClicks }));
+  expect(counts.r).toBeGreaterThan(0);
+  expect(counts.s).toBe(0);
 });
 
 test('Toggling the Large workload off collapses #large_users', async ({ page }) => {
