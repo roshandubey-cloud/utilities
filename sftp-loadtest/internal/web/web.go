@@ -69,8 +69,13 @@ func NewServer(reportsDir, schedulesDir string) *Server {
 	return s
 }
 
-// Shutdown stops background tickers. Call before exiting.
-func (s *Server) Shutdown() { close(s.stopCh) }
+// Shutdown stops background tickers AND tears down every SSH-bootstrapped
+// worker tunnel. Call before exiting so the master never leaves orphan
+// SSH sessions or remote sftp-loadtest processes behind.
+func (s *Server) Shutdown() {
+	closeAllSpawned()
+	close(s.stopCh)
+}
 
 // SetKnownHostsPath records the path the operator passed via -known-hosts.
 // Used only in legacy file-mode; the tool-managed JSON store (set via
@@ -405,6 +410,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/cluster/start", s.handleClusterStart)
 	mux.HandleFunc("/api/cluster/status", s.handleClusterStatus)
 	mux.HandleFunc("/api/cluster/stop", s.handleClusterStop)
+	mux.HandleFunc("/api/worker/spawn", s.handleWorkerSpawn)
+	mux.HandleFunc("/api/worker/despawn", s.handleWorkerDespawn)
+	mux.HandleFunc("/api/worker/spawned", s.handleWorkerSpawnedList)
 	return mux
 }
 

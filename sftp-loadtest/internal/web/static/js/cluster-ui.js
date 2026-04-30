@@ -36,7 +36,7 @@ function writeAll(arr) {
 function newID() { return 'wk-' + Math.random().toString(36).slice(2, 10); }
 
 export function listWorkers() { return readAll(); }
-export function addWorker({ url, auth_user, auth_pass }) {
+export function addWorker({ url, auth_user, auth_pass, source, spawn_id }) {
   const arr = readAll();
   const entry = {
     id: newID(),
@@ -45,6 +45,11 @@ export function addWorker({ url, auth_user, auth_pass }) {
     auth_pass: auth_pass || '',
     enabled: true,
     addedAt: new Date().toISOString(),
+    // source = "ssh" marks an SSH-bootstrapped worker — its lifecycle is
+    // tied to the master's spawn registry, so Forget must POST despawn
+    // before dropping the local entry. spawn_id is the master-side id.
+    source: source || 'manual',
+    spawn_id: spawn_id || '',
   };
   arr.push(entry);
   writeAll(arr);
@@ -95,6 +100,7 @@ export function mountClusterSidebar() {
     }
     slot.innerHTML = list.map((w) => `
       <div class="shell-sidebar-row sidebar-row-with-action" data-id="${w.id}"
+           data-source="${escapeAttr(w.source || 'manual')}"
            title="${escapeAttr(w.url)}">
         <span class="row-icon" aria-hidden="true">
           <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
@@ -103,6 +109,7 @@ export function mountClusterSidebar() {
             <circle cx="4" cy="5" r="0.6" fill="currentColor"/><circle cx="4" cy="11" r="0.6" fill="currentColor"/></svg>
         </span>
         <span class="row-label">${escapeHTML(prettyURL(w.url))}</span>
+        ${w.source === 'ssh' ? '<span class="cluster-ssh-badge" title="Bootstrapped over SSH">🔗 SSH</span>' : ''}
         <span class="row-meta" data-role="worker-state" data-enabled="${w.enabled}">${w.enabled ? 'on' : 'off'}</span>
         <button type="button" class="row-action-btn" data-action="del" data-id="${w.id}" title="Remove">×</button>
       </div>`).join('');
@@ -116,14 +123,35 @@ export function mountClusterSidebar() {
     slot.querySelectorAll('[data-action="del"]').forEach((btn) => {
       btn.addEventListener('click', async (ev) => {
         ev.stopPropagation();
+        const id = btn.dataset.id;
+        const entry = readAll().find((w) => w.id === id);
+        const isSSH = entry && entry.source === 'ssh';
         const ok = await confirmModal({
           title: 'Remove worker',
-          message: 'This removes the URL from your local list. Any run already dispatched to this worker keeps running.',
+          message: isSSH
+            ? 'This will kill the remote sftp-loadtest process and close the SSH tunnel.'
+            : 'This removes the URL from your local list. Any run already dispatched to this worker keeps running.',
           danger: true,
           okLabel: 'Remove',
         });
         if (!ok) return;
-        removeWorker(btn.dataset.id);
+        if (isSSH && entry.spawn_id) {
+          // POST despawn BEFORE removing the localStorage entry. If the
+          // server returns a non-2xx we still drop the entry — the
+          // operator's intent is "make this go away" and a stale spawn
+          // id on the master is a smaller problem than a row stuck in
+          // the sidebar that can't be removed.
+          try {
+            await apiFetch('/api/worker/despawn', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: entry.spawn_id }),
+            });
+          } catch (e) {
+            pushToast(`Despawn warning: ${e.message || e}`, 'warn');
+          }
+        }
+        removeWorker(id);
         render();
       });
     });
@@ -136,30 +164,217 @@ export function mountClusterSidebar() {
   });
 }
 
+// promptAddWorker opens the dual-tab Add worker modal:
+//   - Direct URL: register an already-running sftp-loadtest URL.
+//   - SSH bootstrap: install + spawn the binary on a remote via SSH and
+//     register the local tunnel URL the master allocates.
+// Returns when either tab succeeds (worker registered) or the modal closes.
 async function promptAddWorker() {
-  // Single modal collects URL + optional BasicAuth credentials. Replaces
-  // the old window.prompt() chain which was unreliable (blocked in Wails
-  // desktop builds, hard to cancel cleanly in browser).
-  const result = await formModal({
-    title: 'Add worker',
-    submitLabel: 'Add worker',
-    fields: [
-      { name: 'url', label: 'URL', placeholder: 'http://10.0.0.5:8080', required: true,
-        hint: 'Any reachable sftp-loadtest instance — its /api will receive the per-worker config.' },
-      { name: 'auth_user', label: 'BasicAuth user', placeholder: '(optional)',
-        hint: 'Leave both empty if the worker has no -auth-user flag set.' },
-      { name: 'auth_pass', label: 'BasicAuth password', type: 'password', placeholder: '(optional)' },
-    ],
+  return new Promise((resolve) => {
+    const bd = document.createElement('div');
+    bd.className = 'modal-backdrop';
+    bd.dataset.component = 'modal';
+    bd.innerHTML = `
+      <div class="modal-panel modal-panel-wide" role="dialog" aria-modal="true" aria-label="Add worker">
+        <div class="modal-head">Add worker</div>
+        <div class="modal-tabs" role="tablist">
+          <button type="button" class="modal-tab is-active" data-tab="direct" role="tab">Direct URL</button>
+          <button type="button" class="modal-tab" data-tab="ssh" role="tab">SSH bootstrap</button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-tab-panel" data-tab-panel="direct">
+            <div class="modal-field">
+              <label class="modal-field-label" for="addw_url">URL <span class="modal-field-req">*</span></label>
+              <input class="modal-field-input" id="addw_url" type="text" placeholder="http://10.0.0.5:8080" />
+              <div class="modal-field-hint">Any reachable sftp-loadtest instance — its /api will receive the per-worker config.</div>
+            </div>
+            <div class="modal-field">
+              <label class="modal-field-label" for="addw_user">BasicAuth user</label>
+              <input class="modal-field-input" id="addw_user" type="text" placeholder="(optional)" />
+            </div>
+            <div class="modal-field">
+              <label class="modal-field-label" for="addw_pass">BasicAuth password</label>
+              <input class="modal-field-input" id="addw_pass" type="password" placeholder="(optional)" />
+            </div>
+          </div>
+          <div class="modal-tab-panel" data-tab-panel="ssh" hidden>
+            <div class="modal-tab-blurb">
+              Master will SSH to the host, install the sftp-loadtest binary, spawn it on
+              <span class="mono">127.0.0.1:18081</span>, and tunnel HTTP back through the SSH session — no extra port to open.
+            </div>
+            <div class="modal-field-grid-2">
+              <div class="modal-field">
+                <label class="modal-field-label" for="ssh_host">Host <span class="modal-field-req">*</span></label>
+                <input class="modal-field-input" id="ssh_host" type="text" placeholder="10.0.0.5" />
+              </div>
+              <div class="modal-field">
+                <label class="modal-field-label" for="ssh_port">Port</label>
+                <input class="modal-field-input" id="ssh_port" type="text" value="22" />
+              </div>
+            </div>
+            <div class="modal-field">
+              <label class="modal-field-label" for="ssh_user">User <span class="modal-field-req">*</span></label>
+              <input class="modal-field-input" id="ssh_user" type="text" placeholder="ec2-user" />
+            </div>
+            <div class="modal-field">
+              <label class="modal-field-label" for="ssh_password">Password</label>
+              <input class="modal-field-input" id="ssh_password" type="password" placeholder="(or use a private key below)" />
+            </div>
+            <details class="modal-disclosure" id="ssh-private-key-disclosure">
+              <summary>Use SSH private key instead</summary>
+              <div class="modal-field">
+                <label class="modal-field-label" for="ssh_key">Private key (PEM)</label>
+                <textarea class="modal-field-input modal-field-textarea" id="ssh_key" rows="5"
+                          placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+              </div>
+              <div class="modal-field">
+                <label class="modal-field-label" for="ssh_passphrase">Passphrase (if encrypted)</label>
+                <input class="modal-field-input" id="ssh_passphrase" type="password" />
+              </div>
+            </details>
+            <div class="modal-field">
+              <label class="modal-field-label">Install method</label>
+              <label class="modal-radio"><input type="radio" name="ssh_install" value="download" checked /> Download from GitHub release (needs internet on remote)</label>
+              <label class="modal-radio"><input type="radio" name="ssh_install" value="upload" /> Upload local binary over SSH (no egress required)</label>
+            </div>
+            <div class="cluster-ssh-spawn-log" data-role="spawn-log" hidden></div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn btn-ghost" data-role="cancel">Cancel</button>
+          <button type="button" class="btn btn-primary" data-role="primary" data-tab-target="direct">Add worker</button>
+        </div>
+      </div>`;
+    document.body.appendChild(bd);
+    const panel = bd.querySelector('.modal-panel');
+    const tabs = bd.querySelectorAll('.modal-tab');
+    const panels = bd.querySelectorAll('.modal-tab-panel');
+    const primary = bd.querySelector('[data-role="primary"]');
+    const cancelBtn = bd.querySelector('[data-role="cancel"]');
+    const close = (val) => {
+      document.removeEventListener('keydown', onKey, true);
+      bd.remove();
+      resolve(val);
+    };
+    const onKey = (ev) => { if (ev.key === 'Escape') { ev.preventDefault(); close(null); } };
+    document.addEventListener('keydown', onKey, true);
+    cancelBtn.addEventListener('click', () => close(null));
+    bd.addEventListener('click', (ev) => { if (ev.target === bd) close(null); });
+
+    let activeTab = 'direct';
+    function switchTab(name) {
+      activeTab = name;
+      tabs.forEach((t) => t.classList.toggle('is-active', t.dataset.tab === name));
+      panels.forEach((p) => { p.hidden = p.dataset.tabPanel !== name; });
+      primary.dataset.tabTarget = name;
+      primary.textContent = name === 'ssh' ? 'Spawn worker' : 'Add worker';
+      primary.disabled = false;
+    }
+    tabs.forEach((t) => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+    primary.addEventListener('click', async () => {
+      if (activeTab === 'direct') {
+        const url = (panel.querySelector('#addw_url').value || '').trim();
+        const user = panel.querySelector('#addw_user').value || '';
+        const pass = panel.querySelector('#addw_pass').value || '';
+        if (!url) return;
+        if (!/^https?:\/\//i.test(url)) {
+          pushToast('Worker URL must start with http:// or https://', 'error');
+          return;
+        }
+        addWorker({ url, auth_user: user, auth_pass: pass });
+        pushToast(`Added worker ${url}`, 'success');
+        close({ kind: 'direct', url });
+        return;
+      }
+      // SSH bootstrap.
+      const host = (panel.querySelector('#ssh_host').value || '').trim();
+      const port = (panel.querySelector('#ssh_port').value || '22').trim();
+      const sshUser = (panel.querySelector('#ssh_user').value || '').trim();
+      const password = panel.querySelector('#ssh_password').value || '';
+      const pkPem = panel.querySelector('#ssh_key').value || '';
+      const passphrase = panel.querySelector('#ssh_passphrase').value || '';
+      const install = panel.querySelector('input[name="ssh_install"]:checked')?.value || 'download';
+      if (!host || !sshUser) {
+        pushToast('Host and User are required', 'error');
+        return;
+      }
+      if (!password && !pkPem) {
+        pushToast('Provide a password or a private key', 'error');
+        return;
+      }
+      const logBox = panel.querySelector('[data-role="spawn-log"]');
+      logBox.hidden = false;
+      logBox.innerHTML = '';
+      const steps = [
+        'Dialing SSH',
+        'Detecting arch',
+        'Reaping orphan workers',
+        install === 'upload' ? 'Uploading binary' : 'Installing (downloading)',
+        'Smoke test',
+        'Spawning worker',
+        'Tunnel ready',
+      ];
+      steps.forEach((s, i) => {
+        const li = document.createElement('div');
+        li.className = 'cluster-ssh-spawn-log-row';
+        li.dataset.step = String(i);
+        li.innerHTML = `<span class="status">⏳</span><span class="label">${escapeHTML(s)}</span>`;
+        logBox.appendChild(li);
+      });
+      primary.disabled = true;
+      primary.textContent = 'Spawning…';
+      try {
+        const r = await apiFetch('/api/worker/spawn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            host, port, user: sshUser,
+            password,
+            private_key_pem: pkPem,
+            passphrase,
+            install_method: install,
+          }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.ok === false) {
+          // Render the partial log + error.
+          (j.log || []).forEach((line, i) => {
+            const row = logBox.querySelector(`[data-step="${i}"]`);
+            if (row) row.querySelector('.status').textContent = '✓';
+          });
+          const err = document.createElement('div');
+          err.className = 'cluster-ssh-spawn-log-row is-error';
+          err.innerHTML = `<span class="status">✗</span><span class="label">${escapeHTML(j.error || ('HTTP ' + r.status))}</span>`;
+          logBox.appendChild(err);
+          primary.disabled = false;
+          primary.textContent = 'Retry';
+          return;
+        }
+        // Success — mark every step ✓ then add the worker.
+        steps.forEach((_, i) => {
+          const row = logBox.querySelector(`[data-step="${i}"]`);
+          if (row) row.querySelector('.status').textContent = '✓';
+        });
+        addWorker({
+          url: j.url,
+          auth_user: '',
+          auth_pass: '',
+          source: 'ssh',
+          spawn_id: j.id,
+        });
+        pushToast(`Spawned worker on ${host} (${j.arch})`, 'success');
+        close({ kind: 'ssh', id: j.id, url: j.url });
+      } catch (e) {
+        const err = document.createElement('div');
+        err.className = 'cluster-ssh-spawn-log-row is-error';
+        err.innerHTML = `<span class="status">✗</span><span class="label">${escapeHTML(e.message || String(e))}</span>`;
+        logBox.appendChild(err);
+        primary.disabled = false;
+        primary.textContent = 'Retry';
+      }
+    });
   });
-  if (!result) return;
-  const url = (result.url || '').trim();
-  if (!url) return;
-  if (!/^https?:\/\//i.test(url)) {
-    pushToast('Worker URL must start with http:// or https://', 'error');
-    return;
-  }
-  addWorker({ url, auth_user: result.auth_user || '', auth_pass: result.auth_pass || '' });
-  pushToast(`Added worker ${url}`, 'success');
 }
 
 // ---------- Cluster view (main pane) ----------
@@ -211,10 +426,11 @@ export function mountClusterView() {
     }
     slot.innerHTML = `
       <table class="cluster-view-table">
-        <thead><tr><th>URL</th><th>Auth user</th><th>Enabled</th><th></th></tr></thead>
+        <thead><tr><th>URL</th><th>Source</th><th>Auth user</th><th>Enabled</th><th></th></tr></thead>
         <tbody>${list.map((w) => `
-          <tr data-id="${escapeAttr(w.id)}">
+          <tr data-id="${escapeAttr(w.id)}" data-source="${escapeAttr(w.source || 'manual')}">
             <td class="mono">${escapeHTML(w.url)}</td>
+            <td>${w.source === 'ssh' ? '<span class="cluster-ssh-badge">🔗 SSH</span>' : 'manual'}</td>
             <td>${escapeHTML(w.auth_user || '—')}</td>
             <td>
               <label class="cluster-view-toggle">
@@ -231,9 +447,28 @@ export function mountClusterView() {
     });
     slot.querySelectorAll('[data-action="delete"]').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        const ok = await confirmModal({ title: 'Remove worker', message: 'Remove this URL from the local list?', danger: true, okLabel: 'Remove' });
+        const id = btn.dataset.id;
+        const entry = readAll().find((w) => w.id === id);
+        const isSSH = entry && entry.source === 'ssh';
+        const ok = await confirmModal({
+          title: 'Remove worker',
+          message: isSSH
+            ? 'This will kill the remote sftp-loadtest process and close the SSH tunnel.'
+            : 'Remove this URL from the local list?',
+          danger: true, okLabel: 'Remove' });
         if (!ok) return;
-        removeWorker(btn.dataset.id);
+        if (isSSH && entry.spawn_id) {
+          try {
+            await apiFetch('/api/worker/despawn', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: entry.spawn_id }),
+            });
+          } catch (e) {
+            pushToast(`Despawn warning: ${e.message || e}`, 'warn');
+          }
+        }
+        removeWorker(id);
         renderList();
       });
     });

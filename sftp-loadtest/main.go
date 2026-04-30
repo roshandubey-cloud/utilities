@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -22,7 +23,17 @@ import (
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/web"
 )
 
+// platformVersion is bumped on every push so the tester can verify build
+// freshness. Also surfaced via the `-version` flag — the SSH-bootstrap
+// smoke test on a remote host runs `<bin> -version` to confirm the
+// binary it just installed actually executes.
+const platformVersion = "0.11.0"
+
 func main() {
+	if len(os.Args) >= 2 && (os.Args[1] == "-version" || os.Args[1] == "--version") {
+		fmt.Printf("sftp-loadtest %s\n", platformVersion)
+		return
+	}
 	addr := flag.String("addr", "127.0.0.1:8080", "listen address")
 	reportsDir := flag.String("reports-dir", "reports", "directory where finished run reports are persisted")
 	schedulesDir := flag.String("schedules-dir", "schedules", "directory where pending scheduled runs are persisted; empty string disables the scheduler")

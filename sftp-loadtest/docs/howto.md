@@ -131,6 +131,42 @@ instructions to the UI.
 
 ---
 
+## 7a. Bootstrapping a remote worker via SSH (v0.11.0)
+
+For hosts where you don't want to expose an extra port, the master can
+SSH to the remote, install the `sftp-loadtest` binary, run it bound to
+loopback, and tunnel HTTP back through the existing SSH session.
+
+1. `[Cluster] → + Add worker` opens the dual-tab modal. Switch to the
+   **SSH bootstrap** tab.
+2. Fill **Host**, **Port** (default 22), **User**, and either a
+   **Password** or a private key (open the **Use SSH private key**
+   disclosure to paste the PEM and an optional passphrase).
+3. Pick an **Install method**:
+   - **Download from GitHub release** — the remote needs internet access
+     to `github.com/roshandubey-cloud/utilities`. Default.
+   - **Upload local binary over SSH** — streams the master's own binary
+     via the SSH session's SFTP subsystem. No outbound internet needed
+     on the remote.
+4. Click **Spawn worker**. The modal renders a live spawn log: arch
+   detection, orphan reaping, install, smoke test, spawn, tunnel ready.
+   Each step gets a ✓ on success or ✗ + the error message on failure.
+5. On success the modal closes and the worker shows up in the sidebar
+   `[Workers]` section with a `🔗 SSH` badge. The URL is the master-side
+   loopback tunnel (`http://127.0.0.1:<random>`).
+6. **Distribute load across workers** becomes enabled. Start a run as
+   usual — the master fan-outs the per-worker config through the tunnel.
+7. Click the row's `×` (sidebar) or **Remove** (Cluster view) to forget
+   the worker. For SSH-sourced workers, this also POSTs
+   `/api/worker/despawn`, which kills the remote process and closes the
+   SSH session — no orphan stays running.
+
+> The master's `Server.Shutdown()` closes every SSH-bootstrapped tunnel
+> on a clean exit, so a Ctrl-C on the master also tears down the remote
+> workers it started.
+
+---
+
 ## 8. Reviewing past runs
 
 1. Click `[Runs]` in the sidebar. The view stacks two sections:
