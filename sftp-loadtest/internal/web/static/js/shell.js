@@ -290,16 +290,25 @@ function buildViews(main) {
   // Whatever remains in legacy .app gets placed in workbench (slowdown
   // table, ceiling banner, toast container, etc.) UNLESS it is one of
   // the redundant decorative chrome elements the shell now owns
-  // (newspaper masthead with serif title + dek, the legacy host-strip,
-  // the legacy wizard step nav, the proc-badge, the masthead app
-  // header). Strip these explicitly so they don't leak into Workbench.
+  // (newspaper masthead, the legacy host-strip, the proc-badge).
+  //
+  // Critically, we HIDE rather than REMOVE: legacy.js's poll() reads
+  // from $('p_cpu') / $('h_net') / $('sched_banner') / $('h_fdlimit')
+  // which live INSIDE host-strip + proc-badge. If we deleted those
+  // elements, the writes throw TypeError, the swallowing catch in
+  // poll() eats the error, and every tile (including the live-metrics
+  // grid below) silently freezes at its initial value while the run
+  // is active. Hiding keeps the IDs reachable.
   const REDUNDANT = [
     'header.masthead',  // legacy newspaper masthead (serif title + dek)
     '.host-strip',      // legacy host-strip (statusbar replaces it)
     '.proc-badge',      // legacy floating proc badge
   ];
   for (const sel of REDUNDANT) {
-    legacy.querySelectorAll(sel).forEach((el) => el.remove());
+    legacy.querySelectorAll(sel).forEach((el) => {
+      el.dataset.shellHidden = '1';
+      el.style.display = 'none';
+    });
   }
   while (legacy.firstChild) workbench.appendChild(legacy.firstChild);
   // Remove the now-empty legacy.app shell.
