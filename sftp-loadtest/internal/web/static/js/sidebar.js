@@ -24,6 +24,7 @@
 import { apiFetch } from './api.js';
 import { list as listConfigs, load as loadConfig, remove as removeConfig } from './saved-configs.js';
 import { pushToast } from './toast.js';
+import { listSaved, applyEntry, promptDelete, SAVED_KEY } from './saved-connections.js';
 
 const CONN_HISTORY_KEY = 'sftp-loadtest-conn-history-v1';
 const REFRESH_MS = 3000;
@@ -55,21 +56,44 @@ export function mountSidebar() {
   // the next heartbeat.
   window.addEventListener('storage', (ev) => {
     if (!ev.key) return;
-    if (ev.key === CONN_HISTORY_KEY) renderConnections(slots.connections);
+    if (ev.key === CONN_HISTORY_KEY || ev.key === SAVED_KEY) renderConnections(slots.connections);
     if (ev.key.startsWith('sftp-loadtest-saved-configs')) renderConfigs(slots.configs);
   });
 }
 
 // ---------- Connections ----------
+// Two layers of state in this slot:
+//   1. Saved entries (user-curated, named, with optional creds): clicking
+//      one fills host/port/username/password.
+//   2. Recent entries (auto-tracked from successful probes, host:port
+//      only): shown as a dimmed sub-list when nothing's been saved or
+//      after the saved list, so the user always has both surfaces.
 function renderConnections(slot) {
   if (!slot) return;
-  const list = readConnHistory();
-  if (list.length === 0) {
-    slot.innerHTML = '<div class="shell-sidebar-empty">No saved connections yet. Hit Test connection above.</div>';
+  const saved = listSaved();
+  const recent = readConnHistory();
+  if (saved.length === 0 && recent.length === 0) {
+    slot.innerHTML = '<div class="shell-sidebar-empty">No connections yet. Hit Save… on the Test connection card.</div>';
     return;
   }
-  slot.innerHTML = list.map((entry) => `
-    <div class="shell-sidebar-row" data-action="conn"
+  const savedHTML = saved.map((entry) => `
+    <div class="shell-sidebar-row shell-sidebar-row-saved"
+         data-action="saved-conn" data-id="${escapeAttr(entry.id)}"
+         title="${escapeAttr(entry.host)}:${entry.port}${entry.username ? ' as '+entry.username : ''}${entry.has_password ? ' (with password)' : ''}">
+      <span class="row-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
+             stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6l3-3 9 9-3 3z"/><path d="M11 6l-2 2"/></svg>
+      </span>
+      <span class="row-label">${escapeHTML(entry.name)}</span>
+      <span class="row-meta">${escapeHTML(entry.host)}:${entry.port}</span>
+      <button type="button" class="shell-sidebar-row-x" data-role="forget"
+              aria-label="Forget ${escapeAttr(entry.name)}" title="Forget">×</button>
+    </div>`).join('');
+  // Recent rows that aren't already a saved entry's host:port.
+  const savedKeys = new Set(saved.map((e) => `${e.host}:${e.port}`));
+  const recentRows = recent.filter((e) => !savedKeys.has(`${e.host}:${e.port}`));
+  const recentHTML = recentRows.map((entry) => `
+    <div class="shell-sidebar-row shell-sidebar-row-recent" data-action="conn"
          data-host="${escapeAttr(entry.host)}" data-port="${entry.port}">
       <span class="row-icon" aria-hidden="true">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
@@ -78,21 +102,41 @@ function renderConnections(slot) {
       <span class="row-label" title="${escapeAttr(entry.host)}:${entry.port}">${escapeHTML(entry.host)}</span>
       <span class="row-meta">${entry.port}</span>
     </div>`).join('');
+  const divider = (savedHTML && recentHTML)
+    ? '<div class="shell-sidebar-divider">recent</div>'
+    : '';
+  slot.innerHTML = savedHTML + divider + recentHTML;
+
+  slot.querySelectorAll('[data-action="saved-conn"]').forEach((row) => {
+    const entry = saved.find((e) => e.id === row.dataset.id);
+    row.addEventListener('click', (ev) => {
+      // Don't fire row click when the user hits the inline forget button.
+      if (ev.target.closest('[data-role="forget"]')) return;
+      applyEntry(entry);
+      document.querySelector('[data-component="connection"]')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    const forget = row.querySelector('[data-role="forget"]');
+    forget?.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      await promptDelete(entry);
+    });
+  });
   slot.querySelectorAll('[data-action="conn"]').forEach((row) => {
     row.addEventListener('click', () => {
-      const host = row.dataset.host;
-      const port = row.dataset.port;
       const hostInput = document.getElementById('conn-host');
       const portInput = document.getElementById('conn-port');
       if (hostInput) {
-        hostInput.value = host;
+        hostInput.value = row.dataset.host;
         hostInput.dispatchEvent(new Event('input', { bubbles: true }));
       }
       if (portInput) {
-        portInput.value = port;
+        portInput.value = row.dataset.port;
         portInput.dispatchEvent(new Event('input', { bubbles: true }));
       }
-      document.querySelector('[data-component="connection"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.querySelector('[data-component="connection"]')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
 }

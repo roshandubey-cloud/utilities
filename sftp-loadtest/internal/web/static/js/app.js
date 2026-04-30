@@ -26,6 +26,7 @@ import { mountRunActions } from './run-actions.js';
 import { mountStartPreflight } from './start-preflight.js';
 import { mountCeilingBanner } from './ceiling-banner.js';
 import { mountWizard } from './wizard.js';
+import { mountSavedConnections } from './saved-connections.js';
 
 initTheme();
 installExternalOpener();
@@ -56,6 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // so the run-mechanics group + Export/Import proxy buttons are in
     // place, and we can relocate them into the new section structure.
     mountConfigureRedesign();
+    mountSavedConnections();
     mountStartPreflight();
     mountWizard('[data-component="wizard"]');
     mountCeilingBanner();

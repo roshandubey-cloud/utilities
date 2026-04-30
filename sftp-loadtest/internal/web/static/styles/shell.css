@@ -391,6 +391,50 @@ body.wails-desktop .shell-topbar .segmented { -webkit-app-region: no-drag; }
   line-height: var(--lh-normal);
 }
 
+/* Saved connection rows show an inline × button on hover. Recents are
+   visually demoted (lighter colour, smaller icon) so the saved set
+   reads as the canonical curated list. */
+.shell-sidebar-row-saved { position: relative; padding-right: 28px; cursor: pointer; }
+.shell-sidebar-row-saved .row-meta { font-variant-numeric: tabular-nums; }
+.shell-sidebar-row-saved .shell-sidebar-row-x {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  border: 0;
+  background: transparent;
+  color: var(--sidebar-hint);
+  font-size: var(--fs-13);
+  border-radius: var(--r-1);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--t-fast), background var(--t-fast), color var(--t-fast);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.shell-sidebar-row-saved:hover .shell-sidebar-row-x,
+.shell-sidebar-row-saved:focus-within .shell-sidebar-row-x { opacity: 1; }
+.shell-sidebar-row-saved .shell-sidebar-row-x:hover {
+  background: var(--danger-bg-soft);
+  color: var(--danger-fg-soft);
+}
+.shell-sidebar-row-recent .row-icon,
+.shell-sidebar-row-recent .row-label,
+.shell-sidebar-row-recent .row-meta { opacity: 0.72; }
+.shell-sidebar-divider {
+  font-size: var(--fs-10);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-loose);
+  color: var(--sidebar-hint);
+  font-weight: var(--fw-semibold);
+  padding: var(--sp-2) var(--sp-3) 4px;
+  opacity: 0.65;
+}
+
 /* Inline action button (delete preset, forget host, remove worker). */
 .sidebar-row-with-action { padding-right: 4px; }
 .row-action-btn {
