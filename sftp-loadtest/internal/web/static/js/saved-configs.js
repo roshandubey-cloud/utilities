@@ -67,6 +67,11 @@ export function save(name) {
   if (existing >= 0) arr[existing] = entry;
   else arr.push(entry);
   writeAll(arr);
+  // Notify the sidebar (and any other live listeners) without waiting
+  // for the 3 s heartbeat — same pattern the saved-connections module
+  // uses. `storage` events don't auto-fire for same-window writes,
+  // so synthesise one.
+  try { window.dispatchEvent(new StorageEvent('storage', { key: KEY })); } catch { /* ignore */ }
   return entry;
 }
 
@@ -85,6 +90,7 @@ export function load(id) {
 export function remove(id) {
   const arr = readAll().filter((p) => p.id !== id);
   writeAll(arr);
+  try { window.dispatchEvent(new StorageEvent('storage', { key: KEY })); } catch { /* ignore */ }
 }
 
 export function exportPreset(id) {

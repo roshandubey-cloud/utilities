@@ -28,10 +28,14 @@ test('saving a preset adds a row in Saved configs', async ({ page }) => {
   await page.locator('#conn-host').fill('preset-target.example');
   await page.keyboard.press('Meta+k');
   await page.locator('.cmdk-input').fill('save current config');
-  page.once('dialog', async (d) => { await d.accept('sidebar-test'); });
   await page.keyboard.press('Enter');
+  // The Save-preset path now uses the in-DOM modal (cross-Wails compat),
+  // not window.prompt. Type the name + submit.
+  const modal = page.locator('.modal-panel');
+  await expect(modal).toBeVisible();
+  await modal.locator('input[name="name"]').fill('sidebar-test');
+  await modal.locator('[data-role="primary"]').click();
 
-  // The sidebar refreshes on a 3 s heartbeat — wait up to 5 s.
   const slot = page.locator('[data-role="sidebar-configs"]');
   await expect(slot).toContainText('sidebar-test', { timeout: 5000 });
 });

@@ -103,7 +103,10 @@ test('Import config lives in the top prelude (not at the bottom action zone)', a
   const view = page.locator('.shell-main [data-view="configure"]');
   const prelude = view.locator('.cfg-prelude');
   await expect(prelude).toBeVisible();
-  await expect(prelude.locator('.cfg-prelude-import')).toBeVisible();
+  // Several pills use .cfg-prelude-import for shared styling (Import
+  // config + Save preset…). Scope to the Import-config text to avoid
+  // strict-mode duplicate matches.
+  await expect(prelude.locator('button, a').filter({ hasText: /import config/i })).toBeVisible();
   // Export stays in the action zone — only Import is hoisted.
   const secondary = view.locator('.cfg-actionzone-secondary');
   await expect(secondary).not.toContainText(/import config/i);

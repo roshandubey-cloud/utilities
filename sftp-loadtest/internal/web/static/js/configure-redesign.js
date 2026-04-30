@@ -51,6 +51,9 @@ const ICON_UPLOAD_CLOUD =
 const ICON_DOWNLOAD_CLOUD =
   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
   '<path d="M8 5v6"/><path d="M5 8l3 3 3-3"/><path d="M3 3h10"/></svg>';
+const ICON_SAVE =
+  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M3 3h8l2 2v8H3z"/><path d="M5 3v3.5h6V3"/><path d="M5 9.5h6V13H5z"/></svg>';
 
 // decorateActionBtn — prepends a small icon span to a legacy button so
 // the action-zone toolbar reads as a coherent set. Idempotent: skips if
@@ -323,6 +326,31 @@ export function mountConfigureRedesign() {
     actionsRow.remove();
   }
   if (errEl) errSlot.appendChild(errEl);
+
+  // Save current config as a named preset. Lives in the prelude
+  // alongside Import config so the operator can save / load presets
+  // without leaving the Configure view (the only path before this was
+  // ⌘K → "Save current config…", which most operators never discover).
+  const preludeSlot = layout.querySelector('[data-slot="prelude"]');
+  if (preludeSlot && !preludeSlot.querySelector('[data-role="save-preset"]')) {
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'cfg-prelude-import'; // share the prelude pill style
+    saveBtn.dataset.role = 'save-preset';
+    saveBtn.title = 'Save the current form as a named preset (sidebar → Saved configs)';
+    decorateActionBtn(saveBtn, ICON_SAVE);
+    const label = document.createElement('span');
+    label.textContent = 'Save preset…';
+    saveBtn.appendChild(label);
+    saveBtn.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      const { promptSavePreset } = await import('./save-preset.js');
+      promptSavePreset();
+    });
+    // Insert BEFORE Import config so the order reads "Save | Import" —
+    // saving is a more frequent action than importing a JSON file.
+    preludeSlot.insertBefore(saveBtn, preludeSlot.firstChild);
+  }
 
   // The .grid wrapper is now empty (or only carries the hidden #connCard
   // and #largeCard). Keep it attached but visually collapse — its

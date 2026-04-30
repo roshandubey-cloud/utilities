@@ -52,14 +52,16 @@ test('save preset → load preset round-trip via palette', async ({ page }) => {
   await page.locator('#conn-host').fill('preset-host.example');
   await page.locator('#fpm').fill('999');
 
-  // Save preset via palette.
+  // Save preset via palette. The save path now uses the in-DOM modal
+  // (cross-Wails compat) instead of window.prompt. Drive the modal:
+  // open palette, run the command, fill the modal, submit.
   await page.keyboard.press('Meta+k');
   await page.locator('.cmdk-input').fill('save current config');
-  page.once('dialog', async (d) => {
-    expect(d.type()).toBe('prompt');
-    await d.accept('e2e-preset');
-  });
   await page.keyboard.press('Enter');
+  const modal = page.locator('.modal-panel');
+  await expect(modal).toBeVisible();
+  await modal.locator('input[name="name"]').fill('e2e-preset');
+  await modal.locator('[data-role="primary"]').click();
 
   // Reload to clear the form, then restore via palette.
   await page.reload();

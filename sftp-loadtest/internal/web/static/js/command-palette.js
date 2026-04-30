@@ -196,11 +196,12 @@ function collectCommands() {
     label: 'Save current config as preset…',
     hint: 'localStorage; passwords stripped',
     section: 'Configuration',
-    action: () => {
-      const name = window.prompt('Name this preset:');
-      if (!name || !name.trim()) return;
-      const entry = saveConfig(name);
-      if (entry) pushToast(`Saved preset “${entry.name}”`, 'success');
+    action: async () => {
+      // window.prompt is blocked in Wails — go through the in-DOM
+      // modal so this path works in both SKUs. Same helper the
+      // Configure prelude's Save preset… button uses.
+      const { promptSavePreset } = await import('./save-preset.js');
+      promptSavePreset();
     },
   });
   for (const cfg of listConfigs()) {
