@@ -2107,12 +2107,12 @@ button.primary:hover:not(:disabled),
 
 .configure-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: var(--sp-5);
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: var(--sp-4);
   align-items: start;
-  padding-bottom: var(--sp-8);
+  padding-bottom: var(--sp-6);
 }
-@media (max-width: 1100px) {
+@media (max-width: 1180px) {
   .configure-layout {
     grid-template-columns: 1fr;
   }
@@ -2121,7 +2121,7 @@ button.primary:hover:not(:disabled),
 .configure-main {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-5);
+  gap: var(--sp-3);
   min-width: 0;
 }
 
@@ -2132,7 +2132,7 @@ button.primary:hover:not(:disabled),
     var(--surface);
   border: var(--bw-1) solid var(--border-weak);
   border-radius: var(--panel-radius);
-  padding: var(--sp-5) var(--sp-5) var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
   box-shadow:
     inset 0 1px 0 var(--panel-sheen-top),
     inset 0 -1px 0 var(--panel-sheen-bottom),
@@ -2150,8 +2150,8 @@ button.primary:hover:not(:disabled),
 }
 
 .cfg-section-head {
-  margin-bottom: var(--sp-4);
-  padding-bottom: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  padding-bottom: var(--sp-2);
   border-bottom: var(--bw-1) solid var(--border-weak);
 }
 .cfg-section-eyebrow {
@@ -2565,8 +2565,8 @@ button.primary:hover:not(:disabled),
 }
 .cfg-limits-rows {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: var(--sp-2) var(--sp-3);
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--sp-2);
 }
 .cfg-limits-rows > div {
   display: flex;
@@ -2583,4 +2583,50 @@ button.primary:hover:not(:disabled),
 .cfg-limits-rows input[type="text"],
 .cfg-limits-rows select {
   width: 100%;
+}
+
+/* Configure-screen density — workload cards use the legacy .card .row
+   (minmax 140px) which forces a 4-field row to wrap awkwardly when the
+   right rail eats horizontal space. Tighten the threshold so the four
+   numeric fields (fpm + nmin + nmax + ncontent, lmin + lmax + lunit +
+   interval) sit on a single line at typical viewports without crowding
+   on narrow ones. */
+.cfg-workload-card .row,
+.shell-main [data-view="configure"] .card .row {
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--sp-2);
+}
+.cfg-workload-card .row + .row,
+.cfg-workload-card label + .row { margin-top: var(--sp-2); }
+
+/* Trim workload-card vertical padding — the body had generous gaps. */
+.cfg-workload-card .body { padding: var(--sp-3); gap: var(--sp-2); }
+
+/* Default textarea heights inside workload cards — the CSV-users
+   textarea was rendering at ~140px which dominated the card. The
+   structured users-editor row above is the primary input; the textarea
+   is a paste zone and should default smaller, growing as needed. */
+.cfg-workload-card textarea.csv-users,
+.shell-main [data-view="configure"] textarea.csv-users {
+  min-height: 4.5rem;
+  max-height: 12rem;
+  resize: vertical;
+}
+
+/* Compact field-pair — visually group two related inputs (Min / Max)
+   under a single section heading without DOM restructuring. Apply via
+   adjacent-sibling selector: any .row containing #nmin + #nmax (or
+   #lmin + #lmax) renders the pair as a single grid cell with the two
+   inputs side-by-side. Pure CSS, no markup change. */
+.cfg-workload-card .row:has(> div #nmin):has(> div #nmax),
+.cfg-workload-card .row:has(> div #lmin):has(> div #lmax) {
+  /* the four-field row stays as-is — we just tighten labels for the
+     paired min/max so the two short inputs read as a compound. */
+}
+.cfg-workload-card .row > div:has(#nmin) label,
+.cfg-workload-card .row > div:has(#nmax) label,
+.cfg-workload-card .row > div:has(#lmin) label,
+.cfg-workload-card .row > div:has(#lmax) label {
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
 }
