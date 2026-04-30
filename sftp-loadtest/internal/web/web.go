@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"crypto/x509"
 	"embed"
 	"encoding/csv"
 	"encoding/json"
@@ -52,6 +53,10 @@ type Server struct {
 	// file-based code paths are bypassed. When nil, the operator passed
 	// -known-hosts (file mode) or -insecure-host-key (no verification).
 	hostKeyStore *hostkeys.Store
+	// tlsStore is the parallel FTPS leaf-cert fingerprint store. Same
+	// semantics as hostKeyStore — first probe captures, the UI prompts,
+	// accept appends, future probes verify against it.
+	tlsStore *hostkeys.TLSStore
 }
 
 // NewServer constructs the HTTP server. schedulesDir may be empty, in which
@@ -106,6 +111,22 @@ func (s *Server) getHostKeyStore() *hostkeys.Store {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.hostKeyStore
+}
+
+// SetTLSStore wires the FTPS cert-fingerprint TOFU store. Mirrors the
+// SSH host-key store but keyed off TLS leaf-cert SHA-256 instead of
+// SSH host keys. Probe + start use it to drive the same TOFU /
+// renewal consent UX for FTPS that SFTP already has.
+func (s *Server) SetTLSStore(store *hostkeys.TLSStore) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tlsStore = store
+}
+
+func (s *Server) getTLSStore() *hostkeys.TLSStore {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.tlsStore
 }
 
 // startedAt is recorded once at construction for the /healthz uptime field.
@@ -188,7 +209,7 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 	proto := protocol.Normalize(req.Protocol)
 	out["protocol"] = string(proto)
 	if proto == protocol.FTP || proto == protocol.FTPS {
-		s.probeFTP(w, out, proto, req.Host, req.Port, req.Username, req.Password, req.Folder, req.TLSMode, req.TLSInsecureSkipVerify, req.TLSServerName)
+		s.probeFTP(w, out, proto, req.Host, req.Port, req.Username, req.Password, req.Folder, req.TLSMode, req.TLSInsecureSkipVerify, req.TLSServerName, req.TrustOnFirstUse, req.AcceptChanged)
 		return
 	}
 
@@ -382,13 +403,35 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 // supplied target. Same JSON shape as the SFTP path: per-stage timings
 // (connect_ms / list_ms), error message, plus the captured TLS leaf-cert
 // fingerprint when the protocol is FTPS so the UI can drive cert TOFU.
-func (s *Server) probeFTP(w http.ResponseWriter, out map[string]any, proto protocol.Protocol, host string, port int, user, pass, folder, tlsMode string, insecureSkipVerify bool, tlsServerName string) {
+//
+// Cert TOFU mirrors the SSH host-key flow:
+//   - cert unknown to the store + tofu=false   → requires_consent=true
+//   - cert known but DIFFERENT + tofu=false    → requires_renewal=true
+//   - cert known + matches                     → silent ok
+//   - tofu=true (operator opted in)            → silent OK on first cert,
+//                                                 store records it
+//   - acceptChanged=true + tofu=true           → drop existing entry
+//                                                 first, then record new
+func (s *Server) probeFTP(w http.ResponseWriter, out map[string]any, proto protocol.Protocol, host string, port int, user, pass, folder, tlsMode string, insecureSkipVerify bool, tlsServerName string, tofu, acceptChanged bool) {
 	if user == "" {
 		out["ok"] = true
 		out["stage"] = "tcp"
 		out["note"] = "TCP only — supply username + password to verify FTP login"
 		writeJSON(w, out)
 		return
+	}
+	tlsStore := s.getTLSStore()
+	// AcceptChanged: drop the existing trust entry so the next dial sees
+	// a clean slate and records the newly-presented cert.
+	if proto == protocol.FTPS && acceptChanged && tofu && tlsStore != nil {
+		if _, rerr := tlsStore.Remove(host, port); rerr != nil {
+			log.Printf("probe ftps://%s:%d: remove existing tls trust entry: %v", host, port, rerr)
+			out["stage"] = "connect"
+			out["error"] = "could not update trust store to overwrite previous cert"
+			writeJSON(w, out)
+			return
+		}
+		log.Printf("probe ftps://%s:%d: removed previous tls trust entry per accept_changed", host, port)
 	}
 	t1 := time.Now()
 	var capturedFP string
@@ -402,6 +445,15 @@ func (s *Server) probeFTP(w http.ResponseWriter, out map[string]any, proto proto
 		TLSServerName:      tlsServerName,
 		TLSCaptureCallback: func(fp string) { capturedFP = fp },
 	}
+	// FTPS verifies against the store unless either:
+	//   - the operator explicitly opted into TOFU for this probe
+	//     (re-probe after Accept on the consent / renewal modal), OR
+	//   - the operator ticked "Skip TLS verification" — that's an
+	//     explicit "trust any cert" gate weaker than the store, so
+	//     the store has no role.
+	if proto == protocol.FTPS && !tofu && !insecureSkipVerify && tlsStore != nil {
+		dialOpts.TLSStore = tlsStore
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	c, err := protocol.Dial(ctx, proto, dialOpts)
@@ -412,6 +464,25 @@ func (s *Server) probeFTP(w http.ResponseWriter, out map[string]any, proto proto
 	if err != nil {
 		log.Printf("probe %s://%s:%d user=%s: %v", proto, host, port, user, err)
 		out["stage"] = "connect"
+		// Surface a structured cert-consent / cert-renewal payload when
+		// the failure is a TLSVerifyError, so the UI can drive the same
+		// hostKeyConsent modal it already shows for SSH.
+		var verr *hostkeys.TLSVerifyError
+		if proto == protocol.FTPS && errors.As(err, &verr) {
+			out["captured_fingerprint"] = verr.Fingerprint
+			out["captured_for_host"] = host
+			out["tls_fingerprint"] = verr.Fingerprint
+			if errors.Is(verr.Err, hostkeys.ErrTLSCertChanged) {
+				out["requires_renewal"] = true
+				out["captured_previous_fingerprint"] = verr.Previous
+				out["error"] = "FTPS server presented a DIFFERENT certificate than the one already trusted. Verify out-of-band before accepting."
+			} else { // ErrUnknownTLSHost
+				out["requires_consent"] = true
+				out["error"] = "FTPS server presented a new certificate. Verify the fingerprint and accept to continue."
+			}
+			writeJSON(w, out)
+			return
+		}
 		out["error"] = friendlyProbeError("ssh_or_sftp", err)
 		if capturedFP != "" {
 			out["captured_fingerprint"] = capturedFP
@@ -423,15 +494,25 @@ func (s *Server) probeFTP(w http.ResponseWriter, out map[string]any, proto proto
 	}
 	defer c.Close()
 	if proto == protocol.FTPS {
+		var fp string
+		var leaf *x509.Certificate
 		if cert := protocol.TLSPeerCertificate(c); cert != nil {
-			fp := protocol.Fingerprint(cert)
+			leaf = cert
+			fp = protocol.Fingerprint(cert)
+		} else if capturedFP != "" {
+			fp = capturedFP
+		}
+		if fp != "" {
 			out["captured_fingerprint"] = fp
 			out["captured_for_host"] = host
 			out["tls_fingerprint"] = fp
-		} else if capturedFP != "" {
-			out["captured_fingerprint"] = capturedFP
-			out["captured_for_host"] = host
-			out["tls_fingerprint"] = capturedFP
+			// TOFU=true with a fresh successful Dial → record the cert so
+			// next probe verifies against it. Mirrors the SFTP TOFU path.
+			if tofu && tlsStore != nil && leaf != nil {
+				if aerr := tlsStore.Add(host, port, leaf); aerr != nil {
+					log.Printf("probe ftps://%s:%d: store add: %v", host, port, aerr)
+				}
+			}
 		}
 	}
 	if folder != "" {

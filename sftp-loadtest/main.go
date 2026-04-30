@@ -156,6 +156,22 @@ func main() {
 	if hkStore != nil {
 		srv.SetHostKeyStore(hkStore)
 	}
+	// FTPS leaf-cert TOFU store — sibling of the SSH host-key store, lives
+	// under the same OS config dir. Best-effort: a load error logs and
+	// keeps cert verification silently disabled (operator can still drive
+	// FTPS with the explicit "Trust self-signed cert" toggle).
+	if tlsPath, terr := defaultTLSStorePath(); terr == nil {
+		if tlsStore, terr := hostkeys.OpenTLS(tlsPath); terr == nil {
+			if err := tlsStore.Save(); err != nil {
+				log.Printf("init tls trust store %s: %v — FTPS cert TOFU disabled", tlsPath, err)
+			} else {
+				srv.SetTLSStore(tlsStore)
+				log.Printf("ftps cert verification: trust store=%s (managed via UI)", tlsPath)
+			}
+		} else {
+			log.Printf("open tls trust store %s: %v — FTPS cert TOFU disabled", tlsPath, terr)
+		}
+	}
 	handler := srv.Routes()
 
 	if *debug {
@@ -258,6 +274,17 @@ func defaultHostKeysStorePath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "sftp-loadtest", "hosts.json"), nil
+}
+
+// defaultTLSStorePath returns the per-user FTPS cert-fingerprint store
+// path. Sibling of the SSH host-key store; same operator workflow but
+// keyed off TLS leaf-cert SHA-256 instead of SSH host keys.
+func defaultTLSStorePath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "sftp-loadtest", "tls-hosts.json"), nil
 }
 
 // isLoopback reports whether host resolves to a loopback or unspecified

@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/fdlimit"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/hostkeys"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/sftpx"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/web"
 
@@ -63,6 +64,20 @@ func main() {
 	srv := web.NewServer(reportsDir, schedulesDir)
 	defer srv.Shutdown()
 	srv.SetKnownHostsPath(knownHostsPath)
+	// FTPS leaf-cert TOFU store — sibling of the SSH known_hosts setup.
+	// Lives under the same desktop data dir so the operator's UI-managed
+	// trust list survives across app launches.
+	tlsStorePath := filepath.Join(dataDir, "tls-hosts.json")
+	if tlsStore, terr := hostkeys.OpenTLS(tlsStorePath); terr == nil {
+		if err := tlsStore.Save(); err != nil {
+			log.Printf("init tls trust store %s: %v — FTPS cert TOFU disabled", tlsStorePath, err)
+		} else {
+			srv.SetTLSStore(tlsStore)
+			log.Printf("ftps cert verification: trust store=%s", tlsStorePath)
+		}
+	} else {
+		log.Printf("open tls trust store %s: %v — FTPS cert TOFU disabled", tlsStorePath, terr)
+	}
 
 	// Same security middleware envelope as the CLI default (no -auth-user,
 	// no TLS): CSRF + rate-limit + body-size cap. SecurityHeaders and
