@@ -537,6 +537,17 @@ body.wails-desktop .shell-topbar .segmented { -webkit-app-region: no-drag; }
    Review as first-class nav items, the banner is duplicated chrome. */
 .shell-mounted .legacy-banner { display: none !important; }
 
+/* The legacy "Schedule & config" card carried Export config / Import
+   config / Import & Run now. Configure's action zone now owns Export
+   (and the prelude owns Import); leaving Export duplicated in the
+   Schedule card just confuses the operator. Hide the legacy Export
+   button — it stays in the DOM so the Configure proxy's .click()
+   delegate still fires. Import config + Import & Run now stay
+   (they're scheduling-flow specific). The "include passwords"
+   checkbox stays visible: it's read by the Export logic, so leaving
+   it reachable matters even when the button itself isn't here. */
+.shell-mounted #exportBtn { display: none !important; }
+
 /* ============================================================================
    Workbench charts — pure-SVG sparklines mounted above the records panel.
    ============================================================================ */
