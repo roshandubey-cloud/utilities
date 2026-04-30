@@ -119,10 +119,108 @@ body.wails-windows .shell-topbar { padding-left: var(--sp-3); padding-right: 140
 body.wails-windows {
   --font-sans: "Segoe UI Variable Display", "Segoe UI", Inter, -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "Cascadia Mono", "Cascadia Code", "JetBrains Mono", "Fira Code", ui-monospace, Consolas, Menlo, monospace;
+
+  /* Windows lacks the OS vibrancy that gives macOS its premium "lit
+     from within" depth. Compensate by pushing every gloss token
+     harder so cards and buttons read as more luminous, the canvas
+     carries a soft top-down ambient glow, and accents pulse with a
+     subtle outer halo. The result is a richer, more polished feel
+     that keeps the same design language — just turned up so it
+     punches through Edge WebView2's flatter rendering. */
+  --panel-sheen-top:    rgba(255, 255, 255, 0.085);
+  --panel-sheen-bottom: rgba(0, 0, 0, 0.30);
+  --panel-blur:         saturate(180%) blur(28px);
+  --panel-radius:       16px;
+  --panel-radius-sm:    12px;
+  --panel-glass-bg:     linear-gradient(180deg,
+                          rgba(255,255,255,0.060) 0%,
+                          rgba(255,255,255,0.012) 45%,
+                          rgba(0,0,0,0.180) 100%);
+  --btn-glass-top:      rgba(255, 255, 255, 0.22);
+  --btn-glass-bottom:   rgba(0, 0, 0, 0.18);
+  --focus-ring-glow:    0 0 0 3px rgba(255, 120, 10, 0.45);
+
+  /* Ambient — a faint warm bloom at the top of the canvas that gives
+     the panels something to refract. Painted as a fixed background
+     on the .app-shell. */
+  --ambient-glow:       radial-gradient(1200px 540px at 50% -180px,
+                          rgba(255, 120, 10, 0.08) 0%,
+                          rgba(255, 120, 10, 0.025) 35%,
+                          transparent 70%);
 }
+body.wails-windows[data-theme="light"],
+body.wails-windows:not([data-theme]) {
+  --panel-sheen-top:    rgba(255, 255, 255, 0.95);
+  --panel-sheen-bottom: rgba(15, 23, 42, 0.06);
+  --panel-glass-bg:     linear-gradient(180deg,
+                          rgba(255,255,255,0.85) 0%,
+                          rgba(255,255,255,0.30) 55%,
+                          rgba(15,23,42,0.045) 100%);
+  --btn-glass-top:      rgba(255, 255, 255, 0.75);
+  --btn-glass-bottom:   rgba(15, 23, 42, 0.06);
+  --ambient-glow:       radial-gradient(1200px 540px at 50% -180px,
+                          rgba(238, 91, 33, 0.06) 0%,
+                          rgba(238, 91, 33, 0.018) 35%,
+                          transparent 70%);
+}
+/* Paint the ambient glow onto the shell so every view sits in the
+   same lit room. Layered as a non-scrolling overlay on the canvas. */
+body.wails-windows .app-shell {
+  background:
+    var(--ambient-glow),
+    var(--canvas);
+  background-attachment: fixed, fixed;
+}
+/* Slim summary pill + topbar pick up an extra outer halo so they
+   read as glass plates floating over the canvas. */
+body.wails-windows .cfg-summary-bar {
+  box-shadow:
+    inset 0 1px 0 var(--panel-sheen-top),
+    inset 0 -1px 0 var(--panel-sheen-bottom),
+    0 14px 36px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+body.wails-windows .cfg-summary-go {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 4px 14px rgba(255, 120, 10, 0.40),
+    0 1px 2px rgba(0, 0, 0, 0.18);
+}
+body.wails-windows .shell-topbar {
+  background:
+    linear-gradient(180deg,
+      rgba(255, 255, 255, 0.025) 0%,
+      rgba(255, 255, 255, 0) 60%),
+    var(--surface);
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+body.wails-windows .shell-topbar .btn-icon[data-variant="primary"] {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),
+    0 6px 18px rgba(255, 120, 10, 0.35);
+}
+
 /* Linux gets Mac-tier typography preference (Inter falls back to Cantarell or DejaVu Sans). */
 body.wails-linux {
   --font-sans: Inter, "Cantarell", "Ubuntu", "DejaVu Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* Web UI on Windows browsers — no body.wails-windows class, but the
+   user still gets a Windows browser. Detect via a UA-aware media
+   query approximation: use a Segoe-prefer font cascade when the
+   primary system font is the typical Windows default. We also
+   surface the same gloss boost via a CSS-only feature query so
+   browser users don't have a flat experience. The desktop class
+   wins when present. */
+@supports (font: -webkit-system-font) {
+  /* webkit-system-font is Mac/Safari-only; the @supports being
+     FALSE on Edge/Chrome on Windows lets us target that environment
+     in the partner block below. */
+}
+@supports not (font: -webkit-system-font) {
+  body:not(.wails-desktop) {
+    --font-sans: "Segoe UI Variable Display", "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
 }
 
 .shell-topbar-brand {

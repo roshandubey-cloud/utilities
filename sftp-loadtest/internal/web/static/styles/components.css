@@ -1961,6 +1961,10 @@ body > .app > .sched-banner {
   --input-radius:       9px;
   --input-shadow-inset: inset 0 1px 0 rgba(0, 0, 0, 0.20);
   --focus-ring-glow:    0 0 0 3px rgba(255, 120, 10, 0.35);
+  /* Ambient room-light: soft top-down luminance painted onto the
+     canvas so cards have something to refract against. Off by
+     default — only Windows enables it (vibrancy substitute). */
+  --ambient-glow:       transparent;
 }
 [data-theme="light"] {
   --panel-sheen-top:    rgba(255, 255, 255, 0.85);
