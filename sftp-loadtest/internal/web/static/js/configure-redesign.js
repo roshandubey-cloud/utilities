@@ -34,6 +34,36 @@
 
 const SUMMARY_REFRESH_MS = 1500;
 
+// Minimal stroke icons used in the action-zone toolbar buttons. Kept
+// inline (no font / no SVG sprite dep) so they ship with the binary.
+const ICON_PLAY =
+  '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
+  '<path d="M5.5 3.2v9.6L13 8z"/></svg>';
+const ICON_STOP =
+  '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
+  '<rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>';
+const ICON_DOWNLOAD =
+  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M8 2v8"/><path d="M4.5 7L8 10.5 11.5 7"/><path d="M3 13h10"/></svg>';
+const ICON_UPLOAD_CLOUD =
+  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M8 11V5"/><path d="M5 8l3-3 3 3"/><path d="M3 13h10"/></svg>';
+const ICON_DOWNLOAD_CLOUD =
+  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M8 5v6"/><path d="M5 8l3 3 3-3"/><path d="M3 3h10"/></svg>';
+
+// decorateActionBtn — prepends a small icon span to a legacy button so
+// the action-zone toolbar reads as a coherent set. Idempotent: skips if
+// the button already carries one.
+function decorateActionBtn(el, svg) {
+  if (!el || el.querySelector('.cfg-btn-icon')) return;
+  const icon = document.createElement('span');
+  icon.className = 'cfg-btn-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.innerHTML = svg;
+  el.insertBefore(icon, el.firstChild);
+}
+
 export function mountConfigureRedesign() {
   const view = document.querySelector('.shell-main [data-view="configure"]');
   if (!view) return;
@@ -108,10 +138,10 @@ export function mountConfigureRedesign() {
     <div class="cfg-summary-bar" data-section="summary" aria-label="Run summary">
       <button type="button" class="cfg-summary-go" data-role="summary-go"
               aria-label="Start run" title="Start run (⌘↵)">
-        <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"
-             data-role="summary-icon-play"><path d="M5 3l8 5-8 5V3z"/></svg>
-        <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"
-             data-role="summary-icon-stop" style="display:none"><rect x="4" y="4" width="8" height="8" rx="1"/></svg>
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"
+             data-role="summary-icon-play"><path d="M5.5 3.2v9.6L13 8z"/></svg>
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"
+             data-role="summary-icon-stop" style="display:none"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>
       </button>
       <dl class="cfg-summary-chips" data-role="summary-defs"></dl>
       <div class="cfg-summary-flows-inline" data-role="summary-foot"></div>
@@ -244,20 +274,30 @@ export function mountConfigureRedesign() {
     if (startBtn) {
       startBtn.classList.add('cfg-cta');
       startBtn.dataset.variant = 'primary';
+      decorateActionBtn(startBtn, ICON_PLAY);
       primarySlot.appendChild(startBtn);
     }
-    // Move the rest (stop, CSV link, export, import proxies) into the
-    // secondary row so the CTA stands alone. Use a Set to dedupe so a
-    // child that matches both stopBtn/csvBtn and the generic
-    // querySelectorAll('button, a') sweep doesn't get appended twice.
-    const seen = new Set();
-    const candidates = [stopBtn, csvBtn, ...actionsRow.querySelectorAll('button, a')];
-    candidates.forEach((el) => {
-      if (!el || !el.parentElement) return;
-      if (el === startBtn) return;
-      if (seen.has(el)) return;
+    if (stopBtn) {
+      stopBtn.classList.add('cfg-secondary-action');
+      stopBtn.dataset.tone = 'danger';
+      decorateActionBtn(stopBtn, ICON_STOP);
+      secondarySlot.appendChild(stopBtn);
+    }
+    if (csvBtn) {
+      csvBtn.classList.add('cfg-secondary-action');
+      decorateActionBtn(csvBtn, ICON_DOWNLOAD);
+      secondarySlot.appendChild(csvBtn);
+    }
+    // Sweep any remaining utility buttons (Export config / Import config
+    // proxies that run-actions.js has already inserted) and align them.
+    const seen = new Set([startBtn, stopBtn, csvBtn]);
+    actionsRow.querySelectorAll('button, a').forEach((el) => {
+      if (!el || seen.has(el) || !el.parentElement) return;
       seen.add(el);
       el.classList.add('cfg-secondary-action');
+      const txt = (el.textContent || '').toLowerCase();
+      if (txt.includes('export'))      decorateActionBtn(el, ICON_UPLOAD_CLOUD);
+      else if (txt.includes('import')) decorateActionBtn(el, ICON_DOWNLOAD_CLOUD);
       secondarySlot.appendChild(el);
     });
     actionsRow.remove();

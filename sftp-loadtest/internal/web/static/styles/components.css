@@ -2360,79 +2360,116 @@ button.primary:hover:not(:disabled),
 .cfg-workload-card[data-enabled="true"] .switch-state { color: var(--text-primary); }
 
 /* --- Action zone ----------------------------------------------------- */
+/* The slim sticky pill is the primary play/stop affordance now. The
+   action zone collapses into a single tidy toolbar — all buttons same
+   height, same radius, same gap. Start run keeps an accent tint; the
+   utility actions are ghost-style. Icons via JS-prepended SVGs. */
 .cfg-actionzone {
-  background:
-    linear-gradient(180deg, rgba(255, 120, 10, 0.04) 0%, transparent 100%),
-    var(--surface);
-  border: var(--bw-1) solid var(--border-weak);
-  border-radius: var(--panel-radius);
-  padding: var(--sp-5);
   display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-  box-shadow:
-    inset 0 1px 0 var(--panel-sheen-top),
-    var(--shadow-1);
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: center;
+  padding: var(--sp-2) 0 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
-[data-theme="light"] .cfg-actionzone,
-:root:not([data-theme]) .cfg-actionzone {
-  border-color: rgba(15, 23, 42, 0.06);
-  background:
-    linear-gradient(180deg, rgba(238, 91, 33, 0.05) 0%, transparent 100%),
-    var(--surface);
-}
-.cfg-actionzone-primary {
-  display: flex;
-  width: 100%;
-}
-.cfg-actionzone-primary .cfg-cta {
-  width: 100%;
-  font-size: var(--fs-14);
-  font-weight: var(--fw-semibold);
-  height: 48px;
-  padding: 0 var(--sp-5);
-  border-radius: 12px;
-  letter-spacing: var(--tracking-tight);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, transparent 50%),
-    linear-gradient(0deg, rgba(0, 0, 0, 0.12) 0%, transparent 50%),
-    var(--accent);
-  color: var(--accent-fg);
-  border: var(--bw-1) solid var(--accent);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.25),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.15),
-    0 4px 14px rgba(255, 120, 10, 0.30),
-    0 1px 2px rgba(0, 0, 0, 0.10);
-  transition: box-shadow var(--t-fast) var(--ease-out),
-              transform var(--t-fast) var(--ease-out),
-              filter var(--t-fast) var(--ease-out);
-}
-.cfg-actionzone-primary .cfg-cta:hover:not(:disabled) {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.32),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.18),
-    0 6px 18px rgba(255, 120, 10, 0.40),
-    0 2px 4px rgba(0, 0, 0, 0.14);
-  filter: brightness(1.05);
-  transform: translateY(-1px);
-}
-.cfg-actionzone-primary .cfg-cta:active:not(:disabled) {
-  transform: translateY(0);
-}
+.cfg-actionzone-primary,
 .cfg-actionzone-secondary {
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-2);
   align-items: center;
-  padding-top: var(--sp-2);
-  border-top: var(--bw-1) solid var(--border-weak);
+  padding: 0;
+  border: 0;
+}
+.cfg-actionzone-secondary {
+  margin-left: auto;
   justify-content: flex-end;
 }
-.cfg-secondary-action {
-  font-size: var(--fs-12);
+
+/* All action-zone buttons share the same compact pill geometry. */
+.cfg-actionzone .cfg-cta,
+.cfg-actionzone .cfg-secondary-action {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-normal);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: var(--bw-1) solid var(--border-medium);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast),
+              color var(--t-fast), transform var(--t-fast);
+  white-space: nowrap;
+}
+.cfg-actionzone .cfg-cta:hover:not(:disabled),
+.cfg-actionzone .cfg-secondary-action:hover:not(:disabled) {
+  background: var(--action-hover);
+  border-color: var(--border-strong);
+}
+.cfg-actionzone .cfg-cta:active:not(:disabled),
+.cfg-actionzone .cfg-secondary-action:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.cfg-actionzone .cfg-cta:disabled,
+.cfg-actionzone .cfg-secondary-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Start run is the only accent-tinted button — leading play icon, soft
+   inner sheen so it reads as the launch affordance without dominating. */
+.cfg-actionzone .cfg-cta {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, transparent 50%),
+    var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.20),
+    0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.cfg-actionzone .cfg-cta:hover:not(:disabled) {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.20) 0%, transparent 50%),
+    var(--accent-hover);
+  border-color: var(--accent-hover);
+  filter: brightness(1.04);
+}
+.cfg-actionzone .cfg-cta .cfg-btn-icon { color: var(--accent-fg); }
+
+.cfg-actionzone .cfg-secondary-action {
   color: var(--text-secondary);
 }
+.cfg-actionzone .cfg-secondary-action:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+.cfg-actionzone .cfg-secondary-action[data-tone="danger"]:not(:disabled) {
+  color: var(--danger-fg-soft);
+  border-color: var(--danger-border);
+}
+.cfg-actionzone .cfg-secondary-action[data-tone="danger"]:hover:not(:disabled) {
+  background: var(--danger-bg-soft);
+  border-color: var(--danger);
+}
+
+/* Inline button icon — small, sharp, inherits colour. */
+.cfg-actionzone .cfg-btn-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  color: currentColor;
+}
+.cfg-actionzone .cfg-btn-icon svg { display: block; width: 100%; height: 100%; }
+
+.cfg-actionzone-error { width: 100%; }
 .cfg-actionzone-error:empty { display: none; }
 .cfg-actionzone-error #err {
   color: var(--danger-fg-soft);

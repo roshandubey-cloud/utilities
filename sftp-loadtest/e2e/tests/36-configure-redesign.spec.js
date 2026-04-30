@@ -115,9 +115,9 @@ test('Resource limits is split into Upload / Download / Run sub-groups, with #dp
 });
 
 test('Primary CTA is visually distinct from secondary utility actions', async ({ page }) => {
-  // Start-run carries data-variant="primary" + .cfg-cta class; the
-  // secondary actions (Stop, Download CSV, Export config) carry
-  // .cfg-secondary-action.
+  // Start-run carries data-variant="primary" + .cfg-cta class with an
+  // accent-tinted background; the secondary actions (Stop, Download CSV,
+  // Export config) carry .cfg-secondary-action with a neutral surface.
   const cta = page.locator('.cfg-actionzone-primary #startBtn');
   await expect(cta).toBeVisible();
   await expect(cta).toHaveAttribute('data-variant', 'primary');
@@ -127,10 +127,12 @@ test('Primary CTA is visually distinct from secondary utility actions', async ({
   await expect(secondary).toBeVisible();
   await expect(secondary.locator('#stopBtn')).toBeVisible();
   await expect(secondary.locator('#stopBtn')).toHaveClass(/cfg-secondary-action/);
-  // The CTA is taller than secondary actions (visual hierarchy).
-  const ctaBox = await cta.boundingBox();
-  const stopBox = await secondary.locator('#stopBtn').boundingBox();
-  expect(ctaBox).not.toBeNull();
-  expect(stopBox).not.toBeNull();
-  expect(ctaBox.height).toBeGreaterThan(stopBox.height);
+  // Visual distinction comes from the accent fill on the CTA, not from
+  // size — both buttons share the toolbar's compact 32px height. Assert
+  // the rendered background colour differs.
+  const ctaBg = await cta.evaluate((el) => getComputedStyle(el).backgroundColor + getComputedStyle(el).backgroundImage);
+  const stopBg = await secondary.locator('#stopBtn').evaluate((el) => getComputedStyle(el).backgroundColor + getComputedStyle(el).backgroundImage);
+  expect(ctaBg).not.toBe(stopBg);
+  // The CTA should also carry a leading icon — the .cfg-btn-icon span.
+  await expect(cta.locator('.cfg-btn-icon')).toBeVisible();
 });
