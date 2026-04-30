@@ -5,6 +5,40 @@
    downstream resolves through these tokens — never hard-code.
    ============================================================================ */
 
+/* ---------- bundled webfonts ----------
+   Inter Variable + JetBrains Mono are embedded in the binary so the
+   product looks IDENTICAL across macOS, Windows, Linux, and any
+   browser pulling from the web SKU. Without bundled fonts, Windows
+   would fall back to Segoe UI and Mac to SF Pro — the same tokens
+   would still render with visibly different glyph shapes. ~540 KB
+   of woff2 buys cross-platform parity.
+
+   Both fonts ship under SIL OFL; license texts live in
+   /static/fonts/{LICENSE.txt,OFL.txt}. font-display:swap so a brief
+   render with the system fallback is fine while the woff2 streams. */
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/InterVariable.woff2') format('woff2-variations'),
+       url('/fonts/InterVariable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* ---------- typography ---------- */
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
