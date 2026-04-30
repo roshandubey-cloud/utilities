@@ -14,17 +14,50 @@ hiccups.
 - **Streaming CSV report** to disk during the run + atomic metadata JSON on teardown.
 - **Built-in scheduler**: queue runs for later, fires automatically, persists across restarts.
 - **Test connection** button validates TCP / SSH / SFTP / folder list before you commit to a real run.
-- **Newspaper-themed UI** that auto-respects dark mode.
+- **Apple-TV-class workbench UI** with sidebar nav, slim run-summary bar, Cmd+K palette, live charts, and dark / light themes.
+- **SSH host-key verification** on by default (TOFU enrollment from the UI; per-user `known_hosts` auto-managed in the desktop SKU).
+- **SSH public-key auth** in addition to passwords — paste a PEM in the connection card and every user authenticates with that key.
+- **Saved connections + saved configs** — name a host:port:user combo, recall it from the sidebar with one click; save the whole form as a preset and load it via Cmd+K.
 
 ## Screenshots
 
-### Live test in progress
-![Active run — live metrics, recent uploads, host capacity, scheduled runs](docs/screenshots/02-active-run.png)
+### Workbench (live run, dark theme)
+![Workbench — live throughput, latency percentiles, live metrics tile grid, slowdown events table](docs/screenshots/workbench-active-dark.png)
 
-### Idle / between runs
-![Idle view — connection form, host capacity strip, last run still visible](docs/screenshots/01-idle.png)
+### Configure (dark theme)
+![Configure — Quick checks card, Upload / Download workload cards, slim run-summary with live chips](docs/screenshots/configure-dark.png)
+
+### More screenshots
+
+| View | Dark | Light |
+|---|---|---|
+| Workbench (idle) | [workbench-idle-dark](docs/screenshots/workbench-idle-dark.png) | [workbench-idle-light](docs/screenshots/workbench-idle-light.png) |
+| Workbench (active) | [workbench-active-dark](docs/screenshots/workbench-active-dark.png) | [workbench-active-light](docs/screenshots/workbench-active-light.png) |
+| Configure | [configure-dark](docs/screenshots/configure-dark.png) | [configure-light](docs/screenshots/configure-light.png) |
+| Schedule | [schedule-dark](docs/screenshots/schedule-dark.png) | [schedule-light](docs/screenshots/schedule-light.png) |
+| Runs | [runs-dark](docs/screenshots/runs-dark.png) | [runs-light](docs/screenshots/runs-light.png) |
+| Cluster (with workers) | [cluster-with-workers-dark](docs/screenshots/cluster-with-workers-dark.png) | [cluster-with-workers-light](docs/screenshots/cluster-with-workers-light.png) |
+| Trust | [trust-dark](docs/screenshots/trust-dark.png) | [trust-light](docs/screenshots/trust-light.png) |
+| Cmd+K palette | [cmdk-palette-open-dark](docs/screenshots/cmdk-palette-open-dark.png) | [cmdk-palette-open-light](docs/screenshots/cmdk-palette-open-light.png) |
+| Host-key consent | [host-key-consent-modal-dark](docs/screenshots/host-key-consent-modal-dark.png) | [host-key-consent-modal-light](docs/screenshots/host-key-consent-modal-light.png) |
+
+## Feature tour
+
+| Area | What you'll find |
+|---|---|
+| **Workbench** | Live throughput + upload-latency charts, the live-metrics tile grid (elapsed / files / overall MB/s / last-min / baseline / slowdowns / failures), the streaming Live activity table, and the slowdown events panel. |
+| **Configure** | The Quick checks card (host / port / folder / user / password / TOFU / SSH key disclosure / Save… / Test connection), the Upload + Download workload cards, the resource-limits sub-groups (Upload / Download / Run), and the slim sticky run-summary bar with a play/stop button. |
+| **Schedule** | Pick a fire-at time, queue a run, see pending schedules in a table, cancel any of them. Import config / Import & Run-now also live here. |
+| **Runs** | An "About to run" plan section that mirrors the current form, plus the past-runs history list — each card has KPIs, latency percentiles, an analyser panel, the CSV download link, and an Open button to drill into the detail pane. |
+| **Cluster** | Add `sftp-loadtest` worker URLs (with optional basic-auth creds), enable / disable each, and flip the **Distribute load across workers** toggle so a single Start fans out via `/api/cluster/start`. |
+| **Trust** | The trusted SSH host-key list. Each row shows the SHA-256 fingerprint; click × to forget a key (next connection prompts again). |
+| **Cmd+K palette** | Run / Stop / Test connection / Toggle theme / Toggle sidebar / Save config / Load preset / View past run — every primary action is reachable by typing. |
+| **Saved connections** | Curated host:port:user (and optionally password) entries. The sidebar Connections section keeps these above the auto-tracked recents; click any row to refill all four credential fields in one shot. |
+| **Theme switcher** | Three-state segmented control on the topbar: Auto follows the OS, Light and Dark force the theme via `<html data-theme>`. The choice persists across reloads. |
 
 ## Quick start
+
+> **Need a step-by-step?** See [docs/howto.md](docs/howto.md) for ten flow walkthroughs (first-time setup, SSH key auth, scheduling, cluster fan-out, …).
 
 The tool ships in **two flavors**. Pick whichever fits how you want to run it.
 
@@ -143,8 +176,9 @@ journald — see [docs/systemd.md](docs/systemd.md).
 ## What it actually does
 
 1. **Upload phase** — each upload user logs into your SFTP server (password
-   auth) and streams generated random-byte files into the upload folder
-   (e.g. `inbox`) at the configured files-per-minute rate.
+   or SSH-key auth, your pick) and streams generated random-byte files
+   into the upload folder (e.g. `inbox`) at the configured files-per-minute
+   rate.
 2. **Track-ID watcher** — polls each user's upload folder looking for the
    server to rename `foo.txt` → `foo.txt#<trackid>`. Captures the trackid
    and the *processing time* (minutes from upload-end to track-id-detected).
@@ -179,10 +213,28 @@ reach `:8080` can start a load test. Recommended deployments:
 - **Remote server**: bind to `127.0.0.1`, then `ssh -L 8080:localhost:8080 user@server` and open `localhost:8080` in your local browser.
 - **Multi-tenant**: put nginx / Caddy with basic-auth in front.
 
-The tool itself only does **password SFTP auth** — no SSH keys, no host-key
-verification (any server is trusted). That's appropriate for load testing
-disposable test accounts; **don't** use it against a server holding
-production data without first auditing the network path.
+The tool authenticates to the **target SFTP** server in one of two ways,
+selected per run:
+
+- **Password auth** (default) — every user CSV row carries a username + password.
+- **SSH public-key auth** (v0.10.0) — open the **Use SSH private key** disclosure on the Quick checks card, paste a PEM, and every user authenticates with that single key. The CSV password column is ignored. The PEM lives in memory only — it never reaches `localStorage` unless you opt-in to "Include passwords" during Export config.
+
+**SSH host-key verification is on by default** (v0.9.3). The Test
+connection button drives a Trust-On-First-Use enrollment: the first time
+you hit a server, the UI shows the SHA-256 fingerprint and asks you to
+accept it before continuing. Already-trusted keys connect silently;
+**changed** keys are refused loudly with both fingerprints surfaced in
+the UI — no `known_hosts` editing required. The desktop SKU auto-creates
+a per-user `known_hosts` under your platform's standard config directory.
+See [docs/security.md](docs/security.md) for the full security model.
+
+**Saved connections** (v0.10.1) — the Save… button on the Quick checks
+card persists host / port / username (and optionally password) as a
+named entry in the sidebar. Click any row in the Connections section to
+refill all four credential fields. Saved connections live in
+`localStorage`, scoped to the browser/origin where you saved them; the
+"Save passwords in this browser" master toggle still controls whether
+the password column gets persisted at all.
 
 ## Endpoints (for CLI / scripted use)
 
@@ -239,12 +291,10 @@ yourself: `ulimit -n 16384` or `LimitNOFILE=16384` in a systemd unit.
 
 ## Limitations
 
-- Password SFTP auth only — no public-key, no SSH agent.
-- No host-key verification — appropriate for load testing, not for
-  handling production data.
-- No HTTPS on the web UI itself.
-- Single concurrent run per process (run multiple processes on different
-  ports for true parallelism).
+- No HTTPS on the web UI itself (use `-tls-cert` / `-tls-key` to enable, or front it with nginx / Caddy).
+- Single concurrent run per process (run multiple processes on different ports for true parallelism, or use the Cluster view to fan-out across worker URLs).
+- Per-user SSH keys are a v2 follow-up — current shared-key support uses one PEM for all users in the run, which covers the single-test-identity case but not "each user has their own key" scenarios. Mix-and-match (some users password, some users key) is also v2.
+- No SSH-agent integration — paste a PEM, don't expect socket-based agent forwarding.
 
 ## License
 

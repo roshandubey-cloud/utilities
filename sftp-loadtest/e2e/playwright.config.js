@@ -10,9 +10,16 @@
 
 import { defineConfig, devices } from '@playwright/test';
 
+// The README-screenshots spec ships separately from the regular suite —
+// it captures docs assets, takes ~30 s, and is only useful when re-baking
+// the README artwork. Gate it behind CAPTURE=1 so the normal run stays
+// fast and deterministic.
+const captureMode = process.env.CAPTURE === '1';
+
 export default defineConfig({
   testDir: './tests',
   outputDir: './test-results',
+  testIgnore: captureMode ? [] : ['**/zz-readme-screenshots.spec.js'],
   fullyParallel: false,        // single shared server / mock — keep tests serial
   forbidOnly: true,
   retries: 0,

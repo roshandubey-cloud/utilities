@@ -168,8 +168,8 @@ export function mountConfigureRedesign() {
   // to a slimmer pill and keep the legacy <header> intact for any tests.
   if (normalCard) {
     const wrap = makeWorkloadWrap({
-      title: 'Normal load',
-      subtitle: 'Steady cadence of small / medium files (the bulk of most tests).',
+      title: 'Upload',
+      subtitle: 'Steady cadence of small / medium files — the primary load.',
       enabledId: 'normal_enabled',
       cardEl: normalCard,
     });

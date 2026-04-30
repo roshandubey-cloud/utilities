@@ -54,7 +54,7 @@ export function mountReview() {
           </div>
 
           <div class="review-view-card">
-            <div class="review-view-card-title">Normal load</div>
+            <div class="review-view-card-title">Upload</div>
             ${cfg.normal_enabled ? `
               <dl class="review-view-defs">
                 <dt>Users</dt><dd>${u}</dd>

@@ -37,6 +37,10 @@ high-FPM runs. Ships as a 10 MB binary for macOS, Linux, and Windows.
 | **Live visibility** | `/healthz`, `/api/host`, `/api/status`, `/api/probe`, `/debug/pprof` (opt-in) |
 | **Config portability** | Export / import full config (incl. users) as JSON; share + replay tests verbatim |
 | **Cross-platform** | macOS arm64/amd64, Linux amd64/arm64, Windows amd64 |
+| **SSH host-key verification** | On by default. TOFU enrollment from the UI; changed-key refusal is loud. |
+| **SSH key auth** | Paste a PEM in the connection card; every user authenticates with that key (v0.10.0). |
+| **Saved connections / configs** | Sidebar one-click recall for host:port:user and full-form presets (v0.10.1). |
+| **Apple-TV-class UI** | Sidebar nav + Cmd+K palette + slim run-summary + dark/light themes. |
 
 ---
 
@@ -74,9 +78,12 @@ Fill the form → **Test connection** → **Start run**.
 
 ## Limitations (be upfront)
 
-Password SFTP auth only · No host-key verification (lab use, not prod data) ·
-No HTTPS on the UI (bind to `127.0.0.1` + SSH-tunnel for remote access) ·
-No bundled UI authentication · One active run per process.
+No HTTPS on the UI by default (use `-tls-cert` / `-tls-key` to enable, or
+front it with nginx / Caddy + bind to `127.0.0.1`) · No bundled UI
+authentication unless you set `-auth-user` / `-auth-pass` · One active
+run per process (Cluster view fans out across multiple processes) ·
+Per-user SSH keys are v2 — current shared-key support uses one PEM for
+all users · No SSH-agent integration.
 
 ---
 

@@ -50,6 +50,20 @@ After a successful capture, the process-wide host-key callback is reloaded
 so any subsequent `/api/start` (and any in-flight run that reconnects via
 the pool) immediately sees the new entry without a daemon restart.
 
+### SSH public-key auth (v0.10.0)
+
+The Quick checks card has a **Use SSH private key** disclosure. Pasting a
+PEM into it switches both the probe and the run from password auth to
+public-key auth. The CSV password column is ignored when a PEM is set.
+Both PKCS8 and OpenSSH-format private keys are accepted; ed25519, RSA,
+and ECDSA keys all work.
+
+The PEM lives in process memory and the in-tab JS object only — it never
+reaches `localStorage`, never lands on disk, and is not included in
+`Export config` unless the operator explicitly opts in to "Include
+passwords in export" (the export-with-passwords code-path also serialises
+the PEM, since it has the same operational risk profile as a credential).
+
 **Security trade-off:** TOFU pins the key on first connect. If an attacker
 is MITM-ing your SSH session at that exact moment, you pin their key. The
 window is small in practice; for environments where it matters, populate
@@ -161,8 +175,10 @@ runs to disk so a CI restart resumes cleanly.
 
 ## What's still on the backlog
 
-- **SSH public-key auth**: the codebase only handles password auth today.
-  Adding `-key-file` per-user is a follow-up.
+- **Per-user SSH keys**: shipped in v0.10.0 with a single shared key for
+  the whole run (paste a PEM in the Quick checks card). The "each user
+  has their own key" follow-up — including mix-and-match (some users
+  password, some users key) — is queued for v2.
 - **Token-based API auth**: a single `-auth-token` HTTP header is more
   ergonomic than `-auth-user`/`-auth-pass` for automation. Easy add.
 - **Per-user audit log**: `started_by` is currently free-text; once auth
