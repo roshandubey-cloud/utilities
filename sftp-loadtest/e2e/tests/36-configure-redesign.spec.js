@@ -65,6 +65,23 @@ test('Toggling the Large workload off collapses #large_users', async ({ page }) 
   await expect(page.locator('#download_users')).toBeVisible();
 });
 
+test('Resource limits is split into Upload / Download / Run sub-groups, with #dparallel in Download', async ({ page }) => {
+  const view = page.locator('.shell-main [data-view="configure"]');
+  const limits = view.locator('.cfg-section[data-section="limits"]');
+  // Three sub-groups labelled by direction.
+  await expect(limits.locator('.cfg-limits-group[data-group="upload"]')).toBeVisible();
+  await expect(limits.locator('.cfg-limits-group[data-group="download"]')).toBeVisible();
+  await expect(limits.locator('.cfg-limits-group[data-group="run"]')).toBeVisible();
+  // Upload sub-group hosts upload streams-per-user.
+  await expect(limits.locator('.cfg-limits-group[data-group="upload"] #parallel')).toBeVisible();
+  // Download sub-group hosts the relocated download streams-per-user.
+  await expect(limits.locator('.cfg-limits-group[data-group="download"] #dparallel')).toBeVisible();
+  // Run sub-group carries duration / poll / timeout / max_fails.
+  for (const id of ['duration', 'poll', 'timeout_min', 'max_fails']) {
+    await expect(limits.locator(`.cfg-limits-group[data-group="run"] #${id}`)).toBeVisible();
+  }
+});
+
 test('Primary CTA is visually distinct from secondary utility actions', async ({ page }) => {
   // Start-run carries data-variant="primary" + .cfg-cta class; the
   // secondary actions (Stop, Download CSV, Export config) carry

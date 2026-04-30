@@ -2530,3 +2530,57 @@ button.primary:hover:not(:disabled),
 .cfg-section[data-section="limits"] .upload-run-mechanics {
   margin-top: 0;
 }
+
+/* Resource limits — Upload / Download stream-direction split + run-wide
+   sub-group below. Each sub-group reads as a labelled mini-card so the
+   eye groups the rows by which direction they govern. */
+.cfg-section[data-section="limits"] .cfg-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.cfg-limits-stream {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-3);
+}
+@media (max-width: 720px) {
+  .cfg-limits-stream { grid-template-columns: 1fr; }
+}
+.cfg-limits-group {
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-3);
+  padding: var(--sp-3) var(--sp-3) calc(var(--sp-3) + 2px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.cfg-limits-eyebrow {
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-loose);
+  color: var(--text-tertiary);
+}
+.cfg-limits-rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--sp-2) var(--sp-3);
+}
+.cfg-limits-rows > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.cfg-limits-rows label {
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  font-weight: var(--fw-medium);
+}
+.cfg-limits-rows input[type="number"],
+.cfg-limits-rows input[type="text"],
+.cfg-limits-rows select {
+  width: 100%;
+}

@@ -89,7 +89,7 @@ export function mountConfigureRedesign() {
         <header class="cfg-section-head">
           <div class="cfg-section-eyebrow">3 · Resource limits</div>
           <h2 class="cfg-section-title">How long, how aggressively?</h2>
-          <p class="cfg-section-sub">Parallelism per user, total duration, polling cadence, and the disable-after-fails ceiling.</p>
+          <p class="cfg-section-sub">Per-user parallelism (split for upload + download), plus run-wide duration, polling, timeouts, and the disable-after-fails ceiling.</p>
         </header>
         <div class="cfg-section-body" data-slot="limits"></div>
       </section>
@@ -160,23 +160,70 @@ export function mountConfigureRedesign() {
   }
 
   // --- RESOURCE LIMITS slot --------------------------------------------
+  // Split into three sub-groups so per-stream-direction parallelism is
+  // categorised away from the run-wide knobs:
+  //   Upload    → #parallel  (streams / user)
+  //   Download  → #dparallel (streams / user; relocated out of the
+  //               Download workload card so the workload card holds
+  //               only workload-shape concerns: folder + match mode)
+  //   Run       → #duration / #poll / #timeout_min / #max_fails
   const limitsSlot = layout.querySelector('[data-slot="limits"]');
+  limitsSlot.innerHTML = `
+    <div class="cfg-limits-stream">
+      <div class="cfg-limits-group" data-group="upload">
+        <div class="cfg-limits-eyebrow">Upload</div>
+        <div class="cfg-limits-rows" data-slot="limits-upload"></div>
+      </div>
+      <div class="cfg-limits-group" data-group="download">
+        <div class="cfg-limits-eyebrow">Download</div>
+        <div class="cfg-limits-rows" data-slot="limits-download"></div>
+      </div>
+    </div>
+    <div class="cfg-limits-group" data-group="run">
+      <div class="cfg-limits-eyebrow">Run controls</div>
+      <div class="cfg-limits-rows" data-slot="limits-run"></div>
+    </div>
+  `;
+  const upSlot   = limitsSlot.querySelector('[data-slot="limits-upload"]');
+  const dlSlot   = limitsSlot.querySelector('[data-slot="limits-download"]');
+  const runSlot  = limitsSlot.querySelector('[data-slot="limits-run"]');
+
+  // Resolve the rows. The legacy form gives us .row containers with the
+  // <input> inside; we steal each <input>'s containing field-cell so the
+  // labels travel with their input.
+  function fieldFor(id) {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    // The legacy form wraps <label>+<input> in a plain <div>. The .row
+    // is its grandparent; grab the immediate <div> wrapper so we can
+    // rehome a single field independently of any siblings on the row.
+    let cell = el;
+    while (cell.parentElement && !cell.parentElement.classList.contains('row')) {
+      cell = cell.parentElement;
+    }
+    return cell.parentElement && cell.parentElement.classList.contains('row') ? cell : null;
+  }
+
+  const fParallel  = fieldFor('parallel');
+  const fDuration  = fieldFor('duration');
+  const fPoll      = fieldFor('poll');
+  const fTimeout   = fieldFor('timeout_min');
+  const fMaxFails  = fieldFor('max_fails');
+  const fDParallel = fieldFor('dparallel');
+
+  if (fParallel)  upSlot.appendChild(fParallel);
+  if (fDParallel) dlSlot.appendChild(fDParallel);
+  for (const f of [fDuration, fPoll, fTimeout, fMaxFails]) {
+    if (f) runSlot.appendChild(f);
+  }
+
+  // The runMechanics scaffold (and any leftover .row husks now empty
+  // after we extracted their cells) remain in the DOM but are visually
+  // collapsed via .configure-legacy-residue, so legacy.js's $('parallel')
+  // lookups still find the inputs.
   if (runMechanics) {
-    // Strip its old heading (we have the section eyebrow now).
     const oldHeading = runMechanics.querySelector('.upload-run-mechanics-heading');
     if (oldHeading) oldHeading.remove();
-    limitsSlot.appendChild(runMechanics);
-  } else {
-    // Fallback: re-collect the rows directly from the hidden #connCard.
-    const conn = document.getElementById('connCard');
-    if (conn) {
-      const RUN_FIELD_IDS = ['parallel', 'duration', 'poll', 'timeout_min', 'max_fails'];
-      conn.querySelectorAll('.body .row').forEach((row) => {
-        if (RUN_FIELD_IDS.some((id) => row.querySelector('#' + id))) {
-          limitsSlot.appendChild(row);
-        }
-      });
-    }
   }
 
   // --- ACTION ZONE -----------------------------------------------------
