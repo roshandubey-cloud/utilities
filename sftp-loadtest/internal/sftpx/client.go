@@ -292,6 +292,50 @@ type DialOpts struct {
 	// for this one connection. Used by /api/probe in TOFU mode so the probe
 	// can capture a new server's key without affecting in-flight runs.
 	HostKeyCallback ssh.HostKeyCallback
+
+	// Auth, if non-empty, is used in place of the password fallback. Lets
+	// callers wire ssh.PublicKeys (or any other ssh.AuthMethod) for runs
+	// that authenticate with a private key instead of a password. Empty
+	// means "fall back to ssh.Password(pass)" — preserving the behaviour
+	// every existing caller already gets.
+	Auth []ssh.AuthMethod
+}
+
+// ParsePrivateKey parses a PEM-encoded SSH private key, decrypting it with
+// passphrase when one is supplied. Returns cleanly-wrapped errors for the
+// three failure modes operators actually hit (bad PEM, bad passphrase,
+// unsupported key type) so the UI can surface a usable message instead of
+// the raw library error string.
+func ParsePrivateKey(pem []byte, passphrase string) (ssh.Signer, error) {
+	if len(pem) == 0 {
+		return nil, errors.New("private key is empty")
+	}
+	var (
+		signer ssh.Signer
+		err    error
+	)
+	if passphrase != "" {
+		signer, err = ssh.ParsePrivateKeyWithPassphrase(pem, []byte(passphrase))
+	} else {
+		signer, err = ssh.ParsePrivateKey(pem)
+	}
+	if err == nil {
+		return signer, nil
+	}
+	msg := err.Error()
+	low := strings.ToLower(msg)
+	switch {
+	case strings.Contains(low, "decryption password"), strings.Contains(low, "incorrect passphrase"), strings.Contains(low, "x509: decryption password"):
+		return nil, fmt.Errorf("private key passphrase is incorrect")
+	case strings.Contains(low, "passphrase protected"), strings.Contains(low, "encrypted"):
+		return nil, fmt.Errorf("private key is encrypted — supply a passphrase")
+	case strings.Contains(low, "no key found"), strings.Contains(low, "pem"):
+		return nil, fmt.Errorf("private key PEM is malformed (no key block found)")
+	case strings.Contains(low, "unsupported key type"), strings.Contains(low, "unknown key type"):
+		return nil, fmt.Errorf("private key type is not supported (use ed25519, RSA, or ECDSA)")
+	default:
+		return nil, fmt.Errorf("private key parse failed: %s", msg)
+	}
 }
 
 // keepaliveInterval is how often we send an out-of-band keepalive request
@@ -318,9 +362,13 @@ func DialWithOpts(host string, port int, user, pass string, opts DialOpts) (*Cli
 	if cb == nil {
 		cb = currentCallback()
 	}
+	auth := opts.Auth
+	if len(auth) == 0 {
+		auth = []ssh.AuthMethod{ssh.Password(pass)}
+	}
 	cfg := &ssh.ClientConfig{
 		User:            user,
-		Auth:            []ssh.AuthMethod{ssh.Password(pass)},
+		Auth:            auth,
 		HostKeyCallback: cb,
 		Timeout:         15 * time.Second,
 	}

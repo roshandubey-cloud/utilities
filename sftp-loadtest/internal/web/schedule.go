@@ -167,7 +167,7 @@ func (s *Server) handleScheduleCreate(w http.ResponseWriter, r *http.Request) {
 	if s.getHostKeyStore() != nil || s.getKnownHostsPath() != "" {
 		creds := firstStartCredential(req.Cfg)
 		if creds.user != "" && req.Cfg.Host != "" && req.Cfg.Port > 0 {
-			if pre := s.preflightHostKey(req.Cfg.Host, req.Cfg.Port, creds.user, creds.pass); pre != nil {
+			if pre := s.preflightHostKey(req.Cfg.Host, req.Cfg.Port, creds.user, creds.pass, nil); pre != nil {
 				writeJSON(w, pre)
 				return
 			}

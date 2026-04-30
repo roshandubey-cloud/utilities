@@ -10,6 +10,7 @@ import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { generateKeyPairSync } from 'node:crypto';
 
 const ROOT = join(import.meta.dirname, '..');
 const BIN_WEB = join(import.meta.dirname, '.bin/sftp-loadtest');
@@ -59,9 +60,31 @@ async function waitForTcp(host, port, timeoutMs = 5_000) {
   throw new Error(`tcp ${host}:${port} did not become ready`);
 }
 
+// generateTestKey returns a freshly-minted ed25519 keypair encoded as
+// PKCS8 PEM. golang.org/x/crypto/ssh.ParsePrivateKey accepts both PKCS8
+// and OpenSSH-format ed25519 keys, so PKCS8 from Node's crypto module
+// is interoperable with the Go server without shelling out to ssh-keygen.
+// We deliberately avoid the ssh-keygen path so the test rig works on
+// machines that don't ship it (CI containers, locked-down boxes).
+function generateTestKey() {
+  const { privateKey } = generateKeyPairSync('ed25519', {
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  });
+  const path = join(mkdtempSync(join(tmpdir(), 'sftpl-e2e-key-')), 'id_ed25519');
+  writeFileSync(path, privateKey, { mode: 0o600 });
+  return { pem: privateKey, path };
+}
+
 export default async function globalSetup() {
   buildBinary('mockserver', './cmd/mockserver', BIN_MOCK);
   buildBinary('web', '.', BIN_WEB);
+
+  // Generate a per-suite ed25519 keypair so the new key-auth specs have
+  // a well-formed PEM to feed the probe / start endpoints. The mock
+  // server accepts ANY public key, so we don't need to register the
+  // public half anywhere — only the client-side PEM matters.
+  const testKey = generateTestKey();
 
   console.log('[setup] starting mock SFTP on 127.0.0.1:22020...');
   const mock = spawn(BIN_MOCK, ['-addr', '127.0.0.1:22020', '-trackid-delay', '50ms'], {
@@ -82,7 +105,13 @@ export default async function globalSetup() {
   await waitForHealth('http://127.0.0.1:18080/healthz');
 
   globalThis.__SFTPL_PROCS = { mock, web, reportsDir: REPORTS_DIR };
-  writeFileSync(PIDS_FILE, `mock=${mock.pid}\nweb=${web.pid}\nreports=${REPORTS_DIR}\n`);
+  globalThis.__SFTPL_TESTKEY = testKey;
+  // Forward the PEM into the per-test process via env. globalThis vars
+  // set in global-setup don't reach worker processes — Playwright forks
+  // a worker per file — so specs read process.env.SFTPL_TESTKEY_PEM.
+  process.env.SFTPL_TESTKEY_PEM = testKey.pem;
+  process.env.SFTPL_TESTKEY_PATH = testKey.path;
+  writeFileSync(PIDS_FILE, `mock=${mock.pid}\nweb=${web.pid}\nreports=${REPORTS_DIR}\nkey=${testKey.path}\n`);
   console.log(`[setup] reports dir: ${REPORTS_DIR}`);
   console.log('[setup] ready.');
 }

@@ -33,6 +33,15 @@ type RunConfig struct {
 	// no new operations are dispatched to it for the rest of the run.
 	// 0 = never auto-disable (keep the current behaviour).
 	MaxConsecutiveFailures int
+
+	// PrivateKeyPEM, when non-empty, switches every SFTP user in the run
+	// from password auth to public-key auth using THIS shared key. v1
+	// model: one key for the whole run. CSV password columns are ignored
+	// while the key is set. Per-user keys is a planned follow-up.
+	PrivateKeyPEM string
+	// PrivateKeyPassphrase decrypts PrivateKeyPEM when the key is
+	// passphrase-protected. Ignored for unencrypted keys.
+	PrivateKeyPassphrase string
 }
 
 type NormalLoad struct {

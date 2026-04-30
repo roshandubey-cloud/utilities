@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/config"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/hostinfo"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/hostkeys"
@@ -133,6 +135,12 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 		// by the UI's "host key changed" consent flow after the operator
 		// explicitly approves overwriting the previous key.
 		AcceptChanged    bool `json:"accept_changed"`
+		// PrivateKey, when non-empty, swaps password auth for public-key
+		// auth on this probe. Same shape the /api/start RunConfig accepts
+		// so the UI can round-trip the same field. Passphrase is optional
+		// (only used when the key PEM is encrypted).
+		PrivateKey       string `json:"private_key"`
+		Passphrase       string `json:"passphrase"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -258,6 +266,20 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		dialOpts.HostKeyCallback = cb
+	}
+	// Public-key auth: if the caller supplied a PEM, parse it now and use
+	// it instead of the password. A parse failure short-circuits the probe
+	// with a clean error so the operator sees the issue without it being
+	// shadowed by a downstream "auth failed" from the SSH layer.
+	if req.PrivateKey != "" {
+		signer, perr := sftpx.ParsePrivateKey([]byte(req.PrivateKey), req.Passphrase)
+		if perr != nil {
+			out["stage"] = "ssh_or_sftp"
+			out["error"] = "private key: " + perr.Error()
+			writeJSON(w, out)
+			return
+		}
+		dialOpts.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
 	}
 	c, err := sftpx.DialWithOpts(req.Host, req.Port, req.Username, req.Password, dialOpts)
 	if err != nil {
@@ -508,6 +530,12 @@ type startReq struct {
 	// (server preserves a marker the runner injects into the upload).
 	DownloadMatchMode string `json:"download_match_mode"`
 	DownloadUsersCSV        string `json:"download_users_csv"`
+
+	// PrivateKeyPEM, when non-empty, switches the run from password to
+	// public-key auth (v1: shared across all SFTP users in the run).
+	// PrivateKeyPassphrase decrypts encrypted PEMs.
+	PrivateKeyPEM        string `json:"private_key_pem"`
+	PrivateKeyPassphrase string `json:"private_key_passphrase"`
 }
 
 // buildRunConfig converts a startReq to a RunConfig, parsing the embedded
@@ -522,6 +550,8 @@ func buildRunConfig(req startReq) (*config.RunConfig, error) {
 		PollInterval:           time.Duration(req.PollSeconds) * time.Second,
 		TrackIDTimeout:         time.Duration(req.TrackIDTimeoutS) * time.Second,
 		MaxConsecutiveFailures: req.MaxConsecutiveFailures,
+		PrivateKeyPEM:          req.PrivateKeyPEM,
+		PrivateKeyPassphrase:   req.PrivateKeyPassphrase,
 	}
 	if req.NormalEnabled {
 		cfg.Normal = &config.NormalLoad{
@@ -617,7 +647,18 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	if s.getHostKeyStore() != nil || s.getKnownHostsPath() != "" {
 		creds := firstStartCredential(req)
 		if creds.user != "" && req.Host != "" && req.Port > 0 {
-			if pre := s.preflightHostKey(req.Host, req.Port, creds.user, creds.pass); pre != nil {
+			// When the run is configured with a shared private key, the
+			// preflight dial must use it too — a password preflight against
+			// a key-only server would surface auth failures that the actual
+			// run wouldn't hit. We still preflight so host-key consent is
+			// exercised, but with the same auth method the run will use.
+			var preAuth []ssh.AuthMethod
+			if req.PrivateKeyPEM != "" {
+				if signer, perr := sftpx.ParsePrivateKey([]byte(req.PrivateKeyPEM), req.PrivateKeyPassphrase); perr == nil {
+					preAuth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
+				}
+			}
+			if pre := s.preflightHostKey(req.Host, req.Port, creds.user, creds.pass, preAuth); pre != nil {
 				writeJSON(w, pre)
 				return
 			}
@@ -644,10 +685,11 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 //
 // Mode selection mirrors handleProbe: store-mode when SetHostKeyStore was
 // called, file-mode otherwise.
-func (s *Server) preflightHostKey(host string, port int, user, pass string) map[string]any {
+func (s *Server) preflightHostKey(host string, port int, user, pass string, auth []ssh.AuthMethod) map[string]any {
 	var capturedFP, capturedPrev string
 	var capturedChanged bool
 	var dialOpts sftpx.DialOpts
+	dialOpts.Auth = auth
 	if store := s.getHostKeyStore(); store != nil {
 		dialOpts.HostKeyCallback = store.CaptureCallback(func(ck hostkeys.CapturedKey) {
 			capturedFP = ck.Fingerprint

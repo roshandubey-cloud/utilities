@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/analyze"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/config"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/generator"
@@ -608,6 +610,12 @@ type Run struct {
 	// Streaming CSV writer: finalized rows are appended to disk during the
 	// run and released from memory. Nil when no reports-dir is configured.
 	reportStream *report.CSVStreamWriter
+
+	// sharedAuth holds the parsed SSH AuthMethod list when the run was
+	// configured with a shared PrivateKeyPEM. Empty means the password
+	// fallback is in effect. Read by code paths that dial outside the
+	// pre-built pools (download list-client, future ad-hoc dials).
+	sharedAuth []ssh.AuthMethod
 }
 
 // ReportStreamPath returns the on-disk CSV being streamed (empty if not
@@ -629,6 +637,11 @@ func (r *Run) DisabledUsers() []DisabledSnapshot { return r.disable.snapshot() }
 type poolSlot struct {
 	user, pass, host string
 	port             int
+	// auth, when non-empty, replaces the password fallback for every dial
+	// from this slot. Set when the run is configured with a shared
+	// PrivateKeyPEM — the parsed signer is reused across every slot of
+	// every user so we don't re-parse 50× per second on a 3000 fpm run.
+	auth []ssh.AuthMethod
 
 	mu     sync.Mutex
 	client *sftpx.Client
@@ -645,7 +658,7 @@ func (s *poolSlot) get() (client *sftpx.Client, dialDur time.Duration, err error
 		return s.client, 0, nil
 	}
 	t0 := time.Now()
-	c, derr := sftpx.Dial(s.host, s.port, s.user, s.pass)
+	c, derr := sftpx.DialWithOpts(s.host, s.port, s.user, s.pass, sftpx.DialOpts{Auth: s.auth})
 	if derr != nil {
 		return nil, time.Since(t0), derr
 	}
@@ -747,6 +760,22 @@ func StartWithPersist(parent context.Context, cfg *config.RunConfig, reportsDir 
 		r.disable = newDisablePolicy(cfg.MaxConsecutiveFailures, cfg.NormalUsers, cfg.LargeFileUsers, cfg.DownloadUsers)
 	}
 
+	// Public-key auth (v1: one shared key for the whole run). Parse once
+	// up-front so a malformed PEM or wrong passphrase fails the run BEFORE
+	// any per-user dial fires; reuse the signer across every pool slot
+	// (and the track-id watcher / download list clients) so a high-fpm
+	// run doesn't re-parse the key 50× per second.
+	var sharedAuth []ssh.AuthMethod
+	if cfg.PrivateKeyPEM != "" {
+		signer, perr := sftpx.ParsePrivateKey([]byte(cfg.PrivateKeyPEM), cfg.PrivateKeyPassphrase)
+		if perr != nil {
+			cancel()
+			return nil, fmt.Errorf("private key: %w", perr)
+		}
+		sharedAuth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
+	}
+	r.sharedAuth = sharedAuth
+
 	// Open the streaming CSV writer up front so records are sealed to disk
 	// as they finalize. Keeps RAM flat on long runs.
 	if reportsDir != "" {
@@ -765,14 +794,14 @@ func StartWithPersist(parent context.Context, cfg *config.RunConfig, reportsDir 
 
 	opener := func(user string) (*sftpx.Client, error) {
 		pass := findPassword(cfg, user)
-		return sftpx.Dial(cfg.Host, cfg.Port, user, pass)
+		return sftpx.DialWithOpts(cfg.Host, cfg.Port, user, pass, sftpx.DialOpts{Auth: sharedAuth})
 	}
 	r.Watcher = trackid.New(cfg.UploadFolder, cfg.PollInterval, cfg.TrackIDTimeout, opener)
 
 	// Build per-user client pools (union of normal + large users).
 	users := mergeUsers(cfg.NormalUsers, cfg.LargeFileUsers)
 	for _, u := range users {
-		pool, err := buildPool(cfg, u, cfg.ParallelStreams)
+		pool, err := buildPool(cfg, u, cfg.ParallelStreams, sharedAuth)
 		if err != nil {
 			r.teardown()
 			cancel()
@@ -784,7 +813,7 @@ func StartWithPersist(parent context.Context, cfg *config.RunConfig, reportsDir 
 	// Build download user pools if the download test is enabled.
 	if cfg.Download != nil {
 		for _, u := range cfg.DownloadUsers {
-			pool, err := buildPool(cfg, u, cfg.Download.ParallelStreams)
+			pool, err := buildPool(cfg, u, cfg.Download.ParallelStreams, sharedAuth)
 			if err != nil {
 				r.teardown()
 				cancel()
@@ -1032,7 +1061,7 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 		if listClient != nil {
 			return listClient, nil
 		}
-		c, derr := sftpx.Dial(r.Cfg.Host, r.Cfg.Port, u.Username, u.Password)
+		c, derr := sftpx.DialWithOpts(r.Cfg.Host, r.Cfg.Port, u.Username, u.Password, sftpx.DialOpts{Auth: r.sharedAuth})
 		if derr != nil {
 			return nil, derr
 		}
@@ -1524,7 +1553,10 @@ func (r *Run) teardown() {
 // buildPool creates a user's connection pool. Each slot is dialed once at
 // build time to fail-fast on bad credentials, but the slot remembers those
 // creds so a mid-run drop can be self-healed without operator intervention.
-func buildPool(cfg *config.RunConfig, u config.UserCreds, size int) (*clientPool, error) {
+// auth is propagated to each slot so subsequent redials use the same auth
+// method (key when the run is configured with a shared PEM, password
+// fallback otherwise).
+func buildPool(cfg *config.RunConfig, u config.UserCreds, size int, auth []ssh.AuthMethod) (*clientPool, error) {
 	if size < 1 {
 		size = 1
 	}
@@ -1535,8 +1567,9 @@ func buildPool(cfg *config.RunConfig, u config.UserCreds, size int) (*clientPool
 			pass: u.Password,
 			host: cfg.Host,
 			port: cfg.Port,
+			auth: auth,
 		}
-		c, err := sftpx.Dial(cfg.Host, cfg.Port, u.Username, u.Password)
+		c, err := sftpx.DialWithOpts(cfg.Host, cfg.Port, u.Username, u.Password, sftpx.DialOpts{Auth: auth})
 		if err != nil {
 			p.closeAll()
 			return nil, err

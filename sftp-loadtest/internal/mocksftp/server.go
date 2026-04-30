@@ -95,6 +95,15 @@ func Start(opts Options) (*Server, error) {
 			}
 			return nil, nil
 		},
+		// Accept ANY public key the client presents. This is a load-testing
+		// mock — the real server validates keys; we only care that the SSH
+		// handshake completes so per-user-key tests can exercise the client
+		// path. Both this and PasswordCallback being set means the same
+		// mock satisfies password-auth runs (existing tests) AND key-auth
+		// runs (new tests) without any configuration switch.
+		PublicKeyCallback: func(c ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+			return nil, nil
+		},
 	}
 	cfg.AddHostKey(hostKey)
 

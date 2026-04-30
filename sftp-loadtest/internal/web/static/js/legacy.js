@@ -665,6 +665,19 @@ async function poll() {
 // Shared by the Start Run button, the Schedule button, and Export — every
 // path produces exactly the same shape the /api/start endpoint expects.
 function buildRequestBody() {
+  // Public-key auth: read straight from the connection card's PEM
+  // textarea + passphrase input. Only attach when the disclosure is
+  // OPEN AND the PEM is non-empty — same gate the probe uses, so a
+  // closed disclosure with stale text never silently switches the run.
+  const keyDisclosure = document.querySelector('[data-role="key-disclosure"]');
+  const pkEl = document.getElementById('conn-private-key');
+  const pkPassEl = document.getElementById('conn-private-key-passphrase');
+  let privateKeyPEM = '';
+  let privateKeyPass = '';
+  if (keyDisclosure && keyDisclosure.open && pkEl && pkEl.value.trim()) {
+    privateKeyPEM = pkEl.value;
+    if (pkPassEl && pkPassEl.value) privateKeyPass = pkPassEl.value;
+  }
   return {
     host: $('host').value.trim(),
     port: parseInt($('port').value) || 22,
@@ -691,6 +704,8 @@ function buildRequestBody() {
     download_parallel_streams: parseInt($('dparallel').value) || 1,
     download_match_mode: getDownloadMatchMode(),
     download_users_csv: getCsvRaw('download_users'),
+    private_key_pem: privateKeyPEM,
+    private_key_passphrase: privateKeyPass,
   };
 }
 
@@ -721,6 +736,10 @@ function exportConfig() {
     cfg.normal_users_csv   = stripPasswordsFromCSV(cfg.normal_users_csv);
     cfg.large_users_csv    = stripPasswordsFromCSV(cfg.large_users_csv);
     cfg.download_users_csv = stripPasswordsFromCSV(cfg.download_users_csv);
+    // The private key is a credential. Export blanks it the same way we
+    // strip CSV passwords — it only ships when "include passwords" is on.
+    cfg.private_key_pem = '';
+    cfg.private_key_passphrase = '';
   } else if (!confirm('Export will include plaintext passwords. Continue?')) {
     return;
   }
@@ -776,6 +795,19 @@ function importConfigPayload(cfg) {
   strSet('dparallel', cfg.download_parallel_streams);
   if (cfg.download_match_mode !== undefined) setDownloadMatchMode(cfg.download_match_mode);
   if (cfg.download_users_csv !== undefined) setCsvRaw('download_users', cfg.download_users_csv);
+  // Private-key import — only meaningful when the export carried passwords.
+  // Open the disclosure when a PEM is present so the operator immediately
+  // sees the key was loaded; leave it closed when the field is blank.
+  if (cfg.private_key_pem !== undefined) {
+    const pkEl = document.getElementById('conn-private-key');
+    if (pkEl) pkEl.value = String(cfg.private_key_pem || '');
+    const disclosure = document.querySelector('[data-role="key-disclosure"]');
+    if (disclosure && cfg.private_key_pem) disclosure.open = true;
+  }
+  if (cfg.private_key_passphrase !== undefined) {
+    const pkPassEl = document.getElementById('conn-private-key-passphrase');
+    if (pkPassEl) pkPassEl.value = String(cfg.private_key_passphrase || '');
+  }
   saveConfig();
 }
 

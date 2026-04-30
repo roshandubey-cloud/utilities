@@ -547,6 +547,32 @@
           <span class="toggle-text">Auto-add server key on first connect (TOFU)</span>
         </label>
 
+        <!-- SSH key disclosure. Closed by default. When opened with PEM
+             non-empty, the probe AND start request switch from password
+             auth to public-key auth (v1: shared key for the whole run).
+             Inputs live INSIDE the connection panel so the configure-
+             redesign DOM relocation moves them as one unit. -->
+        <details class="conn-key-disclosure" data-role="key-disclosure">
+          <summary>Use SSH private key</summary>
+          <div class="field">
+            <label class="label" for="conn-private-key">Private key (PEM)</label>
+            <textarea class="input mono" id="conn-private-key" data-role="private-key"
+                      rows="6" spellcheck="false" autocomplete="off"
+                      placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                      style="font-family:var(--font-mono,monospace);min-height:8em;resize:vertical"></textarea>
+          </div>
+          <div class="field">
+            <label class="label" for="conn-private-key-passphrase">Passphrase <span class="label-hint">(optional)</span></label>
+            <input class="input" id="conn-private-key-passphrase" data-role="private-key-passphrase"
+                   type="password" autocomplete="off" placeholder="••••">
+          </div>
+          <div class="help" style="white-space:normal">
+            When set, all SFTP users authenticate via this key. CSV password column is ignored.
+            The key is held in memory only — it never reaches localStorage unless you explicitly
+            Export config with passwords included.
+          </div>
+        </details>
+
         <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:var(--sp-3)">
           <div class="row-tight" data-role="recent" aria-label="Recent connections"></div>
           <div class="row-tight">

@@ -29,6 +29,9 @@ export function mountConnectionCard(rootSelector) {
   const resultEl = $('[data-role="result"]');
   const recentEl = $('[data-role="recent"]');
   const fpEl = $('[data-role="fingerprint"]');
+  const keyDisclosureEl = $('[data-role="key-disclosure"]');
+  const privateKeyEl = $('[data-role="private-key"]');
+  const privateKeyPassEl = $('[data-role="private-key-passphrase"]');
 
   // ---------- recent connections ----------
   function readHistory() {
@@ -258,6 +261,13 @@ export function mountConnectionCard(rootSelector) {
       if (passEl.value) body.password = passEl.value;
       if (folderEl.value) body.folder = folderEl.value.trim();
       if (forceTOFU || (tofuEl && tofuEl.checked)) body.trust_on_first_use = true;
+      // Public-key auth: only attach when the disclosure is OPEN and the
+      // PEM is non-empty. A closed disclosure with stale text in it must
+      // not silently switch the probe to key auth.
+      if (keyDisclosureEl && keyDisclosureEl.open && privateKeyEl && privateKeyEl.value.trim()) {
+        body.private_key = privateKeyEl.value;
+        if (privateKeyPassEl && privateKeyPassEl.value) body.passphrase = privateKeyPassEl.value;
+      }
 
       const reply = await apiPostJSON('/api/probe', body);
       if (reply.ok) {

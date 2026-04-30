@@ -404,6 +404,8 @@ export function mountConfigureRedesign() {
         <span class="cfg-chip-val">${escapeHTML(eta)}</span></span>
       <span class="cfg-chip"><span class="cfg-chip-key">files</span>
         <span class="cfg-chip-val">${totalFiles ? totalFiles.toLocaleString() : '—'}</span></span>
+      <span class="cfg-chip" data-role="chip-auth"><span class="cfg-chip-key">auth</span>
+        <span class="cfg-chip-val">${cfg.private_key_pem ? 'key 🔑' : 'pass'}</span></span>
     `;
     const flows = [];
     if (cfg.normal_enabled)   flows.push('N');
