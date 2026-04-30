@@ -9,6 +9,7 @@ import { mountSidebar } from './sidebar.js';
 import { mountLiveCharts } from './charts/live.js';
 import { mountCommandPalette } from './command-palette.js';
 import { mountRunDetail } from './run-detail.js';
+import { mountReview } from './review.js';
 import { mountClusterSidebar, mountClusterView, mountDistributeToggle, mountClusterIntercept } from './cluster-ui.js';
 import { mountMasthead } from './masthead.js';
 import { mountHostBar } from './host.js';
@@ -58,6 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // config snapshots work.
     mountCommandPalette();
     mountRunDetail();
+    mountReview();
     // Cluster UI mounts before sidebar so the workers section is in
     // place when sidebar fills its sections.
     mountClusterSidebar();

@@ -9,10 +9,10 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('masthead carries product name + nav', async ({ page }) => {
-  // Two h1s render the product name (the legacy newspaper masthead and
-  // the new app masthead). Either must read as "SFTP Load Test".
-  const heads = await page.locator('h1').allInnerTexts();
-  expect(heads.some((t) => /sftp\s*load\s*test/i.test(t))).toBe(true);
+  // The shell topbar carries the product brand. Must read as "SFTP Load Test".
+  const brand = page.locator('[data-role="brand"]');
+  await expect(brand).toBeVisible();
+  await expect(brand).toContainText(/sftp\s*load\s*test/i);
 });
 
 test('quick checks panel visible in Configure view', async ({ page }) => {

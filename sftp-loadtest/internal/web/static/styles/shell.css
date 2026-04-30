@@ -520,6 +520,12 @@ body.wails-desktop .shell-topbar .segmented { -webkit-app-region: no-drag; }
    shell removed the .app wrapper. */
 .shell-mounted #connCard { display: none !important; }
 
+/* The wizard's three-step ribbon (Workload / Schedule / Review) is
+   redundant with the sidebar's primary-nav rows for the same three
+   views. Keep the markup so wizard.js's mount doesn't crash, just
+   hide it visually. */
+.shell-mounted [data-component="wizard"] { display: none !important; }
+
 /* ============================================================================
    Workbench charts — pure-SVG sparklines mounted above the records panel.
    ============================================================================ */
@@ -692,6 +698,54 @@ body.wails-desktop .shell-topbar .segmented { -webkit-app-region: no-drag; }
   background: var(--danger); color: #fff; border-color: var(--danger);
 }
 .modal-foot .btn-danger:hover { filter: brightness(1.08); }
+
+/* ============================================================================
+   Review view — main pane summary of the configured run.
+   ============================================================================ */
+.review-view-panel {
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-3);
+  padding: var(--sp-4);
+}
+.review-view-head {
+  display: flex; align-items: flex-start; gap: var(--sp-3);
+  padding-bottom: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  border-bottom: var(--bw-1) solid var(--border-weak);
+}
+.review-view-head > div:first-child { flex: 1; }
+.review-view-title { font-size: var(--fs-16); font-weight: var(--fw-semibold); color: var(--text-primary); margin-bottom: 2px; }
+.review-view-sub { font-size: var(--fs-12); color: var(--text-secondary); }
+.review-view-actions { flex-shrink: 0; }
+.review-view-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--sp-3);
+}
+.review-view-card {
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+}
+.review-view-card-title {
+  font-size: var(--fs-12);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+  margin-bottom: var(--sp-2);
+}
+.review-view-defs {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px var(--sp-3);
+  margin: 0;
+  font-size: var(--fs-13);
+}
+.review-view-defs dt { color: var(--text-tertiary); font-weight: var(--fw-medium); }
+.review-view-defs dd { margin: 0; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.review-view-empty { font-size: var(--fs-12); color: var(--text-tertiary); }
+.review-view-footer { margin-top: var(--sp-3); display: flex; justify-content: flex-start; }
 
 /* ============================================================================
    Cluster view — main pane content for the Cluster nav item.

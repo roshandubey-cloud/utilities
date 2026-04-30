@@ -169,7 +169,11 @@ async function promptAddWorker() {
 // status of the cluster coordinator (idle / active / aggregated counters).
 
 export function mountClusterView() {
-  const view = document.querySelector('[data-view="cluster"]');
+  // CRITICAL: scope to .shell-main. The sidebar's primary-nav rows ALSO
+  // carry data-view="cluster" (for the click-to-switch-view handler);
+  // an unscoped querySelector matches the sidebar row first and renders
+  // the cluster view's HTML INTO the sidebar instead of the main pane.
+  const view = document.querySelector('.shell-main [data-view="cluster"]');
   if (!view || view.dataset.clusterMounted) return;
   view.dataset.clusterMounted = '1';
 

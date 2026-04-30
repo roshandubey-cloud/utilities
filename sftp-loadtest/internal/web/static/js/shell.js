@@ -22,6 +22,8 @@ import { getTheme, setTheme } from './theme.js';
 const ICONS = {
   workbench: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13l4-7 3 5 5-9"/><path d="M2 13h12"/></svg>',
   configure: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M3.5 12.5l1.4-1.4M11.1 4.9l1.4-1.4"/></svg>',
+  schedule:  '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6h12"/><path d="M5 1.5v3M11 1.5v3"/></svg>',
+  review:    '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2.5h10v11H3z"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/></svg>',
   history:   '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2"/></svg>',
   cluster:   '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.5" width="5" height="5" rx="0.5"/><rect x="9" y="2.5" width="5" height="5" rx="0.5"/><rect x="2" y="8.5" width="5" height="5" rx="0.5"/><rect x="9" y="8.5" width="5" height="5" rx="0.5"/></svg>',
   trust:     '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2l5 2v4c0 3-2 5-5 6-3-1-5-3-5-6V4z"/><path d="M6 8l1.5 1.5L10 7"/></svg>',
@@ -29,9 +31,11 @@ const ICONS = {
 
 const VIEWS = [
   { id: 'workbench', label: 'Workbench', icon: ICONS.workbench, hint: 'Live monitoring + records' },
-  { id: 'configure', label: 'Configure', icon: ICONS.configure, hint: 'Set up the run' },
+  { id: 'configure', label: 'Configure', icon: ICONS.configure, hint: 'Workload + connection settings' },
+  { id: 'schedule',  label: 'Schedule',  icon: ICONS.schedule,  hint: 'Run later, save / load configs' },
+  { id: 'review',    label: 'Review',    icon: ICONS.review,    hint: 'Confirm the plan and start' },
   { id: 'history',   label: 'History',   icon: ICONS.history,   hint: 'Past runs' },
-  { id: 'cluster',   label: 'Cluster',   icon: ICONS.cluster,   hint: 'Distribute load' },
+  { id: 'cluster',   label: 'Cluster',   icon: ICONS.cluster,   hint: 'Distribute load across workers' },
   { id: 'trust',     label: 'Trust',     icon: ICONS.trust,     hint: 'SSH host keys' },
 ];
 
@@ -226,16 +230,32 @@ function buildViews(main) {
     if (el) workbench.appendChild(el);
   }
 
-  // Configure: Quick Checks panel + the legacy .grid (workload/large/download/schedule).
+  // Configure: Quick Checks + workload card (host/port/folder/users/files/sizes/parallel/duration).
   const configure = containers.configure;
   const quickChecks = legacy.querySelector('[data-component="connection"]');
   if (quickChecks) configure.appendChild(quickChecks);
-  // The legacy grid contains the wizard + every config card.
+
+  // Find the legacy schedule-and-config card (it has a header label
+  // "Schedule & config") and Pin it to the SCHEDULE view BEFORE moving
+  // .grid wholesale. We identify by the sched_at field's owning .card.
+  const schedAt = legacy.querySelector('#sched_at');
+  const scheduleCard = schedAt ? schedAt.closest('.card') : null;
+  const schedule = containers.schedule;
+  if (scheduleCard) {
+    schedule.appendChild(scheduleCard);
+  } else {
+    schedule.innerHTML = '<div class="empty-pane">Schedule card not found.</div>';
+  }
+
+  // Now put the rest of .grid (workload, large, download, etc.) into
+  // Configure. The schedule card is gone by this point.
   const grid = legacy.querySelector('.grid');
   if (grid) configure.appendChild(grid);
   const wizard = legacy.querySelector('[data-component="wizard"]');
-  // wizard is INSIDE the grid layout; if it's separate, attach it too.
   if (wizard && wizard.parentElement === legacy) configure.appendChild(wizard);
+
+  // Review view gets a placeholder; runtime mountReview fills it.
+  containers.review.dataset.role = 'review-view';
 
   // History: runs-history component.
   const history = containers.history;
@@ -251,8 +271,20 @@ function buildViews(main) {
   const cluster = containers.cluster;
   cluster.dataset.role = 'cluster-view';
 
-  // Whatever remains in legacy .app gets placed in workbench (defensive).
-  // This includes any small banners, the slowdown table, etc.
+  // Whatever remains in legacy .app gets placed in workbench (slowdown
+  // table, ceiling banner, toast container, etc.) UNLESS it is one of
+  // the redundant decorative chrome elements the shell now owns
+  // (newspaper masthead with serif title + dek, the legacy host-strip,
+  // the legacy wizard step nav, the proc-badge, the masthead app
+  // header). Strip these explicitly so they don't leak into Workbench.
+  const REDUNDANT = [
+    'header.masthead',  // legacy newspaper masthead (serif title + dek)
+    '.host-strip',      // legacy host-strip (statusbar replaces it)
+    '.proc-badge',      // legacy floating proc badge
+  ];
+  for (const sel of REDUNDANT) {
+    legacy.querySelectorAll(sel).forEach((el) => el.remove());
+  }
   while (legacy.firstChild) workbench.appendChild(legacy.firstChild);
   // Remove the now-empty legacy.app shell.
   legacy.remove();
