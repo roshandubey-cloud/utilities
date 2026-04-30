@@ -116,111 +116,228 @@ body.wails-desktop .shell-topbar .segmented { -webkit-app-region: no-drag; }
        system font on Windows and the cascade fallback to Segoe UI
        (legacy) renders less crisply than Variable. */
 body.wails-windows .shell-topbar { padding-left: var(--sp-3); padding-right: 140px; }
+/* ============================================================================
+   Windows polish — a single shared "is-windows" class drives both the
+   Wails desktop SKU (set by shell.js's user-agent / runtime detection)
+   AND the browser case (set by a tiny inline check in shell.js when no
+   wails runtime is present). One ruleset, one source of truth.
+   ============================================================================ */
+
+body.is-windows,
 body.wails-windows {
-  --font-sans: "Segoe UI Variable Display", "Segoe UI", Inter, -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", Inter, -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "Cascadia Mono", "Cascadia Code", "JetBrains Mono", "Fira Code", ui-monospace, Consolas, Menlo, monospace;
+}
 
-  /* Windows lacks the OS vibrancy that gives macOS its premium "lit
-     from within" depth. Compensate by pushing every gloss token
-     harder so cards and buttons read as more luminous, the canvas
-     carries a soft top-down ambient glow, and accents pulse with a
-     subtle outer halo. The result is a richer, more polished feel
-     that keeps the same design language — just turned up so it
-     punches through Edge WebView2's flatter rendering. */
-  --panel-sheen-top:    rgba(255, 255, 255, 0.085);
-  --panel-sheen-bottom: rgba(0, 0, 0, 0.30);
-  --panel-blur:         saturate(180%) blur(28px);
-  --panel-radius:       16px;
-  --panel-radius-sm:    12px;
+/* ----- DARK theme on Windows — recalibrated tier hierarchy ----------------
+   The default dark tokens give a +9 luma step from canvas to surface,
+   which works under macOS vibrancy but reads as "all the same grey"
+   under Edge WebView2 / Chromium-on-Windows where there's no OS
+   blending. We rebuild the stack with proper brightness steps + a
+   slight warm anthracite undertone (less clinical-cold than the
+   default cool-slate) so panels visibly lift, dividers register,
+   and dark mode looks at least as polished as light mode does today.
+   ------------------------------------------------------------------------- */
+body.is-windows[data-theme="dark"],
+body.wails-windows[data-theme="dark"] {
+  /* Surface stack — bigger steps, warmer undertone. Canvas is the
+     room; surfaces are objects in the room with measurable depth. */
+  --canvas:           #0e0f13;   /* room — barely-warm anthracite */
+  --surface:          #181a20;   /* default panel — clearly above canvas */
+  --surface-2:        #21242b;   /* elevated card / hover row */
+  --surface-3:        #2a2d35;   /* popover / modal interior */
+
+  /* Borders — bumped 0.08 → 0.13 so 1 px hairlines hold their own
+     against Edge's flatter rendering of low-alpha strokes. */
+  --border-weak:      rgba(220, 222, 230, 0.13);
+  --border-medium:    rgba(220, 222, 230, 0.22);
+  --border-strong:    rgba(220, 222, 230, 0.34);
+
+  /* Text — slightly brighter primary so ClearType + Segoe Variable
+     read as crisp white-ish rather than dim grey. */
+  --text-primary:     rgba(238, 240, 244, 1);
+  --text-secondary:   rgba(212, 215, 224, 0.78);
+  --text-tertiary:    rgba(212, 215, 224, 0.60);
+
+  /* Input bg distinguishes from surface — fixes "input vanishes into
+     panel" on dark Windows. */
+  --input-bg:         #14161b;
+  --input-bg-hover:   #1a1d22;
+  --input-border:     rgba(220, 222, 230, 0.20);
+
+  /* Action overlays — slightly warmer / brighter for visible feedback. */
+  --action-hover:     rgba(232, 232, 240, 0.07);
+  --action-selected:  rgba(232, 232, 240, 0.13);
+
+  /* Glass tokens tuned for the new tier hierarchy: stronger top
+     highlight, deeper bottom shadow, restrained midtones so cards
+     look like physical glass objects rather than washed-out tiles. */
+  --panel-sheen-top:    rgba(255, 255, 255, 0.075);
+  --panel-sheen-bottom: rgba(0, 0, 0, 0.32);
+  --panel-blur:         saturate(170%) blur(24px);
+  --panel-radius:       14px;
+  --panel-radius-sm:    11px;
   --panel-glass-bg:     linear-gradient(180deg,
-                          rgba(255,255,255,0.060) 0%,
-                          rgba(255,255,255,0.012) 45%,
-                          rgba(0,0,0,0.180) 100%);
-  --btn-glass-top:      rgba(255, 255, 255, 0.22);
+                          rgba(255, 255, 255, 0.045) 0%,
+                          rgba(255, 255, 255, 0.008) 45%,
+                          rgba(0, 0, 0, 0.14) 100%);
+  --btn-glass-top:      rgba(255, 255, 255, 0.18);
   --btn-glass-bottom:   rgba(0, 0, 0, 0.18);
-  --focus-ring-glow:    0 0 0 3px rgba(255, 120, 10, 0.45);
+  --focus-ring-glow:    0 0 0 3px rgba(255, 120, 10, 0.42);
 
-  /* Ambient — a faint warm bloom at the top of the canvas that gives
-     the panels something to refract. Painted as a fixed background
-     on the .app-shell. */
-  --ambient-glow:       radial-gradient(1200px 540px at 50% -180px,
-                          rgba(255, 120, 10, 0.08) 0%,
-                          rgba(255, 120, 10, 0.025) 35%,
-                          transparent 70%);
+  /* Shadow ramp — Edge renders shadows tighter than WebKit, so we use
+     a wider blur radius + slightly lower opacity for the same visual
+     weight a Mac user sees with the default tokens. */
+  --shadow-1:           0 1px 2px rgba(0, 0, 0, 0.50), 0 0 0 1px rgba(0, 0, 0, 0.30);
+  --shadow-2:           0 6px 18px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.40);
+  --shadow-3:           0 18px 44px rgba(0, 0, 0, 0.62), 0 2px 6px rgba(0, 0, 0, 0.45);
+
+  /* Sidebar — true tonal step from canvas, so the sidebar reads as
+     a different surface, not a darker corner of the page. */
+  --sidebar-bg:         #0a0b0f;
+  --sidebar-divider:    rgba(220, 222, 230, 0.07);
+  --sidebar-hover-bg:   rgba(232, 232, 240, 0.05);
+
+  /* Ambient — restrained. Previous version was a pink halo at the
+     top that read amateur. New: very low-opacity cool diagonal lift
+     so the canvas has subtle directional depth without colouring it. */
+  --ambient-glow: radial-gradient(900px 360px at 78% -160px,
+                    rgba(150, 180, 255, 0.045) 0%,
+                    rgba(150, 180, 255, 0.012) 40%,
+                    transparent 70%);
 }
+
+/* ----- LIGHT theme on Windows — kept lean.
+   Light theme already reads well; only push the panel sheen + ambient
+   glow slightly so the gloss feels intentional rather than a default. */
+body.is-windows[data-theme="light"],
 body.wails-windows[data-theme="light"],
+body.is-windows:not([data-theme]),
 body.wails-windows:not([data-theme]) {
-  --panel-sheen-top:    rgba(255, 255, 255, 0.95);
-  --panel-sheen-bottom: rgba(15, 23, 42, 0.06);
+  --panel-sheen-top:    rgba(255, 255, 255, 0.92);
+  --panel-sheen-bottom: rgba(15, 23, 42, 0.05);
   --panel-glass-bg:     linear-gradient(180deg,
-                          rgba(255,255,255,0.85) 0%,
-                          rgba(255,255,255,0.30) 55%,
-                          rgba(15,23,42,0.045) 100%);
-  --btn-glass-top:      rgba(255, 255, 255, 0.75);
-  --btn-glass-bottom:   rgba(15, 23, 42, 0.06);
-  --ambient-glow:       radial-gradient(1200px 540px at 50% -180px,
-                          rgba(238, 91, 33, 0.06) 0%,
-                          rgba(238, 91, 33, 0.018) 35%,
-                          transparent 70%);
+                          rgba(255, 255, 255, 0.78) 0%,
+                          rgba(255, 255, 255, 0.28) 55%,
+                          rgba(15, 23, 42, 0.04) 100%);
+  --btn-glass-top:      rgba(255, 255, 255, 0.70);
+  --btn-glass-bottom:   rgba(15, 23, 42, 0.05);
+  --ambient-glow: radial-gradient(900px 360px at 78% -160px,
+                    rgba(238, 91, 33, 0.045) 0%,
+                    rgba(238, 91, 33, 0.012) 40%,
+                    transparent 70%);
 }
-/* Paint the ambient glow onto the shell so every view sits in the
-   same lit room. Layered as a non-scrolling overlay on the canvas. */
+
+/* ----- Shared Windows surface treatment ---------------------------------- */
+
+/* Paint the ambient onto the shell so every view sits in the same room. */
+body.is-windows .app-shell,
 body.wails-windows .app-shell {
-  background:
-    var(--ambient-glow),
-    var(--canvas);
+  background: var(--ambient-glow), var(--canvas);
   background-attachment: fixed, fixed;
 }
-/* Slim summary pill + topbar pick up an extra outer halo so they
-   read as glass plates floating over the canvas. */
+
+/* Crisper text rendering — Segoe Variable + ClearType wants subpixel
+   off in some surface contexts to avoid colour fringing on dark. */
+body.is-windows,
+body.wails-windows {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Topbar reads as a glass strip riding on the canvas. The chevron
+   gradient is subtle on dark, slightly stronger on light. */
+body.is-windows .shell-topbar,
+body.wails-windows .shell-topbar {
+  background:
+    linear-gradient(180deg,
+      rgba(255, 255, 255, 0.022) 0%,
+      rgba(255, 255, 255, 0) 60%),
+    var(--surface);
+  border-bottom-color: var(--border-weak);
+}
+body.is-windows[data-theme="light"] .shell-topbar,
+body.wails-windows[data-theme="light"] .shell-topbar,
+body.is-windows:not([data-theme]) .shell-topbar,
+body.wails-windows:not([data-theme]) .shell-topbar {
+  background:
+    linear-gradient(180deg,
+      rgba(255, 255, 255, 0.45) 0%,
+      rgba(255, 255, 255, 0) 70%),
+    var(--surface);
+}
+
+/* Slim run-summary pill + primary topbar button pick up depth so they
+   read as floating glass plates over the canvas. */
+body.is-windows .cfg-summary-bar,
 body.wails-windows .cfg-summary-bar {
   box-shadow:
     inset 0 1px 0 var(--panel-sheen-top),
     inset 0 -1px 0 var(--panel-sheen-bottom),
-    0 14px 36px rgba(0, 0, 0, 0.45),
-    0 0 0 1px rgba(255, 255, 255, 0.04);
+    0 16px 38px rgba(0, 0, 0, 0.48),
+    0 0 0 1px rgba(255, 255, 255, 0.05);
 }
+body.is-windows .cfg-summary-go,
 body.wails-windows .cfg-summary-go {
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.32),
-    0 4px 14px rgba(255, 120, 10, 0.40),
-    0 1px 2px rgba(0, 0, 0, 0.18);
+    inset 0 1px 0 rgba(255, 255, 255, 0.36),
+    0 4px 14px rgba(255, 120, 10, 0.42),
+    0 1px 2px rgba(0, 0, 0, 0.20);
 }
-body.wails-windows .shell-topbar {
-  background:
-    linear-gradient(180deg,
-      rgba(255, 255, 255, 0.025) 0%,
-      rgba(255, 255, 255, 0) 60%),
-    var(--surface);
-  border-bottom-color: rgba(255, 255, 255, 0.06);
-}
+body.is-windows .shell-topbar .btn-icon[data-variant="primary"],
 body.wails-windows .shell-topbar .btn-icon[data-variant="primary"] {
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.30),
-    0 6px 18px rgba(255, 120, 10, 0.35);
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    0 6px 18px rgba(255, 120, 10, 0.36);
+}
+
+/* Cards on dark Windows get a clearer surface lift — cumulative
+   inner sheen + outer shadow. */
+body.is-windows[data-theme="dark"] .cfg-section,
+body.wails-windows[data-theme="dark"] .cfg-section,
+body.is-windows[data-theme="dark"] .panel,
+body.wails-windows[data-theme="dark"] .panel,
+body.is-windows[data-theme="dark"] .card,
+body.wails-windows[data-theme="dark"] .card,
+body.is-windows[data-theme="dark"] .review-view-panel,
+body.wails-windows[data-theme="dark"] .review-view-panel,
+body.is-windows[data-theme="dark"] .cluster-view-panel,
+body.wails-windows[data-theme="dark"] .cluster-view-panel,
+body.is-windows[data-theme="dark"] .workbench-chart,
+body.wails-windows[data-theme="dark"] .workbench-chart {
+  box-shadow:
+    inset 0 1px 0 var(--panel-sheen-top),
+    inset 0 -1px 0 var(--panel-sheen-bottom),
+    0 1px 2px rgba(0, 0, 0, 0.40),
+    0 14px 32px rgba(0, 0, 0, 0.40);
+}
+
+/* Sidebar gets a hairline right border so it reads as a separate
+   surface from the main pane on dark — the canvas is too close
+   in tone otherwise. */
+body.is-windows[data-theme="dark"] .shell-sidebar,
+body.wails-windows[data-theme="dark"] .shell-sidebar {
+  border-right: var(--bw-1) solid var(--sidebar-divider);
+}
+
+/* Workload sub-cards (Normal / Large / Download) get the same
+   surface lift on dark Windows. */
+body.is-windows[data-theme="dark"] .cfg-workload-card,
+body.wails-windows[data-theme="dark"] .cfg-workload-card {
+  background: linear-gradient(180deg,
+                rgba(255, 255, 255, 0.025) 0%,
+                rgba(255, 255, 255, 0) 60%),
+              var(--surface-2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
 /* Linux gets Mac-tier typography preference (Inter falls back to Cantarell or DejaVu Sans). */
-body.wails-linux {
+body.wails-linux,
+body.is-linux {
   --font-sans: Inter, "Cantarell", "Ubuntu", "DejaVu Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-
-/* Web UI on Windows browsers — no body.wails-windows class, but the
-   user still gets a Windows browser. Detect via a UA-aware media
-   query approximation: use a Segoe-prefer font cascade when the
-   primary system font is the typical Windows default. We also
-   surface the same gloss boost via a CSS-only feature query so
-   browser users don't have a flat experience. The desktop class
-   wins when present. */
-@supports (font: -webkit-system-font) {
-  /* webkit-system-font is Mac/Safari-only; the @supports being
-     FALSE on Edge/Chrome on Windows lets us target that environment
-     in the partner block below. */
-}
-@supports not (font: -webkit-system-font) {
-  body:not(.wails-desktop) {
-    --font-sans: "Segoe UI Variable Display", "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
-  }
 }
 
 .shell-topbar-brand {

@@ -49,6 +49,21 @@ export function mountShell() {
     else if (/Win/i.test(navigator.platform || '')) document.body.classList.add('wails-windows');
     else document.body.classList.add('wails-linux');
   }
+  // OS detection — runs on BOTH Wails and plain browsers so the
+  // Windows polish ruleset (font cascade + dark-tier hierarchy +
+  // ambient + glass overrides) applies wherever the user is on
+  // Windows, not only inside the Wails native window.
+  if (typeof navigator !== 'undefined') {
+    const ua = navigator.userAgent || '';
+    const platform = navigator.platform || '';
+    if (/Win/i.test(platform) || /Windows/i.test(ua)) {
+      document.body.classList.add('is-windows');
+    } else if (/Mac/i.test(platform) || /Mac OS X/i.test(ua)) {
+      document.body.classList.add('is-macos');
+    } else if (/Linux/i.test(platform) || /Linux/i.test(ua)) {
+      document.body.classList.add('is-linux');
+    }
+  }
 
   const body = document.body;
   const shell = document.createElement('div');
