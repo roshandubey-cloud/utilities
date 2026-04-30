@@ -20,6 +20,9 @@ test.beforeEach(async ({ baseURL }) => { await stopAnyActiveRun(baseURL); });
 async function runOnce(page) {
   page.on('dialog', async (d) => { await d.accept(); });
   await page.goto('/');
+  // The legacy form lives in the Configure view (the boot default). All
+  // form inputs are accessible from there.
+  await page.locator('[data-action="view"][data-view="configure"]').click();
   await page.locator('#conn-host').fill('127.0.0.1');
   await page.locator('#conn-port').fill('22020');
   if (await page.locator('#upload-folder').count()) await page.locator('#upload-folder').fill('inbox');
@@ -52,6 +55,7 @@ test.describe('runs-history card detail', () => {
 
   test('completed run shows success rate, throughput, and user counts', async ({ page }) => {
     await runOnce(page);
+    await page.locator('[data-action="view"][data-view="history"]').click();
     const card = page.locator('[data-component="runs-history"] .runs-history-card').first();
     await expect(card).toBeVisible({ timeout: 15_000 });
     // Success-rate stat block — must show a percentage and "ok / failed".
@@ -69,6 +73,7 @@ test.describe('runs-history card detail', () => {
 
   test('latency panel renders p50/p95/p99/p99.9 after a real run', async ({ page }) => {
     await runOnce(page);
+    await page.locator('[data-action="view"][data-view="history"]').click();
     const card = page.locator('[data-component="runs-history"] .runs-history-card').first();
     const lat = card.locator('.runs-history-latency');
     await expect(lat).toBeVisible({ timeout: 15_000 });
@@ -84,6 +89,7 @@ test.describe('runs-history card detail', () => {
 
   test('analyzer panel renders host-capacity infra peaks after a run', async ({ page }) => {
     await runOnce(page);
+    await page.locator('[data-action="view"][data-view="history"]').click();
     const card = page.locator('[data-component="runs-history"] .runs-history-card').first();
     const analysis = card.locator('.runs-history-analysis');
     await expect(analysis).toBeVisible({ timeout: 15_000 });
@@ -97,6 +103,7 @@ test.describe('runs-history card detail', () => {
 
   test('CSV download link points at the right run', async ({ page }) => {
     await runOnce(page);
+    await page.locator('[data-action="view"][data-view="history"]').click();
     const card = page.locator('[data-component="runs-history"] .runs-history-card').first();
     const csv = card.locator('a[download]').first();
     await expect(csv).toBeVisible();

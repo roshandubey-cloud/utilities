@@ -18,6 +18,7 @@
 
 import { apiFetch } from './api.js';
 import { pushToast } from './toast.js';
+import { form as formModal, confirm as confirmModal } from './modal.js';
 
 const KEY = 'sftp-loadtest-workers-v1';
 
@@ -66,23 +67,21 @@ export function mountClusterSidebar() {
   if (!sidebar) return;
   if (sidebar.querySelector('[data-role="sidebar-workers"]')) return;
 
-  // Inject the section just before the trust-hosts section.
+  // Inject the Workers section as the bottom-most "library" group in the
+  // sidebar. The primary nav has its own "Cluster" view at the top; this
+  // section is the persistent shortcut to the worker URLs themselves.
   const section = document.createElement('div');
   section.className = 'shell-sidebar-section';
   section.innerHTML = `
     <div class="shell-sidebar-section-header">
       <span>Workers</span>
-      <button type="button" class="shell-sidebar-toggle" data-role="add-worker"
-              title="Add worker URL" style="width:18px; height:18px;">+</button>
+      <button type="button" class="shell-sidebar-section-header-add" data-role="add-worker"
+              title="Add worker URL">+</button>
     </div>
     <div data-role="sidebar-workers">
       <div class="shell-sidebar-empty">Add a sftp-loadtest URL to fan out a run.</div>
     </div>`;
-  // Place above Trusted hosts — operators care about workers right next
-  // to Connections/Configs/Runs.
-  const trustSection = sidebar.querySelector('[data-role="sidebar-trust"]')?.closest('.shell-sidebar-section');
-  if (trustSection) sidebar.insertBefore(section, trustSection);
-  else sidebar.appendChild(section);
+  sidebar.appendChild(section);
 
   const slot = section.querySelector('[data-role="sidebar-workers"]');
   const addBtn = section.querySelector('[data-role="add-worker"]');
@@ -115,9 +114,15 @@ export function mountClusterSidebar() {
       });
     });
     slot.querySelectorAll('[data-action="del"]').forEach((btn) => {
-      btn.addEventListener('click', (ev) => {
+      btn.addEventListener('click', async (ev) => {
         ev.stopPropagation();
-        if (!confirm('Remove this worker URL?')) return;
+        const ok = await confirmModal({
+          title: 'Remove worker',
+          message: 'This removes the URL from your local list. Any run already dispatched to this worker keeps running.',
+          danger: true,
+          okLabel: 'Remove',
+        });
+        if (!ok) return;
         removeWorker(btn.dataset.id);
         render();
       });
@@ -131,20 +136,122 @@ export function mountClusterSidebar() {
   });
 }
 
-function promptAddWorker() {
-  // Two-step prompt — keeping UI footprint tiny. A modal would be nicer
-  // but adding one for a backend-MVP feature isn't worth the spread.
-  const url = window.prompt('Worker URL (e.g. http://10.0.0.5:8080):');
-  if (!url || !url.trim()) return;
+async function promptAddWorker() {
+  // Single modal collects URL + optional BasicAuth credentials. Replaces
+  // the old window.prompt() chain which was unreliable (blocked in Wails
+  // desktop builds, hard to cancel cleanly in browser).
+  const result = await formModal({
+    title: 'Add worker',
+    submitLabel: 'Add worker',
+    fields: [
+      { name: 'url', label: 'URL', placeholder: 'http://10.0.0.5:8080', required: true,
+        hint: 'Any reachable sftp-loadtest instance — its /api will receive the per-worker config.' },
+      { name: 'auth_user', label: 'BasicAuth user', placeholder: '(optional)',
+        hint: 'Leave both empty if the worker has no -auth-user flag set.' },
+      { name: 'auth_pass', label: 'BasicAuth password', type: 'password', placeholder: '(optional)' },
+    ],
+  });
+  if (!result) return;
+  const url = (result.url || '').trim();
+  if (!url) return;
   if (!/^https?:\/\//i.test(url)) {
     pushToast('Worker URL must start with http:// or https://', 'error');
     return;
   }
-  const auth_user = window.prompt('BasicAuth user (leave empty for none):') || '';
-  let auth_pass = '';
-  if (auth_user) auth_pass = window.prompt('BasicAuth password:') || '';
-  addWorker({ url: url.trim(), auth_user, auth_pass });
+  addWorker({ url, auth_user: result.auth_user || '', auth_pass: result.auth_pass || '' });
   pushToast(`Added worker ${url}`, 'success');
+}
+
+// ---------- Cluster view (main pane) ----------
+//
+// Renders inside [data-view="cluster"]. Shows the list of saved workers
+// in a roomier layout (compared to the sidebar's row format) plus the
+// status of the cluster coordinator (idle / active / aggregated counters).
+
+export function mountClusterView() {
+  const view = document.querySelector('[data-view="cluster"]');
+  if (!view || view.dataset.clusterMounted) return;
+  view.dataset.clusterMounted = '1';
+
+  view.innerHTML = `
+    <section class="cluster-view-panel">
+      <header class="cluster-view-head">
+        <div>
+          <div class="cluster-view-title">Cluster mode</div>
+          <div class="cluster-view-sub">Fan a run out across multiple sftp-loadtest instances. Each worker dials the SFTP target independently and the master aggregates results.</div>
+        </div>
+        <button type="button" class="btn btn-primary" data-role="cluster-add">+ Add worker</button>
+      </header>
+      <div class="cluster-view-status" data-role="cluster-status">
+        <div class="cluster-view-status-cell"><span class="label">state</span><span class="value" data-role="state">idle</span></div>
+        <div class="cluster-view-status-cell"><span class="label">workers</span><span class="value" data-role="worker-count">0</span></div>
+        <div class="cluster-view-status-cell"><span class="label">files</span><span class="value" data-role="files">0</span></div>
+        <div class="cluster-view-status-cell"><span class="label">throughput</span><span class="value" data-role="mbps">0</span> <span class="label">MB/s</span></div>
+        <div class="cluster-view-status-cell"><span class="label">failed</span><span class="value" data-role="failed">0</span></div>
+      </div>
+      <div class="cluster-view-list" data-role="cluster-list">
+        <div class="cluster-view-empty">No workers yet. Click “Add worker” to register a URL.</div>
+      </div>
+    </section>`;
+
+  view.querySelector('[data-role="cluster-add"]').addEventListener('click', () => promptAddWorker());
+
+  function renderList() {
+    const list = readAll();
+    const slot = view.querySelector('[data-role="cluster-list"]');
+    view.querySelector('[data-role="worker-count"]').textContent =
+      `${list.filter((w) => w.enabled).length} / ${list.length}`;
+    if (list.length === 0) {
+      slot.innerHTML = '<div class="cluster-view-empty">No workers yet. Click “Add worker” to register a URL.</div>';
+      return;
+    }
+    slot.innerHTML = `
+      <table class="cluster-view-table">
+        <thead><tr><th>URL</th><th>Auth user</th><th>Enabled</th><th></th></tr></thead>
+        <tbody>${list.map((w) => `
+          <tr data-id="${escapeAttr(w.id)}">
+            <td class="mono">${escapeHTML(w.url)}</td>
+            <td>${escapeHTML(w.auth_user || '—')}</td>
+            <td>
+              <label class="cluster-view-toggle">
+                <input type="checkbox" data-action="toggle" data-id="${escapeAttr(w.id)}" ${w.enabled ? 'checked' : ''}>
+                <span>${w.enabled ? 'on' : 'off'}</span>
+              </label>
+            </td>
+            <td><button type="button" class="btn btn-ghost btn-sm" data-action="delete" data-id="${escapeAttr(w.id)}">Remove</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+    slot.querySelectorAll('[data-action="toggle"]').forEach((cb) => {
+      cb.addEventListener('change', () => { toggleWorker(cb.dataset.id); renderList(); });
+    });
+    slot.querySelectorAll('[data-action="delete"]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const ok = await confirmModal({ title: 'Remove worker', message: 'Remove this URL from the local list?', danger: true, okLabel: 'Remove' });
+        if (!ok) return;
+        removeWorker(btn.dataset.id);
+        renderList();
+      });
+    });
+  }
+  renderList();
+  setInterval(renderList, REFRESH_MS);
+  window.addEventListener('storage', (ev) => { if (ev.key === KEY) renderList(); });
+
+  // Poll cluster status while view is active.
+  async function pollStatus() {
+    try {
+      const r = await apiFetch('/api/cluster/status');
+      if (!r.ok) throw new Error();
+      const j = await r.json();
+      view.querySelector('[data-role="state"]').textContent = j.active ? 'active' : 'idle';
+      view.querySelector('[data-role="files"]').textContent = String(j.total_files || 0);
+      view.querySelector('[data-role="mbps"]').textContent = (j.overall_mbps || 0).toFixed(2);
+      view.querySelector('[data-role="failed"]').textContent = String(j.failed_files || 0);
+    } catch { /* silent */ }
+    setTimeout(pollStatus, REFRESH_MS);
+  }
+  pollStatus();
 }
 
 // ---------- Upload card "Distribute load" toggle ----------

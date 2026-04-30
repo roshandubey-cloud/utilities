@@ -8,7 +8,7 @@ test('quick checks blocks Test Connection on empty host with inline error', asyn
   await page.goto('/');
   await page.locator('#conn-host').fill('');
   await page.locator('#conn-port').fill('22020');
-  const btn = page.getByRole('button', { name: /test connection/i });
+  const btn = page.getByRole('button', { name: /test connection/i }).first();
   await btn.click();
   // The connection.js validateField path adds .field-error inside the
   // Host field group when empty. Element must appear and be readable.
@@ -21,7 +21,7 @@ test('quick checks rejects out-of-range port', async ({ page }) => {
   await page.goto('/');
   await page.locator('#conn-host').fill('127.0.0.1');
   await page.locator('#conn-port').fill('999999');
-  const btn = page.getByRole('button', { name: /test connection/i });
+  const btn = page.getByRole('button', { name: /test connection/i }).first();
   await btn.click();
   const fieldError = page.locator('.field[data-invalid="true"] .field-error');
   await expect(fieldError).toBeVisible({ timeout: 3000 });

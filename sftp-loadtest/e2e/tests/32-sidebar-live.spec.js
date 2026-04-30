@@ -7,10 +7,17 @@ test('sidebar sections render with empty states on a fresh boot', async ({ page 
   await page.goto('/');
   const sb = page.locator('.shell-sidebar');
   await expect(sb).toBeVisible();
+  // Primary nav rows.
+  await expect(sb).toContainText(/workbench/i);
+  await expect(sb).toContainText(/configure/i);
+  await expect(sb).toContainText(/history/i);
+  await expect(sb).toContainText(/cluster/i);
+  await expect(sb).toContainText(/trust/i);
+  // Library sections.
   await expect(sb).toContainText(/connections/i);
   await expect(sb).toContainText(/saved configs/i);
   await expect(sb).toContainText(/recent runs/i);
-  await expect(sb).toContainText(/trusted hosts/i);
+  await expect(sb).toContainText(/workers/i);
 });
 
 test('saving a preset adds a row in Saved configs', async ({ page }) => {

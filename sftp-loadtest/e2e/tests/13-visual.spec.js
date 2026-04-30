@@ -21,6 +21,7 @@ test('landing — dark theme', async ({ page }) => {
 
 test('download card with filename mode selected', async ({ page }) => {
   await page.goto('/');
+  await page.locator('[data-action="view"][data-view="configure"]').click();
   const dl = page.locator('#download_enabled');
   if (!await dl.isChecked()) await dl.check();
   await page.locator('#dmm_filename').check();
@@ -36,5 +37,6 @@ test('quick checks panel — empty state', async ({ page }) => {
 
 test('runs-history empty state', async ({ page }) => {
   await page.goto('/');
+  await page.locator('[data-action="view"][data-view="history"]').click();
   await page.locator('[data-component="runs-history"]').screenshot({ path: 'playwright-report/history-empty.png' });
 });

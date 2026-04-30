@@ -24,7 +24,7 @@ test('failed probe does not lock the test-connection button', async ({ page }) =
   // Point at a port that nothing is listening on.
   await page.locator('#conn-host').fill('127.0.0.1');
   await page.locator('#conn-port').fill('1');           // close-to-guaranteed connection refused
-  const btn = page.getByRole('button', { name: /test connection/i });
+  const btn = page.getByRole('button', { name: /test connection/i }).first();
   await btn.click();
   // Wait for the error surface.
   await expect(page.locator('[data-role="result"]')).toContainText(/(refused|connection|failed)/i, { timeout: 8000 });

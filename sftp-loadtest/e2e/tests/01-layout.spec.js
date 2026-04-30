@@ -15,7 +15,8 @@ test('masthead carries product name + nav', async ({ page }) => {
   expect(heads.some((t) => /sftp\s*load\s*test/i.test(t))).toBe(true);
 });
 
-test('quick checks panel visible with all fields', async ({ page }) => {
+test('quick checks panel visible in Configure view', async ({ page }) => {
+  await page.locator('[data-action="view"][data-view="configure"]').click();
   await expect(page.locator('[data-component="connection"]')).toBeVisible();
   await expect(page.locator('#conn-host')).toBeVisible();
   await expect(page.locator('#conn-port')).toBeVisible();
@@ -31,24 +32,26 @@ test('topbar Run button is the primary call to action', async ({ page }) => {
   await expect(tbRun).toHaveAttribute('data-variant', 'primary');
 });
 
-test('records / live activity panel slot exists', async ({ page }) => {
+test('records / live activity panel exists in Workbench view', async ({ page }) => {
+  await page.locator('[data-action="view"][data-view="workbench"]').click();
   await expect(page.locator('[data-component="records"]')).toBeVisible();
 });
 
-test('runs-history panel slot exists', async ({ page }) => {
+test('runs-history panel renders in History view', async ({ page }) => {
+  await page.locator('[data-action="view"][data-view="history"]').click();
   await expect(page.locator('[data-component="runs-history"]')).toBeVisible();
 });
 
-test('trusted-hosts panel renders the list (or empty state)', async ({ page }) => {
+test('trusted-hosts panel renders the list (or empty state) in Trust view', async ({ page }) => {
+  await page.locator('[data-action="view"][data-view="trust"]').click();
   await expect(page.locator('[data-component="trusted-hosts"]')).toBeVisible();
-  // Either a row list or an empty-state blurb must be present — the
-  // panel must never look like an unfinished card.
   const root = page.locator('[data-component="trusted-hosts"]');
   await expect(root).toContainText(/(trusted|no trusted hosts|managed externally)/i);
 });
 
-test('legacy run config card is present (host/port/folder fields)', async ({ page }) => {
-  // Legacy form drives the actual run; it lives under the new hero.
+test('legacy run config card is attached (host/port/folder source-of-truth fields)', async ({ page }) => {
+  // The legacy form is the runner's input; visual layout has moved
+  // through the Configure view but the IDs remain the source of truth.
   await expect(page.locator('#host')).toBeAttached();
   await expect(page.locator('#port')).toBeAttached();
   await expect(page.locator('#folder')).toBeAttached();

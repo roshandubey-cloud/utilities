@@ -4,25 +4,22 @@
 
 import { test, expect } from '@playwright/test';
 
-test('panel renders empty state on a fresh boot', async ({ page }) => {
+test('Trust view renders the panel with empty state on a fresh boot', async ({ page }) => {
   await page.goto('/');
+  await page.locator('[data-action="view"][data-view="trust"]').click();
   const root = page.locator('[data-component="trusted-hosts"]');
   await expect(root).toBeVisible();
   // Empty state OR file-mode notice — both are acceptable greetings.
   await expect(root).toContainText(/(no trusted hosts|managed externally)/i);
 });
 
-test('panel always visible regardless of wizard step', async ({ page }) => {
-  // Regression: previously tagged data-step="review", causing the
-  // panel to vanish during workload/schedule steps.
+test('Trust nav row is always reachable from the sidebar', async ({ page }) => {
+  // Regression-class: the previous design hid the trusted-hosts panel
+  // behind a wizard step. Now it's a top-level sidebar nav entry that
+  // stays visible across every other view.
   await page.goto('/');
-  const root = page.locator('[data-component="trusted-hosts"]');
-  await expect(root).toBeVisible();
-  // Click each wizard step (if the wizard is present) and confirm the
-  // panel stays visible.
-  const stepBtns = await page.locator('[data-component="wizard"] [data-step]').all();
-  for (const btn of stepBtns) {
-    await btn.click();
-    await expect(root).toBeVisible();
+  for (const v of ['workbench', 'configure', 'history', 'cluster']) {
+    await page.locator(`[data-action="view"][data-view="${v}"]`).click();
+    await expect(page.locator('[data-action="view"][data-view="trust"]')).toBeVisible();
   }
 });

@@ -24,7 +24,7 @@ let visibleResults = [];
 let activeIndex = 0;
 
 export function mountCommandPalette() {
-  // Attach Cmd+K trigger globally.
+  // Cmd+K (Ctrl+K) global shortcut.
   document.addEventListener('keydown', (ev) => {
     if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'k') {
       ev.preventDefault();
@@ -34,18 +34,15 @@ export function mountCommandPalette() {
       close();
     }
   });
-
-  // The shell.js stub Cmd+K button delegates here too.
-  const tbBtn = document.querySelector('[data-role="topbar-cmdk"]');
-  if (tbBtn) {
-    tbBtn.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      open();
-    });
-  }
+  // The shell exposes Cmd+K via a custom event so the topbar button and
+  // sidebar search both feed in here without needing direct module wiring.
+  document.addEventListener('sftpl:open-cmdk', (ev) => {
+    const initialQuery = ev.detail && ev.detail.query;
+    open(initialQuery);
+  });
 }
 
-function open() {
+function open(initialQuery) {
   if (backdrop) return;
   backdrop = document.createElement('div');
   backdrop.className = 'cmdk-backdrop';
@@ -78,7 +75,12 @@ function open() {
   input.addEventListener('input', () => render(input.value));
   input.addEventListener('keydown', onInputKey);
   input.focus();
-  render('');
+  if (initialQuery) {
+    input.value = initialQuery;
+    render(initialQuery);
+  } else {
+    render('');
+  }
 }
 
 function close() {

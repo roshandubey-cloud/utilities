@@ -3,8 +3,10 @@
 
 import { test, expect } from '@playwright/test';
 
-test('throughput + latency chart panels render at boot', async ({ page }) => {
+test('throughput + latency chart panels render in Workbench view', async ({ page }) => {
   await page.goto('/');
+  // Charts live in the Workbench view; default is Configure now.
+  await page.locator('[data-action="view"][data-view="workbench"]').click();
   const charts = page.locator('[data-component="live-charts"]');
   await expect(charts).toBeVisible();
   // Two chart panels, each with a title and a KPI row.
@@ -22,6 +24,7 @@ test('throughput + latency chart panels render at boot', async ({ page }) => {
 
 test('chart SVGs have a path element ready to receive samples', async ({ page }) => {
   await page.goto('/');
+  await page.locator('[data-action="view"][data-view="workbench"]').click();
   const lines = page.locator('[data-component="live-charts"] svg path[data-role="line"]');
   await expect(lines.first()).toBeAttached();
   await expect(lines.nth(1)).toBeAttached();

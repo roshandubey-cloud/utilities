@@ -21,7 +21,7 @@ test('test connection shows ok against the mock', async ({ page }) => {
   await passField.fill('p');
 
   // Test Connection button can carry either label; match by accessible role.
-  const btn = page.getByRole('button', { name: /test connection/i });
+  const btn = page.getByRole('button', { name: /test connection/i }).first();
   await expect(btn).toBeVisible();
   await btn.click();
 
@@ -37,7 +37,7 @@ test('test connection refuses an empty password with a clear message', async ({ 
   const passField = page.locator('#conn-pass, [data-role="pass"]');
   if (await userField.count()) await userField.fill('u1');
   if (await passField.count()) await passField.fill('');
-  const btn = page.getByRole('button', { name: /test connection/i });
+  const btn = page.getByRole('button', { name: /test connection/i }).first();
   if (await btn.count()) {
     await btn.click();
     // Either a validation error fires immediately ("password required")

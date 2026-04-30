@@ -1929,5 +1929,6 @@ body > .app > .proc-badge,
 body > .app > .sched-banner {
   display: none !important;
 }
-.app .grid #connCard { display: none !important; }
+.app .grid #connCard,
+.shell-mounted #connCard { display: none !important; }
 

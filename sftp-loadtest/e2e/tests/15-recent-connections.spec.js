@@ -10,7 +10,7 @@ test('successful probe records host:port to recent', async ({ page }) => {
   await page.locator('#conn-port').fill('22020');
   await page.locator('#conn-user').fill('u1');
   await page.locator('#conn-pass').fill('p');
-  await page.getByRole('button', { name: /test connection/i }).click();
+  await page.getByRole('button', { name: /test connection/i }).first().click();
   // Wait for the OK state.
   await expect(page.locator('[data-role="result"]')).toContainText(/(connection ok|complete)/i, { timeout: 8000 });
   // The recent-connections list now contains 127.0.0.1:22020.

@@ -31,10 +31,13 @@ export function mountRecords(rootSelector) {
   let pinnedRunId = null;
 
   document.addEventListener('click', (ev) => {
+    // Only react to the LEGACY view-record clicks, not the new shell's
+    // [data-view] view-container attributes. Look specifically for
+    // anchor/button elements that carry data-view="run-..." (the
+    // existing runs-history "View records" hook).
     const view = ev.target.closest('[data-view]');
-    if (view && view.dataset.view) {
+    if (view && view.dataset.view && /^run-/i.test(view.dataset.view)) {
       pinnedRunId = view.dataset.view;
-      // Force-refresh now so the table swaps without waiting for the next poll.
       refresh(true);
       return;
     }

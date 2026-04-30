@@ -21,6 +21,8 @@ test('clicking Open on a runs-history card opens the detail pane', async ({ page
   await page.goto('/');
 
   // Configure + run a quick smoke so the runs-history card has at least one entry.
+  // Configure view holds the form.
+  await page.locator('[data-action="view"][data-view="configure"]').click();
   await page.locator('#conn-host').fill('127.0.0.1');
   await page.locator('#conn-port').fill('22020');
   if (await page.locator('#upload-folder').count()) await page.locator('#upload-folder').fill('inbox');
@@ -47,7 +49,8 @@ test('clicking Open on a runs-history card opens the detail pane', async ({ page
     return (j.runs || []).some((x) => Number(x.total_files) > 0);
   }, null, { timeout: 15_000, polling: 500 });
 
-  // Wait for the runs-history card and its decorated Open button.
+  // History view holds the runs-history list.
+  await page.locator('[data-action="view"][data-view="history"]').click();
   const card = page.locator('[data-component="runs-history"] .runs-history-card').first();
   await expect(card).toBeVisible({ timeout: 15_000 });
   const openBtn = card.locator('button:has-text("Open")');

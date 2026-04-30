@@ -20,6 +20,8 @@ test('records table populates with rows during an active run', async ({ page }) 
   test.setTimeout(45_000);
   page.on('dialog', async (d) => { await d.accept(); });
   await page.goto('/');
+  // The form lives in Configure view; click into it to access the inputs.
+  await page.locator('[data-action="view"][data-view="configure"]').click();
   await page.locator('#conn-host').fill('127.0.0.1');
   await page.locator('#conn-port').fill('22020');
   if (await page.locator('#upload-folder').count()) await page.locator('#upload-folder').fill('inbox');
@@ -36,10 +38,19 @@ test('records table populates with rows during an active run', async ({ page }) 
   await ta.click(); await ta.fill('u1,p,f-*'); await ta.blur();
 
   await page.locator('#startBtn').click();
-  // The records component should show at least one tabular row.
+  // Wait until total_files > 5 so records.js has had ample time to
+  // re-render with new rows (its polling cadence is 2 s).
+  await page.waitForFunction(async () => {
+    const r = await fetch('/api/status', { headers: { 'X-Requested-With': 'sftp-loadtest' } });
+    const j = await r.json();
+    return j.active && (j.metrics?.total_files || 0) > 5;
+  }, null, { timeout: 12_000, polling: 250 });
+  // Records live in Workbench view.
+  await page.locator('[data-action="view"][data-view="workbench"]').click();
   const records = page.locator('[data-component="records"]');
-  await expect(records).toContainText(/u1/, { timeout: 12_000 });
-  // Headers should label the columns the operator depends on.
+  // The records table includes [data-role="rows"]; at least one row populates.
+  await expect(records.locator('[data-role="rows"] tr').first()).toBeVisible({ timeout: 15_000 });
+  // Headers should be present.
   for (const col of [/user/i, /file/i, /kind/i, /size/i]) {
     await expect(records).toContainText(col);
   }
