@@ -254,56 +254,87 @@ test.describe.serial('v0.10.3 final validation', () => {
     await expect(card.locator('[data-view-detail]')).toBeVisible();
   });
 
-  test('Cluster view: Distribute toggle persists in localStorage', async ({ page }) => {
+  test('Cluster: Distribute checkbox is disabled when zero workers enabled', async ({ page }) => {
+    // The toggle is meaningless without a worker — make it unselectable
+    // so the user can't even trigger the "distribute on, no workers"
+    // dead-end. Visual hint: row dims via data-disabled="1".
     await page.goto('/');
-    await page.evaluate(() => { try { localStorage.removeItem('sftp-loadtest-distribute-v1'); } catch {} });
+    await page.evaluate(() => {
+      try { localStorage.removeItem('sftp-loadtest-workers-v1'); } catch {}
+      try { localStorage.removeItem('sftp-loadtest-distribute-v1'); } catch {}
+    });
     await page.reload();
     await page.locator('[data-action="view"][data-view="configure"]').click();
     const cb = page.locator('#cluster_distribute');
+    await expect(cb).toBeDisabled();
+    await expect(page.locator('.cluster-distribute-row')).toHaveAttribute('data-disabled', '1');
+  });
+
+  test('Cluster: Distribute checkbox enables once a worker is added + persists', async ({ page }) => {
+    // Seed a worker, reload, the toggle becomes enabled, persist a
+    // checked state through reload, then verify.
+    await page.goto('/');
+    await page.evaluate(() => {
+      try {
+        localStorage.setItem('sftp-loadtest-workers-v1', JSON.stringify([
+          { id: 'wk-1', url: 'http://10.0.0.5:8080', auth_user: '', auth_pass: '', enabled: true, addedAt: new Date().toISOString() },
+        ]));
+        localStorage.removeItem('sftp-loadtest-distribute-v1');
+      } catch {}
+    });
+    await page.reload();
+    await page.locator('[data-action="view"][data-view="configure"]').click();
+    const cb = page.locator('#cluster_distribute');
+    await expect(cb).toBeEnabled();
     await expect(cb).not.toBeChecked();
     await cb.check();
     await page.reload();
     await page.locator('[data-action="view"][data-view="configure"]').click();
     await expect(page.locator('#cluster_distribute')).toBeChecked();
     // Reset.
-    await page.locator('#cluster_distribute').uncheck();
+    await page.evaluate(() => {
+      try {
+        localStorage.removeItem('sftp-loadtest-workers-v1');
+        localStorage.removeItem('sftp-loadtest-distribute-v1');
+      } catch {}
+    });
   });
 
   test('Cluster: Distribute=on with zero workers blocks Start with a clear toast', async ({ page }) => {
-    // Regression: previously the intercept silently fell through to the
-    // legacy local-run path when distribute was on but no worker was
-    // enabled — operator clicked Start expecting fan-out and got a
-    // single local run with no warning. Fix: block + toast.
+    // Defence-in-depth — even if someone bypasses the UI disable (the
+    // checkbox is disabled when zero workers), the cluster intercept
+    // must still block the Start click and explain why instead of
+    // silently falling through to the legacy local-run path. Bypass
+    // the disable via JS so we can exercise the runtime guard.
     await page.goto('/');
     await page.evaluate(() => {
       try {
         localStorage.removeItem('sftp-loadtest-workers-v1');
-        localStorage.setItem('sftp-loadtest-distribute-v1', '1');
+        localStorage.setItem('sftp-loadtest-distribute-v1', '0');
       } catch {}
     });
     await page.reload();
     await page.locator('[data-action="view"][data-view="configure"]').click();
-    // Spy on the legacy startBtn — when distribute=on and workers=0, the
-    // intercept must stopImmediatePropagation before the legacy bubble
-    // handler's actual /api/start fires. Use a counter on /api/start
-    // requests to verify no run was kicked off.
     let startCalls = 0;
     await page.route('**/api/start', (route) => {
       startCalls += 1;
       return route.fulfill({ status: 200, contentType: 'application/json', body: '{"run_id":"spy"}' });
     });
     await page.route('**/api/cluster/start', (route) => {
-      startCalls += 1; // surfacing here is also an unexpected behaviour
+      startCalls += 1;
       return route.fulfill({ status: 200, contentType: 'application/json', body: '{"run_ids":["spy"]}' });
     });
-    await expect(page.locator('#cluster_distribute')).toBeChecked();
+    // Force the disabled checkbox into a checked state to simulate a
+    // bypass — confirms the second line of defence (runtime guard) holds.
+    await page.evaluate(() => {
+      const cb = document.getElementById('cluster_distribute');
+      cb.disabled = false;
+      cb.checked = true;
+    });
     await page.locator('#startBtn').click();
-    // Wait for the toast.
     const toast = page.locator('.toast').filter({ hasText: /distribute is on but no workers/i });
     await expect(toast).toBeVisible({ timeout: 4000 });
     expect(startCalls).toBe(0);
-    // Reset.
-    await page.evaluate(() => { try { localStorage.removeItem('sftp-loadtest-distribute-v1'); } catch {} });
   });
 
   test('Cluster view: + Add worker button opens the modal in the cluster view', async ({ page }) => {

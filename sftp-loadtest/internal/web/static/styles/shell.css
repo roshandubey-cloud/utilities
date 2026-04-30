@@ -928,6 +928,17 @@ body.wails-desktop .shell-topbar .segmented { -webkit-app-region: no-drag; }
   flex: 1; font-family: var(--font-sans);
 }
 .cluster-distribute-status[data-kind="warn"] { color: var(--warning-fg-soft); }
+/* When no workers are enabled, the whole row reads as muted so the
+   user immediately sees the toggle is unavailable, not just disabled. */
+.cluster-distribute-row[data-disabled="1"] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.cluster-distribute-row[data-disabled="1"] .cluster-distribute-toggle {
+  cursor: not-allowed;
+  color: var(--text-tertiary);
+}
+.cluster-distribute-row[data-disabled="1"] input { cursor: not-allowed; }
 
 /* ============================================================================
    Run detail view (β1)

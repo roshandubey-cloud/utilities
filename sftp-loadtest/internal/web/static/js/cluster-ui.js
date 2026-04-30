@@ -289,17 +289,42 @@ export function mountDistributeToggle() {
     if (enabled.length === 0) {
       status.textContent = 'no workers enabled — add one in the sidebar';
       status.dataset.kind = 'warn';
+      // Disable + force-uncheck. The toggle is meaningless with no
+      // workers; previously letting the user check it produced a toast
+      // at Start time. Better UX: prevent the check in the first place
+      // and reflect the state visually.
+      cb.disabled = true;
+      if (cb.checked) {
+        cb.checked = false;
+        try { localStorage.setItem('sftp-loadtest-distribute-v1', '0'); } catch {}
+      }
+      row.dataset.disabled = '1';
     } else {
       status.textContent = `${enabled.length} worker${enabled.length === 1 ? '' : 's'} enabled · fpm will be split across them`;
       status.dataset.kind = '';
+      cb.disabled = false;
+      row.dataset.disabled = '0';
     }
   }
+  // Sync immediately AND on any storage event for the workers key, so
+  // adding / enabling a worker in the sidebar instantly enables the
+  // toggle without waiting for the heartbeat tick.
   syncStatus();
   setInterval(syncStatus, REFRESH_MS);
+  window.addEventListener('storage', (ev) => {
+    if (ev && ev.key === 'sftp-loadtest-workers-v1') syncStatus();
+  });
   cb.addEventListener('change', () => {
     try { localStorage.setItem('sftp-loadtest-distribute-v1', cb.checked ? '1' : '0'); } catch {}
   });
-  try { cb.checked = localStorage.getItem('sftp-loadtest-distribute-v1') === '1'; } catch {}
+  // Restore checked state from localStorage — but only if there's at
+  // least one worker enabled. Otherwise we'd flash checked → unchecked
+  // on every page load.
+  try {
+    const persisted = localStorage.getItem('sftp-loadtest-distribute-v1') === '1';
+    const haveWorkers = readAll().some((w) => w.enabled);
+    cb.checked = persisted && haveWorkers;
+  } catch {}
 }
 
 // ---------- Cluster Start interceptor ----------
