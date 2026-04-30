@@ -269,6 +269,43 @@ test.describe.serial('v0.10.3 final validation', () => {
     await page.locator('#cluster_distribute').uncheck();
   });
 
+  test('Cluster: Distribute=on with zero workers blocks Start with a clear toast', async ({ page }) => {
+    // Regression: previously the intercept silently fell through to the
+    // legacy local-run path when distribute was on but no worker was
+    // enabled — operator clicked Start expecting fan-out and got a
+    // single local run with no warning. Fix: block + toast.
+    await page.goto('/');
+    await page.evaluate(() => {
+      try {
+        localStorage.removeItem('sftp-loadtest-workers-v1');
+        localStorage.setItem('sftp-loadtest-distribute-v1', '1');
+      } catch {}
+    });
+    await page.reload();
+    await page.locator('[data-action="view"][data-view="configure"]').click();
+    // Spy on the legacy startBtn — when distribute=on and workers=0, the
+    // intercept must stopImmediatePropagation before the legacy bubble
+    // handler's actual /api/start fires. Use a counter on /api/start
+    // requests to verify no run was kicked off.
+    let startCalls = 0;
+    await page.route('**/api/start', (route) => {
+      startCalls += 1;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{"run_id":"spy"}' });
+    });
+    await page.route('**/api/cluster/start', (route) => {
+      startCalls += 1; // surfacing here is also an unexpected behaviour
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{"run_ids":["spy"]}' });
+    });
+    await expect(page.locator('#cluster_distribute')).toBeChecked();
+    await page.locator('#startBtn').click();
+    // Wait for the toast.
+    const toast = page.locator('.toast').filter({ hasText: /distribute is on but no workers/i });
+    await expect(toast).toBeVisible({ timeout: 4000 });
+    expect(startCalls).toBe(0);
+    // Reset.
+    await page.evaluate(() => { try { localStorage.removeItem('sftp-loadtest-distribute-v1'); } catch {} });
+  });
+
   test('Cluster view: + Add worker button opens the modal in the cluster view', async ({ page }) => {
     await page.goto('/');
     await page.evaluate(() => { try { localStorage.removeItem('sftp-loadtest-workers-v1'); } catch {} });

@@ -314,8 +314,18 @@ export function mountClusterIntercept() {
   if (!startBtn) return;
   startBtn.addEventListener('click', async (ev) => {
     const cb = document.getElementById('cluster_distribute');
+    if (!cb || !cb.checked) return; // distribute off → legacy local-run path
     const enabled = readAll().filter((w) => w.enabled);
-    if (!cb || !cb.checked || enabled.length === 0) return; // legacy path
+    if (enabled.length === 0) {
+      // Distribute is on but no worker is enabled. Silently falling
+      // through to the legacy local-run path was the previous bug —
+      // the operator clicked Start expecting fan-out and got a single
+      // local run instead. Block + tell them what to do.
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      pushToast('Distribute is on but no workers are enabled. Add or enable a worker in the sidebar, or turn Distribute off.', 'warn');
+      return;
+    }
     ev.preventDefault();
     ev.stopImmediatePropagation();
     if (typeof window.__sftplBuildRequestBody !== 'function') {
@@ -327,9 +337,14 @@ export function mountClusterIntercept() {
       const r = await apiFetch('/api/cluster/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        // config is an object, not a string. The wrapper JSON.stringify
+        // serialises it inline; the server's json.RawMessage receives
+        // the object literal which splitConfig parses as a map. Wrapping
+        // with an extra JSON.stringify(cfg) produced a doubly-escaped
+        // string that splitConfig refused with "config not an object".
         body: JSON.stringify({
           workers: enabled.map((w) => ({ url: w.url, auth_user: w.auth_user, auth_pass: w.auth_pass })),
-          config: JSON.stringify(cfg),
+          config: cfg,
         }),
       });
       if (r.ok) {
