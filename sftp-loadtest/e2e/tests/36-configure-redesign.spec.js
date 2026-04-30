@@ -97,6 +97,19 @@ test('Toggling the Large workload off collapses #large_users', async ({ page }) 
   await expect(page.locator('#download_users')).toBeVisible();
 });
 
+test('Import config lives in the top prelude (not at the bottom action zone)', async ({ page }) => {
+  // Operators reach for Import BEFORE filling the form (to bootstrap
+  // from a saved JSON); making it scroll-to-bottom is hostile.
+  const view = page.locator('.shell-main [data-view="configure"]');
+  const prelude = view.locator('.cfg-prelude');
+  await expect(prelude).toBeVisible();
+  await expect(prelude.locator('.cfg-prelude-import')).toBeVisible();
+  // Export stays in the action zone — only Import is hoisted.
+  const secondary = view.locator('.cfg-actionzone-secondary');
+  await expect(secondary).not.toContainText(/import config/i);
+  await expect(secondary).toContainText(/export config/i);
+});
+
 test('Resource limits is split into Upload / Download / Run sub-groups, with #dparallel in Download', async ({ page }) => {
   const view = page.locator('.shell-main [data-view="configure"]');
   const limits = view.locator('.cfg-section[data-section="limits"]');

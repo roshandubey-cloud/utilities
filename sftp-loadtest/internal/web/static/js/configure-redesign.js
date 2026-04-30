@@ -97,6 +97,11 @@ export function mountConfigureRedesign() {
   layout.className = 'configure-layout';
   layout.innerHTML = `
     <div class="configure-main">
+      <!-- Prelude toolbar — bootstrap actions that belong BEFORE the form
+           (Import config). The user wants Import reachable without
+           scrolling all the way to the action zone at the bottom. -->
+      <div class="cfg-prelude" data-slot="prelude"></div>
+
       <section class="cfg-section" data-section="target">
         <header class="cfg-section-head">
           <div class="cfg-section-eyebrow">1 · Target</div>
@@ -290,15 +295,30 @@ export function mountConfigureRedesign() {
     }
     // Sweep any remaining utility buttons (Export config / Import config
     // proxies that run-actions.js has already inserted) and align them.
+    // Import config is routed to a TOP prelude slot so users can load a
+    // saved JSON without scrolling to the bottom of the form. Export
+    // (and any other tail-of-flow utility) stays in the action zone.
+    const preludeSlot = layout.querySelector('[data-slot="prelude"]');
     const seen = new Set([startBtn, stopBtn, csvBtn]);
     actionsRow.querySelectorAll('button, a').forEach((el) => {
       if (!el || seen.has(el) || !el.parentElement) return;
       seen.add(el);
       el.classList.add('cfg-secondary-action');
       const txt = (el.textContent || '').toLowerCase();
-      if (txt.includes('export'))      decorateActionBtn(el, ICON_UPLOAD_CLOUD);
-      else if (txt.includes('import')) decorateActionBtn(el, ICON_DOWNLOAD_CLOUD);
-      secondarySlot.appendChild(el);
+      if (txt.includes('export')) {
+        decorateActionBtn(el, ICON_UPLOAD_CLOUD);
+        secondarySlot.appendChild(el);
+      } else if (txt.includes('import')) {
+        decorateActionBtn(el, ICON_DOWNLOAD_CLOUD);
+        // Drop the secondary-action class for the prelude variant so it
+        // can pick up its own pill styling without competing with the
+        // toolbar look.
+        el.classList.remove('cfg-secondary-action');
+        el.classList.add('cfg-prelude-import');
+        preludeSlot.appendChild(el);
+      } else {
+        secondarySlot.appendChild(el);
+      }
     });
     actionsRow.remove();
   }
