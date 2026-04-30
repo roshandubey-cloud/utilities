@@ -166,7 +166,7 @@ export function mountShell() {
       </span>
       <span class="shell-statusbar-spacer"></span>
       <span class="shell-statusbar-cell" data-role="status-runid" title="Active run id">—</span>
-      <span class="shell-statusbar-cell" title="Version">v0.9.1</span>
+      <span class="shell-statusbar-cell" title="Version">v0.9.4</span>
     </footer>`;
 
   // Adopt every existing body child into .shell-main (preserves IDs).

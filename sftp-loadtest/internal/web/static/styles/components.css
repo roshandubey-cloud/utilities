@@ -1932,3 +1932,601 @@ body > .app > .sched-banner {
 .app .grid #connCard,
 .shell-mounted #connCard { display: none !important; }
 
+
+/* ============================================================================
+   v0.9.4 — Apple-TV-class glassy / matte aesthetic.
+
+   Goals:
+     * Cards feel like brushed glass, not flat rectangles. Subtle multi-stop
+       sheen (highlight at top, soft shadow at bottom) WITHIN the surface.
+     * Hairline borders soften (lower contrast), generous corner radii
+       (12-16px), and backdrop-blur where panels float over canvas.
+     * Buttons get a tasteful gloss — top highlight + bottom shadow within
+       the button — never chrome bevel.
+     * Inputs get rounded 8-10px corners, soft inner shadow, focus ring
+       uses accent at ~35% with a 3px outer glow.
+   ============================================================================ */
+
+:root,
+[data-theme="dark"] {
+  /* Soft sheen tokens — applied as inset gradients on cards. */
+  --panel-sheen-top:    rgba(255, 255, 255, 0.045);
+  --panel-sheen-bottom: rgba(0, 0, 0, 0.18);
+  --panel-blur:         saturate(140%) blur(20px);
+  --panel-radius:       14px;
+  --panel-radius-sm:    10px;
+  --panel-glass-bg:     linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 60%, rgba(0,0,0,0.10) 100%);
+  --btn-glass-top:      rgba(255, 255, 255, 0.14);
+  --btn-glass-bottom:   rgba(0, 0, 0, 0.12);
+  --input-radius:       9px;
+  --input-shadow-inset: inset 0 1px 0 rgba(0, 0, 0, 0.20);
+  --focus-ring-glow:    0 0 0 3px rgba(255, 120, 10, 0.35);
+}
+[data-theme="light"] {
+  --panel-sheen-top:    rgba(255, 255, 255, 0.85);
+  --panel-sheen-bottom: rgba(15, 23, 42, 0.04);
+  --panel-blur:         saturate(140%) blur(20px);
+  --panel-glass-bg:     linear-gradient(180deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.20) 60%, rgba(15,23,42,0.025) 100%);
+  --btn-glass-top:      rgba(255, 255, 255, 0.55);
+  --btn-glass-bottom:   rgba(15, 23, 42, 0.05);
+  --focus-ring-glow:    0 0 0 3px rgba(238, 91, 33, 0.30);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --panel-sheen-top:    rgba(255, 255, 255, 0.85);
+    --panel-sheen-bottom: rgba(15, 23, 42, 0.04);
+    --panel-glass-bg:     linear-gradient(180deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.20) 60%, rgba(15,23,42,0.025) 100%);
+    --btn-glass-top:      rgba(255, 255, 255, 0.55);
+    --btn-glass-bottom:   rgba(15, 23, 42, 0.05);
+    --focus-ring-glow:    0 0 0 3px rgba(238, 91, 33, 0.30);
+  }
+}
+
+/* ----- Panels: soften every panel/card to a glass tile. ----- */
+.panel,
+.card,
+.review-view-panel,
+.cluster-view-panel,
+.run-detail-panel,
+.workbench-chart {
+  border-radius: var(--panel-radius) !important;
+  background:
+    var(--panel-glass-bg),
+    var(--surface);
+  border-color: var(--border-weak);
+  box-shadow:
+    inset 0 1px 0 var(--panel-sheen-top),
+    inset 0 -1px 0 var(--panel-sheen-bottom),
+    var(--shadow-1);
+  transition: box-shadow var(--t-default) var(--ease-out),
+              border-color var(--t-fast) var(--ease-out);
+}
+[data-theme="light"] .panel,
+[data-theme="light"] .card,
+[data-theme="light"] .review-view-panel,
+[data-theme="light"] .cluster-view-panel,
+[data-theme="light"] .run-detail-panel,
+[data-theme="light"] .workbench-chart {
+  box-shadow:
+    inset 0 1px 0 var(--panel-sheen-top),
+    0 1px 2px rgba(15, 23, 42, 0.06),
+    0 6px 24px rgba(15, 23, 42, 0.06);
+  border-color: rgba(15, 23, 42, 0.06);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .panel,
+  :root:not([data-theme]) .card,
+  :root:not([data-theme]) .review-view-panel,
+  :root:not([data-theme]) .cluster-view-panel,
+  :root:not([data-theme]) .run-detail-panel,
+  :root:not([data-theme]) .workbench-chart {
+    box-shadow:
+      inset 0 1px 0 var(--panel-sheen-top),
+      0 1px 2px rgba(15, 23, 42, 0.06),
+      0 6px 24px rgba(15, 23, 42, 0.06);
+    border-color: rgba(15, 23, 42, 0.06);
+  }
+}
+
+.panel-header,
+.card > header {
+  background: transparent;
+  border-bottom-color: var(--border-weak);
+}
+
+/* ----- Inputs: rounded, soft inner shadow, gentle focus glow. ----- */
+.input,
+.textarea,
+.select,
+input[type=text],
+input[type=number],
+input[type=password],
+input[type=datetime-local],
+textarea,
+select {
+  border-radius: var(--input-radius) !important;
+}
+.input:focus-visible,
+.textarea:focus-visible,
+.select:focus-visible,
+input:focus,
+textarea:focus,
+select:focus {
+  box-shadow: var(--focus-ring-glow), 0 0 0 1px var(--accent) !important;
+}
+
+/* ----- Buttons: tasteful glass gloss. Primary + danger feel "lit". ----- */
+.btn,
+button.primary,
+button.ghost,
+button.secondary {
+  border-radius: var(--input-radius);
+}
+.btn-primary,
+button.primary,
+.shell-topbar .btn-icon[data-variant="primary"] {
+  background:
+    linear-gradient(180deg, var(--btn-glass-top) 0%, transparent 50%),
+    linear-gradient(0deg, var(--btn-glass-bottom) 0%, transparent 50%),
+    var(--accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12),
+    0 1px 2px rgba(0, 0, 0, 0.10);
+}
+.btn-primary:hover:not(:disabled),
+button.primary:hover:not(:disabled),
+.shell-topbar .btn-icon[data-variant="primary"]:hover:not(:disabled) {
+  background:
+    linear-gradient(180deg, var(--btn-glass-top) 0%, transparent 50%),
+    linear-gradient(0deg, var(--btn-glass-bottom) 0%, transparent 50%),
+    var(--accent-hover);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.14),
+    0 2px 4px rgba(0, 0, 0, 0.14);
+}
+.btn-danger,
+.shell-topbar .btn-icon[data-variant="danger"] {
+  background:
+    linear-gradient(180deg, var(--btn-glass-top) 0%, transparent 50%),
+    linear-gradient(0deg, var(--btn-glass-bottom) 0%, transparent 50%),
+    var(--surface);
+}
+
+/* ----- Toggle switch already exists; just add a touch of inset depth. ----- */
+.toggle-track {
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.18);
+}
+
+
+/* ============================================================================
+   v0.9.4 — Configure screen redesign.
+   New section structure: Target / Workload / Resource limits / Run summary
+   ============================================================================ */
+
+.configure-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--sp-5);
+  align-items: start;
+  padding-bottom: var(--sp-8);
+}
+@media (max-width: 1100px) {
+  .configure-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.configure-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  min-width: 0;
+}
+
+/* --- Section card ----------------------------------------------------- */
+.cfg-section {
+  background:
+    var(--panel-glass-bg),
+    var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--panel-radius);
+  padding: var(--sp-5) var(--sp-5) var(--sp-4);
+  box-shadow:
+    inset 0 1px 0 var(--panel-sheen-top),
+    inset 0 -1px 0 var(--panel-sheen-bottom),
+    var(--shadow-1);
+  backdrop-filter: var(--panel-blur);
+  -webkit-backdrop-filter: var(--panel-blur);
+}
+[data-theme="light"] .cfg-section,
+:root:not([data-theme]) .cfg-section {
+  border-color: rgba(15, 23, 42, 0.06);
+  box-shadow:
+    inset 0 1px 0 var(--panel-sheen-top),
+    0 1px 2px rgba(15, 23, 42, 0.06),
+    0 8px 28px rgba(15, 23, 42, 0.06);
+}
+
+.cfg-section-head {
+  margin-bottom: var(--sp-4);
+  padding-bottom: var(--sp-3);
+  border-bottom: var(--bw-1) solid var(--border-weak);
+}
+.cfg-section-eyebrow {
+  font-size: var(--fs-11);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  font-weight: var(--fw-semibold);
+  margin-bottom: 4px;
+}
+.cfg-section-title {
+  font-size: var(--fs-18);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  margin: 0 0 2px;
+  letter-spacing: var(--tracking-tight);
+}
+.cfg-section-sub {
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: var(--lh-normal);
+}
+
+/* The Target slot already hosts the existing Quick-checks panel; flatten
+   its outer box so we don't double up borders. */
+.cfg-section[data-section="target"] [data-component="connection"] {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0;
+}
+.cfg-section[data-section="target"] [data-component="connection"] .panel-header {
+  /* Quick-checks already provides title; suppress duplicate. */
+  display: none;
+}
+.cfg-section[data-section="target"] [data-component="connection"] .panel-body {
+  padding: 0;
+  gap: var(--sp-3);
+}
+
+/* --- Workload subsections -------------------------------------------- */
+/* Outer body of the Workload section (holds N workload cards). */
+.cfg-section-body.cfg-workload-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.cfg-workload-card {
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--panel-radius-sm);
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 var(--panel-sheen-top);
+  transition: border-color var(--t-fast), background var(--t-fast);
+}
+.cfg-workload-card[data-enabled="true"] {
+  border-color: var(--border-medium);
+  background: var(--surface);
+}
+.cfg-workload-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  cursor: default;
+}
+.cfg-workload-titles {
+  flex: 1;
+  min-width: 0;
+}
+.cfg-workload-title {
+  font-size: var(--fs-14);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+.cfg-workload-sub {
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  line-height: var(--lh-normal);
+}
+/* Inner body is the part that holds the legacy card; collapsed when off. */
+.cfg-workload-card[data-enabled="false"] [data-role="workload-body"] {
+  display: none;
+}
+.cfg-workload-card[data-enabled="true"] [data-role="workload-body"] {
+  display: block;
+  padding: 0 var(--sp-4) var(--sp-4);
+  border-top: var(--bw-1) solid var(--border-weak);
+}
+
+/* The legacy card that's nested INSIDE a workload-card needs its own
+   chrome stripped — the wrapper provides the chrome now. */
+.cfg-legacy-card {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  overflow: visible !important;
+}
+/* Legacy <header> from the workload card is parked as a sibling of the
+   workload-body (NOT inside it) so its #*_enabled checkbox stays
+   reachable even when the workload body is collapsed by the switch
+   being off. It's visually compressed but Playwright still sees it as
+   a fully visible, non-zero, non-clipped element. */
+.cfg-legacy-header-park {
+  display: flex !important;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 2px var(--sp-4) !important;
+  margin: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  font-size: var(--fs-11) !important;
+  color: var(--text-tertiary) !important;
+  opacity: 0.55;
+  height: 22px !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+}
+.cfg-legacy-header-park .pill { display: none; }
+.cfg-legacy-header-park .toggle-label {
+  font-weight: var(--fw-regular);
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cfg-legacy-card > .body  { padding: var(--sp-4) 0 0 !important; }
+
+/* --- Switch (matte, glassy) ------------------------------------------ */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+/* The visible track sits behind the input; the input becomes the click
+   surface (so Playwright's .check() lands directly on it). track + thumb
+   are pointer-events:none so they never intercept. */
+.switch {
+  position: relative;
+}
+.switch input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 38px;
+  height: 22px;
+  margin: 0;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  z-index: 2;
+  opacity: 0;
+  flex-shrink: 0;
+}
+.switch-track {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  pointer-events: none;
+  display: inline-block;
+  width: 38px;
+  height: 22px;
+  background: var(--surface-3);
+  border: var(--bw-1) solid var(--border-medium);
+  border-radius: var(--r-pill);
+  transition: background var(--t-default) var(--ease-out),
+              border-color var(--t-default) var(--ease-out);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.20);
+}
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #d6d6d6 100%);
+  border-radius: 50%;
+  transition: transform var(--t-default) var(--ease-out);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.30);
+}
+.switch input:checked + .switch-track {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, transparent 50%),
+    var(--accent);
+  border-color: var(--accent);
+}
+.switch input:checked + .switch-track .switch-thumb {
+  transform: translateX(16px);
+}
+.switch input:focus-visible + .switch-track {
+  box-shadow: var(--focus-ring-glow);
+}
+.switch-state {
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  font-weight: var(--fw-medium);
+  min-width: 56px;
+}
+.cfg-workload-card[data-enabled="true"] .switch-state { color: var(--text-primary); }
+
+/* --- Action zone ----------------------------------------------------- */
+.cfg-actionzone {
+  background:
+    linear-gradient(180deg, rgba(255, 120, 10, 0.04) 0%, transparent 100%),
+    var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--panel-radius);
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  box-shadow:
+    inset 0 1px 0 var(--panel-sheen-top),
+    var(--shadow-1);
+}
+[data-theme="light"] .cfg-actionzone,
+:root:not([data-theme]) .cfg-actionzone {
+  border-color: rgba(15, 23, 42, 0.06);
+  background:
+    linear-gradient(180deg, rgba(238, 91, 33, 0.05) 0%, transparent 100%),
+    var(--surface);
+}
+.cfg-actionzone-primary {
+  display: flex;
+  width: 100%;
+}
+.cfg-actionzone-primary .cfg-cta {
+  width: 100%;
+  font-size: var(--fs-14);
+  font-weight: var(--fw-semibold);
+  height: 48px;
+  padding: 0 var(--sp-5);
+  border-radius: 12px;
+  letter-spacing: var(--tracking-tight);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, transparent 50%),
+    linear-gradient(0deg, rgba(0, 0, 0, 0.12) 0%, transparent 50%),
+    var(--accent);
+  color: var(--accent-fg);
+  border: var(--bw-1) solid var(--accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.15),
+    0 4px 14px rgba(255, 120, 10, 0.30),
+    0 1px 2px rgba(0, 0, 0, 0.10);
+  transition: box-shadow var(--t-fast) var(--ease-out),
+              transform var(--t-fast) var(--ease-out),
+              filter var(--t-fast) var(--ease-out);
+}
+.cfg-actionzone-primary .cfg-cta:hover:not(:disabled) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18),
+    0 6px 18px rgba(255, 120, 10, 0.40),
+    0 2px 4px rgba(0, 0, 0, 0.14);
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+.cfg-actionzone-primary .cfg-cta:active:not(:disabled) {
+  transform: translateY(0);
+}
+.cfg-actionzone-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: center;
+  padding-top: var(--sp-2);
+  border-top: var(--bw-1) solid var(--border-weak);
+  justify-content: flex-end;
+}
+.cfg-secondary-action {
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+}
+.cfg-actionzone-error:empty { display: none; }
+.cfg-actionzone-error #err {
+  color: var(--danger-fg-soft);
+  font-size: var(--fs-13);
+}
+
+/* --- Right rail: Run summary ----------------------------------------- */
+.configure-rail {
+  position: relative;
+}
+.configure-rail-sticky {
+  position: sticky;
+  top: calc(var(--shell-topbar-h, 44px) + var(--sp-4));
+  background:
+    var(--panel-glass-bg),
+    var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--panel-radius);
+  padding: var(--sp-4) var(--sp-5);
+  box-shadow:
+    inset 0 1px 0 var(--panel-sheen-top),
+    inset 0 -1px 0 var(--panel-sheen-bottom),
+    var(--shadow-2);
+  backdrop-filter: var(--panel-blur);
+  -webkit-backdrop-filter: var(--panel-blur);
+}
+[data-theme="light"] .configure-rail-sticky,
+:root:not([data-theme]) .configure-rail-sticky {
+  border-color: rgba(15, 23, 42, 0.06);
+  box-shadow:
+    inset 0 1px 0 var(--panel-sheen-top),
+    0 1px 2px rgba(15, 23, 42, 0.06),
+    0 12px 32px rgba(15, 23, 42, 0.10);
+}
+@media (max-width: 1100px) {
+  .configure-rail-sticky { position: static; }
+}
+
+.cfg-summary-defs {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--sp-2) var(--sp-3);
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-13);
+}
+.cfg-summary-defs dt {
+  color: var(--text-tertiary);
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-12);
+}
+.cfg-summary-defs dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+}
+.cfg-summary-defs .mono { font-family: var(--font-mono); }
+.cfg-summary-foot {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: var(--bw-1) solid var(--border-weak);
+  font-size: var(--fs-12);
+}
+.cfg-summary-flows { display: inline-flex; flex-wrap: wrap; gap: var(--sp-1); }
+.cfg-summary-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: var(--r-pill);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.10) 0%, transparent 60%),
+    var(--accent);
+  color: var(--accent-fg);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.02em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.cfg-summary-empty {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* --- Legacy residue: collapse the now-empty .grid wrapper but keep its
+       hidden children attached so legacy.js still finds them. */
+.configure-legacy-residue {
+  display: none !important;
+}
+
+/* Ensure the run-mechanics group looks at home in the limits section. */
+.cfg-section[data-section="limits"] .upload-run-mechanics {
+  margin-top: 0;
+}

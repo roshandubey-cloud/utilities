@@ -21,6 +21,7 @@ import { mountRunsHistory } from './runs-history.js';
 import { mountTrustedHosts } from './trusted-hosts.js';
 import { mountUsersEditors } from './users-editor.js';
 import { mountUploadRestructure } from './upload-restructure.js';
+import { mountConfigureRedesign } from './configure-redesign.js';
 import { mountRunActions } from './run-actions.js';
 import { mountStartPreflight } from './start-preflight.js';
 import { mountCeilingBanner } from './ceiling-banner.js';
@@ -51,6 +52,10 @@ document.addEventListener('DOMContentLoaded', () => {
     mountUploadRestructure();
     mountUsersEditors();
     mountRunActions();
+    // Redesign the Configure view AFTER upload-restructure + run-actions
+    // so the run-mechanics group + Export/Import proxy buttons are in
+    // place, and we can relocate them into the new section structure.
+    mountConfigureRedesign();
     mountStartPreflight();
     mountWizard('[data-component="wizard"]');
     mountCeilingBanner();
