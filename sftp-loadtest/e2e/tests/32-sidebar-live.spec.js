@@ -10,7 +10,7 @@ test('sidebar sections render with empty states on a fresh boot', async ({ page 
   // Primary nav rows.
   await expect(sb).toContainText(/workbench/i);
   await expect(sb).toContainText(/configure/i);
-  await expect(sb).toContainText(/history/i);
+  await expect(sb).toContainText(/runs/i);
   await expect(sb).toContainText(/cluster/i);
   await expect(sb).toContainText(/trust/i);
   // Library sections.

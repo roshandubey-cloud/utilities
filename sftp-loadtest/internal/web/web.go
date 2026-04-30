@@ -998,7 +998,12 @@ func friendlyProbeError(stage string, err error) string {
 	case strings.Contains(low, "network is unreachable"):
 		return "Network is unreachable from this host."
 	case strings.Contains(low, "host key has changed"), strings.Contains(low, "possible mitm"):
-		return "Host key mismatch — refusing (delete the offending known_hosts entry only after verifying the new key out-of-band)."
+		// This branch is a fallback — the structured requires_renewal path
+		// (above the friendlyProbeError call) handles the normal flow with
+		// both fingerprints in the JSON response. Reaching here means the
+		// callback didn't capture the changed key for some reason; tell
+		// the operator to retry from the UI instead of editing files.
+		return "Host key mismatch detected. Open Test Connection to view both fingerprints and decide whether to trust the new key."
 	case strings.Contains(low, "knownhosts: key is unknown"), strings.Contains(low, "user consent required"):
 		return "Server presented a new host key. Verify the fingerprint and accept to continue."
 	case strings.Contains(low, "unable to authenticate"), strings.Contains(low, "authentication failed"):

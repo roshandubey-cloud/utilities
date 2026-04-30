@@ -18,6 +18,7 @@
 
 import { apiPostJSON } from './api.js';
 import { pushToast } from './toast.js';
+import { hostKeyConsent } from './modal.js';
 
 const cleared = new Set(); // host:port pairs already pre-flighted this session
 let inProgress = false;
@@ -82,13 +83,11 @@ async function onStartClick(ev) {
       return;
     }
     if (res.requires_renewal) {
-      const ok = window.confirm(
-        `Host key has CHANGED for ${host}:${port}.\n\n` +
-        `New fingerprint: ${res.captured_fingerprint}\n` +
-        `Old fingerprint: ${res.captured_previous_fingerprint}\n\n` +
-        `If this is a legitimate server rebuild or key rotation, click OK to overwrite the previous key.\n\n` +
-        `If you cannot verify the new fingerprint out-of-band, click Cancel — accepting could allow a man-in-the-middle attack.`
-      );
+      const ok = await hostKeyConsent({
+        host, port,
+        newFingerprint: res.captured_fingerprint,
+        oldFingerprint: res.captured_previous_fingerprint,
+      });
       if (!ok) {
         pushToast('Host key change rejected — run not started.', 'warn');
         restore(startBtn, previousLabel);
@@ -107,9 +106,28 @@ async function onStartClick(ev) {
       return;
     }
     if (res.requires_consent) {
-      // TOFU=true was already sent; server still says consent needed.
-      // Surface the message — usually means -known-hosts wasn't configured.
-      pushToast(res.error || 'Host key consent required', 'warn');
+      // TOFU=true was already sent and server still says consent needed —
+      // means the server is in store mode but hasn't seen the key yet, or
+      // -known-hosts wasn't configured. Show the same modal as a normal
+      // first-trust flow; on Accept, re-probe so the store records the key.
+      const ok = await hostKeyConsent({
+        host, port,
+        newFingerprint: res.captured_fingerprint,
+      });
+      if (!ok) {
+        pushToast('Host key not trusted — run not started.', 'warn');
+        restore(startBtn, previousLabel);
+        return;
+      }
+      const accepted = await apiPostJSON('/api/probe', { ...probeBody, trust_on_first_use: true });
+      if (accepted.ok) {
+        cleared.add(key);
+        pushToast('Host key trusted.', 'success');
+        restore(startBtn, previousLabel);
+        startBtn.click();
+        return;
+      }
+      pushToast(accepted.error || 'Failed to trust host key', 'error');
       restore(startBtn, previousLabel);
       return;
     }

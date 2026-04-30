@@ -155,5 +155,66 @@ export function form({ title = 'Form', fields = [], submitLabel = 'Save' } = {})
   });
 }
 
+// hostKeyConsent — purpose-built modal for "trust this server's host key?"
+//
+// Two modes selected by which fingerprint is supplied:
+//   - newFingerprint only          → first-time-seen flow (low friction)
+//   - newFingerprint + oldFingerprint → key-CHANGED flow (high friction,
+//     red Accept button, MITM warning)
+//
+// Resolves to true (Accept), false (Cancel) — never throws.
+export function hostKeyConsent({ host, port, newFingerprint, oldFingerprint = '' } = {}) {
+  return new Promise((resolve) => {
+    const changed = !!oldFingerprint;
+    const title = changed ? 'Host key has CHANGED' : 'Trust this host key?';
+    const okLabel = changed ? 'Accept the new key' : 'Trust and continue';
+    const headline = changed
+      ? `The SFTP server at <strong class="mono">${escapeHTML(host)}:${escapeHTML(String(port))}</strong> presented a host key
+         <strong>different</strong> from the one previously trusted. This can mean a legitimate key
+         rotation — or a man-in-the-middle attack. Verify the new fingerprint out-of-band before accepting.`
+      : `The SFTP server at <strong class="mono">${escapeHTML(host)}:${escapeHTML(String(port))}</strong> presented a host
+         key not yet trusted by this app. Verify the fingerprint matches one given to you out-of-band.`;
+    const fpBlock = changed ? `
+      <div class="modal-fp-grid">
+        <div class="modal-fp-row">
+          <div class="modal-fp-label">Previously trusted</div>
+          <div class="modal-fp-value mono" data-role="fp-old">${escapeHTML(oldFingerprint)}</div>
+        </div>
+        <div class="modal-fp-row">
+          <div class="modal-fp-label">Newly presented</div>
+          <div class="modal-fp-value mono" data-role="fp-new">${escapeHTML(newFingerprint)}</div>
+        </div>
+      </div>` : `
+      <div class="modal-fp-grid">
+        <div class="modal-fp-row">
+          <div class="modal-fp-label">SHA-256 fingerprint</div>
+          <div class="modal-fp-value mono" data-role="fp-new">${escapeHTML(newFingerprint)}</div>
+        </div>
+      </div>`;
+
+    const bd = makeBackdrop();
+    bd.dataset.modal = 'host-key-consent';
+    bd.dataset.danger = changed ? '1' : '0';
+    bd.innerHTML = `
+      <div class="modal-panel modal-panel-wide" role="dialog" aria-modal="true" aria-label="${escapeAttr(title)}">
+        <div class="modal-head ${changed ? 'modal-head-danger' : ''}">${escapeHTML(title)}</div>
+        <div class="modal-body">
+          <p class="modal-message" style="white-space:normal">${headline}</p>
+          ${fpBlock}
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn btn-ghost" data-role="cancel">Cancel</button>
+          <button type="button" class="btn ${changed ? 'btn-danger' : 'btn-primary'}" data-role="primary">${escapeHTML(okLabel)}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(bd);
+    const close = (val) => { detach(); bd.remove(); resolve(val); };
+    const detach = trap(bd, () => close(false));
+    bd.querySelector('[data-role="cancel"]').addEventListener('click', () => close(false));
+    bd.querySelector('[data-role="primary"]').addEventListener('click', () => close(true));
+    bd.addEventListener('click', (ev) => { if (ev.target === bd) close(false); });
+  });
+}
+
 function escapeHTML(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function escapeAttr(s) { return String(s).replace(/"/g, '&quot;'); }

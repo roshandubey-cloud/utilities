@@ -37,6 +37,6 @@ test('quick checks panel — empty state', async ({ page }) => {
 
 test('runs-history empty state', async ({ page }) => {
   await page.goto('/');
-  await page.locator('[data-action="view"][data-view="history"]').click();
+  await page.locator('[data-action="view"][data-view="runs"]').click();
   await page.locator('[data-component="runs-history"]').screenshot({ path: 'playwright-report/history-empty.png' });
 });

@@ -37,8 +37,11 @@ test('records / live activity panel exists in Workbench view', async ({ page }) 
   await expect(page.locator('[data-component="records"]')).toBeVisible();
 });
 
-test('runs-history panel renders in History view', async ({ page }) => {
-  await page.locator('[data-action="view"][data-view="history"]').click();
+test('Runs view renders both the about-to-run plan and the runs-history list', async ({ page }) => {
+  await page.locator('[data-action="view"][data-view="runs"]').click();
+  // The merged Runs view stacks the review plan summary above the
+  // past-runs list; both must be present in the same view.
+  await expect(page.locator('.shell-main [data-view="runs"] [data-role="runs-plan"]')).toBeVisible();
   await expect(page.locator('[data-component="runs-history"]')).toBeVisible();
 });
 

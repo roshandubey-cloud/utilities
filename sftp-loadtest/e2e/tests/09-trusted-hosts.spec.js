@@ -18,7 +18,7 @@ test('Trust nav row is always reachable from the sidebar', async ({ page }) => {
   // behind a wizard step. Now it's a top-level sidebar nav entry that
   // stays visible across every other view.
   await page.goto('/');
-  for (const v of ['workbench', 'configure', 'history', 'cluster']) {
+  for (const v of ['workbench', 'configure', 'runs', 'cluster']) {
     await page.locator(`[data-action="view"][data-view="${v}"]`).click();
     await expect(page.locator('[data-action="view"][data-view="trust"]')).toBeVisible();
   }

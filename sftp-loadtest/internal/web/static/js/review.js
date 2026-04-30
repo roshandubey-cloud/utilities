@@ -1,15 +1,18 @@
-// review.js — Review sidebar nav view.
+// review.js — "About to run" plan section, top of the merged Runs view.
 //
 // Renders a summary of the configured run so the operator can confirm
 // before clicking Start. Pulls values from the legacy form via
 // window.__sftplBuildRequestBody (the same hook saved-configs uses).
 // Refreshed every 1.5 s so changes in Configure / Schedule reflect
 // immediately when the operator switches views.
+//
+// Mounts in [data-role="runs-plan"], which the shell places ABOVE the
+// past-runs history panel inside the Runs view.
 
 const REFRESH_MS = 1500;
 
 export function mountReview() {
-  const view = document.querySelector('.shell-main [data-view="review"]');
+  const view = document.querySelector('.shell-main [data-view="runs"] [data-role="runs-plan"]');
   if (!view || view.dataset.reviewMounted) return;
   view.dataset.reviewMounted = '1';
 
@@ -26,8 +29,8 @@ export function mountReview() {
       <section class="review-view-panel">
         <header class="review-view-head">
           <div>
-            <div class="review-view-title">Review</div>
-            <div class="review-view-sub">Confirm the configuration; the topbar Run button starts the test.</div>
+            <div class="review-view-title">About to run</div>
+            <div class="review-view-sub">Confirm the configuration; the topbar Run button starts the test. Past runs are listed below.</div>
           </div>
           <div class="review-view-actions">
             ${sched
@@ -93,15 +96,8 @@ export function mountReview() {
           </div>
         </div>
 
-        <div class="review-view-footer">
-          <button type="button" class="btn btn-ghost" id="reviewBackBtn">Back to Configure</button>
-        </div>
       </section>`;
 
-    view.querySelector('#reviewBackBtn')?.addEventListener('click', () => {
-      const cfgBtn = document.querySelector('[data-action="view"][data-view="configure"]');
-      cfgBtn?.click();
-    });
     view.querySelector('#reviewStartBtn')?.addEventListener('click', () => {
       document.getElementById('startBtn')?.click();
     });

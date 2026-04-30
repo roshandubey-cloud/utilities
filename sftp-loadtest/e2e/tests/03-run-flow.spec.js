@@ -108,7 +108,7 @@ test.describe('full run lifecycle', () => {
     }, null, { timeout: 15_000, polling: 500 });
 
     // Navigate to History view to see the persisted run card.
-    await page.locator('[data-action="view"][data-view="history"]').click();
+    await page.locator('[data-action="view"][data-view="runs"]').click();
     const history = page.locator('[data-component="runs-history"]');
     await expect(history).toBeVisible();
     await expect(history).toContainText(/run-/i, { timeout: 12_000 });

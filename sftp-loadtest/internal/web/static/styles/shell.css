@@ -150,16 +150,22 @@ body.wails-desktop .shell-topbar .segmented { -webkit-app-region: no-drag; }
 .shell-topbar-actions { display: inline-flex; align-items: center; gap: var(--sp-2); }
 .shell-topbar-run-controls { display: inline-flex; align-items: center; gap: var(--sp-1); }
 
-/* Topbar buttons — sentence case, optional icon, no caps. */
+/* Topbar buttons — sentence case, optional icon, no caps.
+   Override the global .btn-icon (which forces 32×32 square) — these
+   carry text labels (Run / Stop) and must size to content. */
 .shell-topbar .btn-icon {
   appearance: none;
   border: var(--bw-1) solid var(--border-weak);
   background: var(--surface);
   color: var(--text-secondary);
   border-radius: var(--r-2);
-  padding: 5px 10px;
+  width: auto;
+  height: 30px;
+  padding: 0 12px;
   font-size: var(--fs-12);
   font-weight: var(--fw-medium);
+  white-space: nowrap;
+  flex-shrink: 0;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -526,6 +532,11 @@ body.wails-desktop .shell-topbar .segmented { -webkit-app-region: no-drag; }
    hide it visually. */
 .shell-mounted [data-component="wizard"] { display: none !important; }
 
+/* The legacy "Configure your run" cue banner sat directly under the
+   wizard ribbon. With the sidebar carrying Configure / Schedule /
+   Review as first-class nav items, the banner is duplicated chrome. */
+.shell-mounted .legacy-banner { display: none !important; }
+
 /* ============================================================================
    Workbench charts — pure-SVG sparklines mounted above the records panel.
    ============================================================================ */
@@ -699,6 +710,29 @@ body.wails-desktop .shell-topbar .segmented { -webkit-app-region: no-drag; }
 }
 .modal-foot .btn-danger:hover { filter: brightness(1.08); }
 
+/* Wider variant — used by host-key consent so long fingerprints fit. */
+.modal-panel-wide { width: 600px; }
+.modal-head-danger { color: var(--danger-fg-soft); }
+.modal-fp-grid { display: flex; flex-direction: column; gap: var(--sp-3); }
+.modal-fp-row { display: flex; flex-direction: column; gap: 4px; }
+.modal-fp-label {
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-loose);
+  font-weight: var(--fw-semibold);
+}
+.modal-fp-value {
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-12);
+  color: var(--text-primary);
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
 /* ============================================================================
    Review view — main pane summary of the configured run.
    ============================================================================ */
@@ -728,6 +762,8 @@ body.wails-desktop .shell-topbar .segmented { -webkit-app-region: no-drag; }
   border: var(--bw-1) solid var(--border-weak);
   border-radius: var(--r-2);
   padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  min-width: 0;
+  overflow: hidden;
 }
 .review-view-card-title {
   font-size: var(--fs-12);
@@ -742,8 +778,15 @@ body.wails-desktop .shell-topbar .segmented { -webkit-app-region: no-drag; }
   margin: 0;
   font-size: var(--fs-13);
 }
-.review-view-defs dt { color: var(--text-tertiary); font-weight: var(--fw-medium); }
-.review-view-defs dd { margin: 0; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.review-view-defs dt { color: var(--text-tertiary); font-weight: var(--fw-medium); min-width: 0; }
+.review-view-defs dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .review-view-empty { font-size: var(--fs-12); color: var(--text-tertiary); }
 .review-view-footer { margin-top: var(--sp-3); display: flex; justify-content: flex-start; }
 

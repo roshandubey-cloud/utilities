@@ -55,7 +55,7 @@ test.describe('runs-history card detail', () => {
 
   test('completed run shows success rate, throughput, and user counts', async ({ page }) => {
     await runOnce(page);
-    await page.locator('[data-action="view"][data-view="history"]').click();
+    await page.locator('[data-action="view"][data-view="runs"]').click();
     const card = page.locator('[data-component="runs-history"] .runs-history-card').first();
     await expect(card).toBeVisible({ timeout: 15_000 });
     // Success-rate stat block — must show a percentage and "ok / failed".
@@ -73,7 +73,7 @@ test.describe('runs-history card detail', () => {
 
   test('latency panel renders p50/p95/p99/p99.9 after a real run', async ({ page }) => {
     await runOnce(page);
-    await page.locator('[data-action="view"][data-view="history"]').click();
+    await page.locator('[data-action="view"][data-view="runs"]').click();
     const card = page.locator('[data-component="runs-history"] .runs-history-card').first();
     const lat = card.locator('.runs-history-latency');
     await expect(lat).toBeVisible({ timeout: 15_000 });
@@ -89,7 +89,7 @@ test.describe('runs-history card detail', () => {
 
   test('analyzer panel renders host-capacity infra peaks after a run', async ({ page }) => {
     await runOnce(page);
-    await page.locator('[data-action="view"][data-view="history"]').click();
+    await page.locator('[data-action="view"][data-view="runs"]').click();
     const card = page.locator('[data-component="runs-history"] .runs-history-card').first();
     const analysis = card.locator('.runs-history-analysis');
     await expect(analysis).toBeVisible({ timeout: 15_000 });
@@ -103,7 +103,7 @@ test.describe('runs-history card detail', () => {
 
   test('CSV download link points at the right run', async ({ page }) => {
     await runOnce(page);
-    await page.locator('[data-action="view"][data-view="history"]').click();
+    await page.locator('[data-action="view"][data-view="runs"]').click();
     const card = page.locator('[data-component="runs-history"] .runs-history-card').first();
     const csv = card.locator('a[download]').first();
     await expect(csv).toBeVisible();

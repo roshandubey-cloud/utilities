@@ -28,7 +28,7 @@ test.describe('full visual audit', () => {
     await page.screenshot({ path: 'playwright-report/audit-schedule.png', fullPage: true });
   });
 
-  test('review view', async ({ page }) => {
+  test('runs view (plan + empty history)', async ({ page }) => {
     await page.goto('/');
     await page.locator('[data-action="view"][data-view="configure"]').click();
     await page.locator('#conn-host').fill('sftp.example.com');
@@ -39,16 +39,9 @@ test.describe('full visual audit', () => {
     await ta.click();
     await ta.fill('user1,pass1,invoice*\nuser2,pass2,order*');
     await ta.blur();
-    await page.locator('[data-action="view"][data-view="review"]').click();
+    await page.locator('[data-action="view"][data-view="runs"]').click();
     await page.waitForTimeout(800);
-    await page.screenshot({ path: 'playwright-report/audit-review.png', fullPage: true });
-  });
-
-  test('history view (empty)', async ({ page }) => {
-    await page.goto('/');
-    await page.locator('[data-action="view"][data-view="history"]').click();
-    await page.waitForTimeout(800);
-    await page.screenshot({ path: 'playwright-report/audit-history.png', fullPage: true });
+    await page.screenshot({ path: 'playwright-report/audit-runs.png', fullPage: true });
   });
 
   test('cluster view (empty)', async ({ page }) => {

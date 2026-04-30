@@ -50,7 +50,7 @@ test('clicking Open on a runs-history card opens the detail pane', async ({ page
   }, null, { timeout: 15_000, polling: 500 });
 
   // History view holds the runs-history list.
-  await page.locator('[data-action="view"][data-view="history"]').click();
+  await page.locator('[data-action="view"][data-view="runs"]').click();
   const card = page.locator('[data-component="runs-history"] .runs-history-card').first();
   await expect(card).toBeVisible({ timeout: 15_000 });
   const openBtn = card.locator('button:has-text("Open")');

@@ -6,6 +6,7 @@
 
 import { apiPostJSON, apiFetch } from './api.js';
 import { pushToast } from './toast.js';
+import { hostKeyConsent } from './modal.js';
 
 const HISTORY_KEY = 'sftp-loadtest-conn-history-v1';
 const HISTORY_MAX = 8;
@@ -114,6 +115,61 @@ export function mountConnectionCard(rootSelector) {
       setIdle();
     });
   }
+  // setRenewal — the trust store already has a key for this host:port and
+  // the server presented a DIFFERENT one. Show both fingerprints with a
+  // red Accept that re-probes with accept_changed=true, allowing the
+  // operator to overwrite the stored key purely from the UI (no manual
+  // known_hosts editing).
+  function setRenewal(reply, host, port) {
+    resultEl.dataset.state = 'renewal';
+    const fpNew = reply.captured_fingerprint || '(unavailable)';
+    const fpOld = reply.captured_previous_fingerprint || '(unavailable)';
+    const target = reply.captured_for_host || host;
+    resultEl.innerHTML = `
+      <div class="probe-headline">${iconAlert()}<span>Host key has CHANGED</span></div>
+      <div class="help" style="white-space:normal">
+        The SFTP server at <strong class="mono">${escapeHTML(target)}:${port}</strong> presented a host key
+        <strong>different</strong> from the one previously trusted. This can mean a legitimate key rotation —
+        or a man-in-the-middle attack. Verify the new fingerprint out-of-band before accepting.
+      </div>
+      <div class="probe-fingerprint" data-variant="renewal">
+        <div class="eyebrow">Previously trusted</div>
+        <div data-role="fp-old">${escapeHTML(fpOld)}</div>
+        <div class="eyebrow" style="margin-top:var(--sp-2)">Newly presented</div>
+        <div data-role="fp-new">${escapeHTML(fpNew)}</div>
+      </div>
+      <div class="row" style="justify-content:flex-end;flex-wrap:wrap;gap:var(--sp-2);padding-top:var(--sp-2)">
+        <button class="btn btn-ghost"  type="button" data-role="renewal-cancel">Cancel</button>
+        <button class="btn btn-danger" type="button" data-role="renewal-accept">Accept the new key</button>
+      </div>`;
+    resultEl.querySelector('[data-role="renewal-accept"]').addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      submitEl.disabled = true;
+      try {
+        const body = { host, port, trust_on_first_use: true, accept_changed: true };
+        if (userEl.value) body.username = userEl.value;
+        if (passEl.value) body.password = passEl.value;
+        if (folderEl.value) body.folder = folderEl.value.trim();
+        const renewed = await apiPostJSON('/api/probe', body);
+        if (renewed.ok) {
+          setOk(renewed, host);
+          rememberConn(host, port);
+          pushToast(`New host key trusted for ${host}:${port}`, 'success');
+        } else {
+          setError(renewed.error || 'failed to accept new key', renewed.stage);
+          pushToast('Failed to accept new host key', 'error');
+        }
+      } catch (e) {
+        setError(e.message || String(e), null);
+      } finally {
+        submitEl.disabled = false;
+      }
+    });
+    resultEl.querySelector('[data-role="renewal-cancel"]').addEventListener('click', (ev) => {
+      ev.preventDefault();
+      setIdle();
+    });
+  }
   function setOk(reply, host) {
     resultEl.dataset.state = 'ok';
     const stages = [
@@ -210,6 +266,12 @@ export function mountConnectionCard(rootSelector) {
         pushToast(`Connected to ${host}:${port}${reply.captured_fingerprint ? ' — host key added to known_hosts' : ''}`, 'success');
       } else if (reply.requires_consent) {
         setConsent(reply, host, port);
+      } else if (reply.requires_renewal) {
+        // Host key CHANGED — surface a high-friction modal showing both
+        // fingerprints. On Accept, re-probe with accept_changed=true so
+        // the trust store overwrites the old entry. Never edit the file
+        // from the backend without explicit operator opt-in.
+        setRenewal(reply, host, port);
       } else {
         setError(reply.error || 'unknown error', reply.stage);
         pushToast(`Connection failed${reply.stage ? ' at ' + reply.stage : ''}`, 'error');
