@@ -102,6 +102,29 @@ body.wails-desktop .shell-topbar input,
 body.wails-desktop .shell-topbar a,
 body.wails-desktop .shell-topbar .segmented { -webkit-app-region: no-drag; }
 
+/* Windows desktop — the OS native titlebar sits ABOVE our shell-topbar
+   (Wails does not hide it on Windows the way TitleBarHiddenInset hides
+   it on macOS). Mica + CustomTheme on the Wails side make the OS bar
+   the same colour as our canvas so the seam disappears, but we still
+   compensate inside the WebView:
+
+     - Drop the Mac-only 84px traffic-light reserve.
+     - Reserve the right-edge for the OS-level minimise/maximise/close
+       triplet (~135px) so our run-controls / theme-switcher don't
+       slide under them.
+     - Adopt Segoe UI Variable on Win11 explicitly — Inter is not a
+       system font on Windows and the cascade fallback to Segoe UI
+       (legacy) renders less crisply than Variable. */
+body.wails-windows .shell-topbar { padding-left: var(--sp-3); padding-right: 140px; }
+body.wails-windows {
+  --font-sans: "Segoe UI Variable Display", "Segoe UI", Inter, -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", "JetBrains Mono", "Fira Code", ui-monospace, Consolas, Menlo, monospace;
+}
+/* Linux gets Mac-tier typography preference (Inter falls back to Cantarell or DejaVu Sans). */
+body.wails-linux {
+  --font-sans: Inter, "Cantarell", "Ubuntu", "DejaVu Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
 .shell-topbar-brand {
   display: inline-flex;
   align-items: center;

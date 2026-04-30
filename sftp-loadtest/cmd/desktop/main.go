@@ -116,12 +116,38 @@ func main() {
 		},
 		Windows: &windows.Options{
 			// Workbench look on Windows: dark frame matches the canvas,
-			// no webview transparency (kills text rendering on dark theme),
 			// keep the close/minimize/maximize triplet visible.
-			DisableWindowIcon:    false,
+			DisableWindowIcon: false,
+			// WebView keeps an opaque body so text rendering doesn't
+			// suffer under dark theme; the OS-level Mica/Acrylic
+			// backdrop only renders BEHIND the window — see Translucent.
 			WebviewIsTransparent: false,
-			WindowIsTranslucent:  false,
+			WindowIsTranslucent:  true,
 			Theme:                windows.Dark,
+			// Mica gives Win11 a unified blurred chrome that adopts the
+			// app background — produces the same "single titlebar +
+			// shell" look the macOS HiddenInset titlebar provides on
+			// the Mac side. Win10 falls back to flat dark gracefully.
+			BackdropType: windows.Mica,
+			// CustomTheme paints the OS titlebar in the exact canvas
+			// colour so there's no seam where OS chrome ends and our
+			// shell topbar begins. Win expects BGR-packed int32
+			// (0x00BBGGRR). --canvas = #0d0e12 → R=0x0d, G=0x0e, B=0x12
+			// → BGR 0x120e0d.
+			CustomTheme: &windows.ThemeSettings{
+				DarkModeTitleBar:           0x120e0d,
+				DarkModeTitleBarInactive:   0x120e0d,
+				DarkModeTitleText:          0xeae8e0, // text-primary-ish, BGR
+				DarkModeTitleTextInactive:  0x808080,
+				DarkModeBorder:             0x120e0d,
+				DarkModeBorderInactive:     0x120e0d,
+				LightModeTitleBar:          0xf9f7f6, // matches light --canvas (~#f6f7f9 BGR)
+				LightModeTitleBarInactive:  0xf9f7f6,
+				LightModeTitleText:         0x2a170f,
+				LightModeTitleTextInactive: 0x808080,
+				LightModeBorder:            0xf9f7f6,
+				LightModeBorderInactive:    0xf9f7f6,
+			},
 		},
 		Linux: &linux.Options{
 			Icon: appIcon,
