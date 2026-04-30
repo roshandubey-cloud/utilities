@@ -32,6 +32,116 @@ export function mountConnectionCard(rootSelector) {
   const keyDisclosureEl = $('[data-role="key-disclosure"]');
   const privateKeyEl = $('[data-role="private-key"]');
   const privateKeyPassEl = $('[data-role="private-key-passphrase"]');
+  // Multi-protocol additions (v0.13.0). The picker drives port defaults
+  // and reveals/hides FTPS-only fields; the value is mirrored into the
+  // hidden #protocol input so legacy.buildRequestBody() can read it
+  // without having to know about the segmented control.
+  const protoPickerEl = $('[data-role="protocol-picker"]');
+  const protoValueEl  = $('[data-role="protocol-value"]');
+  const ftpsFieldsEl  = $('[data-role="ftps-fields"]');
+  const tlsModeEl     = $('[data-role="tls-mode-picker"]');
+  const tlsModeValEl  = $('[data-role="tls-mode-value"]');
+  const tlsSkipEl     = $('[data-role="tls-skip-verify"]');
+  const tlsServerEl   = $('[data-role="tls-server-name"]');
+
+  // Default ports per protocol/TLS-mode so flipping the picker doesn't
+  // leave the operator on a stale 22 against an FTP server.
+  function defaultPortFor(proto, tlsMode) {
+    if (proto === 'ftps' && tlsMode === 'implicit') return 990;
+    if (proto === 'ftp' || proto === 'ftps') return 21;
+    return 22;
+  }
+  // userEditedPort — once the operator types a non-default port we stop
+  // overwriting it on protocol switches. Reset by a Reset click.
+  let userEditedPort = false;
+  if (portEl) {
+    portEl.addEventListener('input', () => { userEditedPort = true; });
+  }
+
+  function getProtocol() { return (protoValueEl && protoValueEl.value) || 'sftp'; }
+  function getTLSMode()  { return (tlsModeValEl && tlsModeValEl.value) || 'explicit'; }
+
+  function syncProtocolUI() {
+    const proto = getProtocol();
+    if (ftpsFieldsEl) ftpsFieldsEl.hidden = proto !== 'ftps';
+    // Hide the SSH key disclosure for FTP/FTPS — keys aren't an SSH-only
+    // concept but the load tester only supports SSH key auth today.
+    if (keyDisclosureEl) keyDisclosureEl.style.display = proto === 'sftp' ? '' : 'none';
+    // The TOFU label talks about SSH host keys — surface a different hint
+    // for FTPS so it doesn't confuse the operator.
+    const tofuTextEl = root.querySelector('[data-role="tofu"] + .toggle-track + .toggle-text, [data-role="tofu"] ~ .toggle-text');
+    if (tofuTextEl) {
+      tofuTextEl.textContent = proto === 'ftps'
+        ? 'Trust this server cert on first connect (TOFU)'
+        : proto === 'sftp'
+          ? 'Auto-add server key on first connect (TOFU)'
+          : 'TOFU not applicable for plain FTP';
+    }
+    if (proto !== 'sftp' && proto !== 'ftps' && tofuEl) tofuEl.checked = false;
+    // Snap the port to the protocol default unless the operator has
+    // explicitly typed something. Keep their value otherwise.
+    if (portEl && !userEditedPort) {
+      portEl.value = String(defaultPortFor(proto, getTLSMode()));
+      portEl.dispatchEvent(new Event('input', { bubbles: true }));
+      portEl.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
+  function setProtocol(proto) {
+    if (!['sftp', 'ftp', 'ftps'].includes(proto)) proto = 'sftp';
+    if (protoValueEl) {
+      protoValueEl.value = proto;
+      protoValueEl.dispatchEvent(new Event('input', { bubbles: true }));
+      protoValueEl.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    if (protoPickerEl) {
+      protoPickerEl.querySelectorAll('button').forEach((b) => {
+        b.setAttribute('aria-pressed', b.dataset.value === proto ? 'true' : 'false');
+      });
+    }
+    syncProtocolUI();
+    // Notify any listeners (configure-redesign chip, saved-configs).
+    document.dispatchEvent(new CustomEvent('sftpl:protocol-change', { detail: { protocol: proto } }));
+  }
+
+  function setTLSMode(mode) {
+    if (!['explicit', 'implicit'].includes(mode)) mode = 'explicit';
+    if (tlsModeValEl) tlsModeValEl.value = mode;
+    if (tlsModeEl) {
+      tlsModeEl.querySelectorAll('button').forEach((b) => {
+        b.setAttribute('aria-pressed', b.dataset.value === mode ? 'true' : 'false');
+      });
+    }
+    syncProtocolUI();
+  }
+
+  if (protoPickerEl) {
+    protoPickerEl.querySelectorAll('button').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        userEditedPort = false; // explicit protocol switch resets the override
+        setProtocol(btn.dataset.value);
+      });
+    });
+  }
+  if (tlsModeEl) {
+    tlsModeEl.querySelectorAll('button').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        userEditedPort = false;
+        setTLSMode(btn.dataset.value);
+      });
+    });
+  }
+
+  // Expose for legacy.js / saved-configs to call when restoring a config.
+  window.__sftplSetProtocol = setProtocol;
+  window.__sftplSetTLSMode  = setTLSMode;
+  window.__sftplGetProtocol = getProtocol;
+  window.__sftplGetTLSMode  = getTLSMode;
+
+  // Initial paint.
+  syncProtocolUI();
 
   // ---------- recent connections ----------
   function readHistory() {
@@ -153,6 +263,13 @@ export function mountConnectionCard(rootSelector) {
         if (userEl.value) body.username = userEl.value;
         if (passEl.value) body.password = passEl.value;
         if (folderEl.value) body.folder = folderEl.value.trim();
+        const proto = getProtocol();
+        body.protocol = proto;
+        if (proto === 'ftps') {
+          body.tls_mode = getTLSMode();
+          if (tlsSkipEl && tlsSkipEl.checked) body.tls_insecure_skip_verify = true;
+          if (tlsServerEl && tlsServerEl.value.trim()) body.tls_server_name = tlsServerEl.value.trim();
+        }
         const renewed = await apiPostJSON('/api/probe', body);
         if (renewed.ok) {
           setOk(renewed, host);
@@ -186,7 +303,8 @@ export function mountConnectionCard(rootSelector) {
     }).join('');
     let fp = '';
     if (reply.captured_fingerprint) {
-      fp = `<div class="probe-fingerprint">Captured new host key for <strong>${escapeHTML(reply.captured_for_host || host)}</strong> · ${escapeHTML(reply.captured_fingerprint)}</div>`;
+      const label = reply.tls_fingerprint ? 'TLS certificate fingerprint' : 'Captured new host key';
+      fp = `<div class="probe-fingerprint" data-role="captured-fingerprint">${escapeHTML(label)} for <strong>${escapeHTML(reply.captured_for_host || host)}</strong> · <span class="mono">${escapeHTML(reply.captured_fingerprint)}</span></div>`;
     }
     resultEl.innerHTML = `
       <div class="probe-headline">${iconCheck()}<span>Connection OK${reply.note ? ' — ' + escapeHTML(reply.note) : ''}</span></div>
@@ -261,6 +379,16 @@ export function mountConnectionCard(rootSelector) {
       if (passEl.value) body.password = passEl.value;
       if (folderEl.value) body.folder = folderEl.value.trim();
       if (forceTOFU || (tofuEl && tofuEl.checked)) body.trust_on_first_use = true;
+      // Multi-protocol fields. Always send the picker value (defaults to
+      // "sftp"), and only attach TLS knobs when FTPS is selected so the
+      // probe handler doesn't see noise on SFTP requests.
+      const proto = getProtocol();
+      body.protocol = proto;
+      if (proto === 'ftps') {
+        body.tls_mode = getTLSMode();
+        if (tlsSkipEl && tlsSkipEl.checked) body.tls_insecure_skip_verify = true;
+        if (tlsServerEl && tlsServerEl.value.trim()) body.tls_server_name = tlsServerEl.value.trim();
+      }
       // Public-key auth: only attach when the disclosure is OPEN and the
       // PEM is non-empty. A closed disclosure with stale text in it must
       // not silently switch the probe to key auth.

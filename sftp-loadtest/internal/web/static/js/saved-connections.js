@@ -37,6 +37,12 @@ export function saveEntry(entry) {
     username: entry.username || '',
     password: entry.savePassword ? (entry.password || '') : '',
     has_password: !!entry.savePassword && !!entry.password,
+    // Multi-protocol fields (v0.13.0). Optional — older entries without
+    // these load identically to today as SFTP.
+    protocol: entry.protocol || 'sftp',
+    tls_mode: entry.tls_mode || '',
+    tls_server_name: entry.tls_server_name || '',
+    tls_insecure_skip_verify: !!entry.tls_insecure_skip_verify,
     saved_at: new Date().toISOString(),
   };
   if (idx >= 0) list[idx] = stored;
@@ -68,6 +74,18 @@ export function applyEntry(entry) {
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
   };
+  // Multi-protocol restore (v0.13.0). Apply BEFORE host/port so the port
+  // default the picker would write doesn't overwrite the saved port.
+  if (typeof window !== 'undefined' && typeof window.__sftplSetProtocol === 'function') {
+    window.__sftplSetProtocol(entry.protocol || 'sftp');
+  }
+  if (entry.tls_mode && typeof window !== 'undefined' && typeof window.__sftplSetTLSMode === 'function') {
+    window.__sftplSetTLSMode(entry.tls_mode);
+  }
+  const tlsSkip = document.getElementById('tls_skip_verify');
+  if (tlsSkip) tlsSkip.checked = !!entry.tls_insecure_skip_verify;
+  const tlsServer = document.getElementById('tls_server_name');
+  if (tlsServer) tlsServer.value = entry.tls_server_name || '';
   set('conn-host', entry.host);
   set('conn-port', entry.port);
   set('conn-user', entry.username || '');
@@ -105,6 +123,11 @@ export async function promptSave() {
     name: out.name.trim() || `${host}:${port}`,
     host, port, username, password,
     savePassword: password && /^y(es)?$/i.test((out.savePassword || '').trim()),
+    // Multi-protocol fields (v0.13.0).
+    protocol: (document.getElementById('protocol')?.value || 'sftp'),
+    tls_mode: (document.getElementById('tls_mode')?.value || ''),
+    tls_server_name: (document.getElementById('tls_server_name')?.value || '').trim(),
+    tls_insecure_skip_verify: !!document.getElementById('tls_skip_verify')?.checked,
   };
   const stored = saveEntry(entry);
   if (stored) {

@@ -15,6 +15,7 @@ import { generateKeyPairSync } from 'node:crypto';
 const ROOT = join(import.meta.dirname, '..');
 const BIN_WEB = join(import.meta.dirname, '.bin/sftp-loadtest');
 const BIN_MOCK = join(import.meta.dirname, '.bin/mockserver');
+const BIN_MOCK_FTP = join(import.meta.dirname, '.bin/mockftpserver');
 const REPORTS_DIR = mkdtempSync(join(tmpdir(), 'sftpl-e2e-reports-'));
 const PIDS_FILE = join(import.meta.dirname, '.e2e-pids');
 
@@ -78,6 +79,7 @@ function generateTestKey() {
 
 export default async function globalSetup() {
   buildBinary('mockserver', './cmd/mockserver', BIN_MOCK);
+  buildBinary('mockftpserver', './cmd/mockftpserver', BIN_MOCK_FTP);
   buildBinary('web', '.', BIN_WEB);
 
   // Generate a per-suite ed25519 keypair so the new key-auth specs have
@@ -94,6 +96,27 @@ export default async function globalSetup() {
   mock.stderr.on('data', (b) => process.stderr.write(`[mock] ${b}`));
   await waitForTcp('127.0.0.1', 22020);
 
+  // Plain FTP + AUTH-TLS (explicit FTPS) on 127.0.0.1:22021. The
+  // implicit-FTPS listener piggy-backs on the same process at 22022 so
+  // the e2e suite has all three v0.13.0 transports without a third
+  // child process.
+  console.log('[setup] starting mock FTP/FTPS on 127.0.0.1:22021 (+ implicit on 22022)...');
+  const mockftp = spawn(
+    BIN_MOCK_FTP,
+    [
+      '-addr', '127.0.0.1:22021',
+      '-trackid-delay', '50ms',
+      '-explicit-tls',
+      '-implicit-tls',
+      '-implicit-addr', '127.0.0.1:22022',
+    ],
+    { stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+  mockftp.stdout.on('data', (b) => process.stdout.write(`[mockftp] ${b}`));
+  mockftp.stderr.on('data', (b) => process.stderr.write(`[mockftp] ${b}`));
+  await waitForTcp('127.0.0.1', 22021);
+  await waitForTcp('127.0.0.1', 22022);
+
   console.log('[setup] starting web on 127.0.0.1:18080...');
   const web = spawn(
     BIN_WEB,
@@ -104,14 +127,14 @@ export default async function globalSetup() {
   web.stderr.on('data', (b) => process.stderr.write(`[web] ${b}`));
   await waitForHealth('http://127.0.0.1:18080/healthz');
 
-  globalThis.__SFTPL_PROCS = { mock, web, reportsDir: REPORTS_DIR };
+  globalThis.__SFTPL_PROCS = { mock, mockftp, web, reportsDir: REPORTS_DIR };
   globalThis.__SFTPL_TESTKEY = testKey;
   // Forward the PEM into the per-test process via env. globalThis vars
   // set in global-setup don't reach worker processes — Playwright forks
   // a worker per file — so specs read process.env.SFTPL_TESTKEY_PEM.
   process.env.SFTPL_TESTKEY_PEM = testKey.pem;
   process.env.SFTPL_TESTKEY_PATH = testKey.path;
-  writeFileSync(PIDS_FILE, `mock=${mock.pid}\nweb=${web.pid}\nreports=${REPORTS_DIR}\nkey=${testKey.path}\n`);
+  writeFileSync(PIDS_FILE, `mock=${mock.pid}\nmockftp=${mockftp.pid}\nweb=${web.pid}\nreports=${REPORTS_DIR}\nkey=${testKey.path}\n`);
   console.log(`[setup] reports dir: ${REPORTS_DIR}`);
   console.log('[setup] ready.');
 }

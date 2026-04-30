@@ -446,6 +446,29 @@ func (c *Client) Download(remotePath string) (int64, error) {
 	return io.Copy(io.Discard, f)
 }
 
+// Open returns the remote file as an io.ReadCloser. Used by the protocol
+// abstraction's SFTP wrapper so callers that want the bytes (not just a
+// throughput count) have a uniform interface across SFTP/FTP/FTPS.
+func (c *Client) Open(remotePath string) (io.ReadCloser, error) {
+	f, err := c.sftp.Open(remotePath)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", remotePath, err)
+	}
+	return f, nil
+}
+
+// Stat returns os.FileInfo for the remote path. Wraps pkg/sftp's Stat so
+// the protocol-neutral wrapper can satisfy Conn.Stat.
+func (c *Client) Stat(remotePath string) (os.FileInfo, error) {
+	return c.sftp.Stat(remotePath)
+}
+
+// Remove deletes a remote file. Same purpose as Stat — used by the
+// protocol-abstraction wrapper.
+func (c *Client) Remove(remotePath string) error {
+	return c.sftp.Remove(remotePath)
+}
+
 // Close tears down the keepalive goroutine and the SSH/SFTP connections.
 // Idempotent via sync.Once so concurrent closes from pool teardown + caller
 // paths don't double-close the ssh conn (which pkg/ssh tolerates, but it's

@@ -7,11 +7,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/sftpx"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/protocol"
 )
 
 // Watcher polls one remote folder per user and matches uploaded basenames
-// to their server-renamed "<basename>#<trackid>" form.
+// to their server-renamed "<basename>#<trackid>" form. Protocol-agnostic
+// since v0.13.0 — the opener returns a protocol.Conn so SFTP, FTP and
+// FTPS routes all share this code.
 type Watcher struct {
 	poll    time.Duration
 	timeout time.Duration
@@ -22,8 +24,8 @@ type Watcher struct {
 	results  chan Result
 
 	clientsMu sync.Mutex
-	clients   map[string]*sftpx.Client // key = user
-	opener    func(user string) (*sftpx.Client, error)
+	clients   map[string]protocol.Conn // key = user
+	opener    func(user string) (protocol.Conn, error)
 }
 
 type entry struct {
@@ -41,14 +43,14 @@ type Result struct {
 	TimedOut    bool
 }
 
-func New(folder string, poll, timeout time.Duration, opener func(user string) (*sftpx.Client, error)) *Watcher {
+func New(folder string, poll, timeout time.Duration, opener func(user string) (protocol.Conn, error)) *Watcher {
 	return &Watcher{
 		poll:    poll,
 		timeout: timeout,
 		folder:  folder,
 		pending: map[string]*entry{},
 		results: make(chan Result, 512),
-		clients: map[string]*sftpx.Client{},
+		clients: map[string]protocol.Conn{},
 		opener:  opener,
 	}
 }
@@ -115,7 +117,7 @@ func (w *Watcher) tick() {
 		// scanning the whole listing per pending entry. Critical at 100K+ fpm.
 		prefixMap := make(map[string]string, len(infos))
 		for _, fi := range infos {
-			name := path.Base(fi.Name())
+			name := path.Base(fi.Name)
 			if idx := strings.IndexByte(name, '#'); idx > 0 {
 				prefixMap[name[:idx]] = name[idx+1:]
 			}
@@ -137,7 +139,7 @@ func (w *Watcher) tick() {
 	}
 }
 
-func (w *Watcher) getClient(user string) (*sftpx.Client, error) {
+func (w *Watcher) getClient(user string) (protocol.Conn, error) {
 	w.clientsMu.Lock()
 	c, ok := w.clients[user]
 	w.clientsMu.Unlock()

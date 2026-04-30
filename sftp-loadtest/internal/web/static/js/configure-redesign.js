@@ -419,7 +419,10 @@ export function mountConfigureRedesign() {
     const lu = csvCount(cfg.large_users_csv);    if (lu) userParts.push(`${lu}l`);
     const du = csvCount(cfg.download_users_csv); if (du) userParts.push(`${du}d`);
     const userText = userParts.length ? userParts.join(' · ') : '0';
+    const proto = (cfg.protocol || 'sftp').toLowerCase();
     defs.innerHTML = `
+      <span class="cfg-chip" data-role="chip-proto"><span class="cfg-chip-key">proto</span>
+        <span class="cfg-chip-val">${escapeHTML(proto)}</span></span>
       <span class="cfg-chip" data-role="chip-target"><span class="cfg-chip-key">target</span>
         <span class="cfg-chip-val mono">${escapeHTML((cfg.host || '—'))}:${escapeHTML(String(cfg.port || ''))}</span></span>
       <span class="cfg-chip"><span class="cfg-chip-key">folder</span>

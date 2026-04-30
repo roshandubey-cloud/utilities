@@ -1,10 +1,17 @@
 # sftp-loadtest
 
-A lightweight, production-grade SFTP load-testing tool with a built-in web
-UI. Designed to be the kind of tool you can hand to a client and trust on
-a 24-hour run against their production SFTP server without it lying to you,
-running away with memory, or going silently into the weeds when the network
-hiccups.
+A lightweight, production-grade SFTP / FTP / FTPS load-testing tool with a
+built-in web UI. Designed to be the kind of tool you can hand to a client
+and trust on a 24-hour run against their production server without it lying
+to you, running away with memory, or going silently into the weeds when the
+network hiccups.
+
+> **v0.13.0 — multi-protocol.** FTP and FTPS join SFTP. The protocol picker
+> sits at the top of Configure → Target; switching to FTPS reveals a TLS-mode
+> segmented (Explicit AUTH TLS / Implicit-from-byte-0) and a self-signed-cert
+> trust toggle. All tracking, watcher, download and CSV plumbing is
+> protocol-agnostic — the same load-test you ran against SFTP runs against
+> FTP/FTPS unchanged.
 
 - **~10 MB single static binary**, zero dependencies, runs on macOS / Linux / Windows.
 - **Sub-15 MB RSS at idle**, RAM stays flat over multi-hour high-FPM runs (streaming CSV writer).
@@ -295,6 +302,8 @@ yourself: `ulimit -n 16384` or `LimitNOFILE=16384` in a systemd unit.
 - Single concurrent run per process (run multiple processes on different ports for true parallelism, or use the Cluster view to fan-out across worker URLs).
 - Per-user SSH keys are a v2 follow-up — current shared-key support uses one PEM for all users in the run, which covers the single-test-identity case but not "each user has their own key" scenarios. Mix-and-match (some users password, some users key) is also v2.
 - No SSH-agent integration — paste a PEM, don't expect socket-based agent forwarding.
+- FTPS cert TOFU is fingerprint-captured today; the consent prompt + persisted cert store land in a follow-up. Use the "Trust self-signed cert" toggle in the meantime.
+- S3 / WebDAV / HTTP transports remain on the v2 roadmap.
 
 ## License
 

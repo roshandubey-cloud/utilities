@@ -42,6 +42,26 @@ type RunConfig struct {
 	// PrivateKeyPassphrase decrypts PrivateKeyPEM when the key is
 	// passphrase-protected. Ignored for unencrypted keys.
 	PrivateKeyPassphrase string
+
+	// Protocol picks the wire protocol the runner uses. Empty string is
+	// treated as "sftp" so configs saved before v0.13.0 keep loading.
+	// Valid: "sftp" | "ftp" | "ftps".
+	Protocol string `json:"protocol,omitempty"`
+
+	// TLSMode is meaningful only when Protocol == "ftps". "" / "explicit"
+	// = AUTH TLS upgrade on the standard port (21); "implicit" = TLS
+	// from byte 0 (canonical port 990).
+	TLSMode string `json:"tls_mode,omitempty"`
+
+	// TLSInsecureSkipVerify is the operator-supplied opt-in for self-
+	// signed test servers. Disables TLS verification when true; the UI
+	// gates this behind an explicit checkbox so it can never silently
+	// flip on.
+	TLSInsecureSkipVerify bool `json:"tls_insecure_skip_verify,omitempty"`
+
+	// TLSServerName is the SNI value sent during the FTPS handshake.
+	// Defaults to Host when empty.
+	TLSServerName string `json:"tls_server_name,omitempty"`
 }
 
 type NormalLoad struct {

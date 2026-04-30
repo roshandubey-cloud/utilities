@@ -25,6 +25,7 @@ import (
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/latency"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/persist"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/proc"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/protocol"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/report"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/runner"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/sftpx"
@@ -146,6 +147,12 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 		// (only used when the key PEM is encrypted).
 		PrivateKey       string `json:"private_key"`
 		Passphrase       string `json:"passphrase"`
+
+		// Protocol selects sftp / ftp / ftps. Empty = sftp (back-compat).
+		Protocol              string `json:"protocol"`
+		TLSMode               string `json:"tls_mode"`
+		TLSInsecureSkipVerify bool   `json:"tls_insecure_skip_verify"`
+		TLSServerName         string `json:"tls_server_name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -173,6 +180,17 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 	}
 	out["tcp_ms"] = time.Since(t0).Milliseconds()
 	conn.Close()
+
+	// Protocol routing. Empty/"sftp" falls through to the existing SSH+SFTP
+	// path so behaviour for SFTP probes is byte-identical to v0.12. FTP and
+	// FTPS short-circuit to a separate handler that handles their own
+	// connect/auth and surfaces a generic "connect_ms" stage timing.
+	proto := protocol.Normalize(req.Protocol)
+	out["protocol"] = string(proto)
+	if proto == protocol.FTP || proto == protocol.FTPS {
+		s.probeFTP(w, out, proto, req.Host, req.Port, req.Username, req.Password, req.Folder, req.TLSMode, req.TLSInsecureSkipVerify, req.TLSServerName)
+		return
+	}
 
 	// If no creds given, stop here — TCP-only probe.
 	if req.Username == "" {
@@ -360,6 +378,79 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
+// probeFTP runs an FTP / FTPS connect+login+optional-list against the
+// supplied target. Same JSON shape as the SFTP path: per-stage timings
+// (connect_ms / list_ms), error message, plus the captured TLS leaf-cert
+// fingerprint when the protocol is FTPS so the UI can drive cert TOFU.
+func (s *Server) probeFTP(w http.ResponseWriter, out map[string]any, proto protocol.Protocol, host string, port int, user, pass, folder, tlsMode string, insecureSkipVerify bool, tlsServerName string) {
+	if user == "" {
+		out["ok"] = true
+		out["stage"] = "tcp"
+		out["note"] = "TCP only — supply username + password to verify FTP login"
+		writeJSON(w, out)
+		return
+	}
+	t1 := time.Now()
+	var capturedFP string
+	dialOpts := protocol.DialOpts{
+		Host:               host,
+		Port:               port,
+		User:               user,
+		Pass:               pass,
+		TLSMode:            protocol.ParseTLSMode(tlsMode),
+		InsecureSkipVerify: insecureSkipVerify,
+		TLSServerName:      tlsServerName,
+		TLSCaptureCallback: func(fp string) { capturedFP = fp },
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	c, err := protocol.Dial(ctx, proto, dialOpts)
+	out["connect_ms"] = time.Since(t1).Milliseconds()
+	// Surface ssh_sftp_ms too so the legacy stages widget renders something
+	// meaningful even when the operator doesn't switch labels in the UI.
+	out["ssh_sftp_ms"] = out["connect_ms"]
+	if err != nil {
+		log.Printf("probe %s://%s:%d user=%s: %v", proto, host, port, user, err)
+		out["stage"] = "connect"
+		out["error"] = friendlyProbeError("ssh_or_sftp", err)
+		if capturedFP != "" {
+			out["captured_fingerprint"] = capturedFP
+			out["captured_for_host"] = host
+			out["tls_fingerprint"] = capturedFP
+		}
+		writeJSON(w, out)
+		return
+	}
+	defer c.Close()
+	if proto == protocol.FTPS {
+		if cert := protocol.TLSPeerCertificate(c); cert != nil {
+			fp := protocol.Fingerprint(cert)
+			out["captured_fingerprint"] = fp
+			out["captured_for_host"] = host
+			out["tls_fingerprint"] = fp
+		} else if capturedFP != "" {
+			out["captured_fingerprint"] = capturedFP
+			out["captured_for_host"] = host
+			out["tls_fingerprint"] = capturedFP
+		}
+	}
+	if folder != "" {
+		t2 := time.Now()
+		_, lerr := c.List(folder)
+		out["list_ms"] = time.Since(t2).Milliseconds()
+		if lerr != nil {
+			log.Printf("probe %s://%s:%d list %q: %v", proto, host, port, folder, lerr)
+			out["stage"] = "list"
+			out["error"] = friendlyProbeError("list", lerr)
+			writeJSON(w, out)
+			return
+		}
+	}
+	out["ok"] = true
+	out["stage"] = "complete"
+	writeJSON(w, out)
+}
+
 // /api/host — one-shot snapshot of the client machine's capacity. Called
 // once at UI load (and any time the operator wants to refresh) so testers
 // always see the real ceilings (FD limit, cores, RAM, NICs) of the box
@@ -516,6 +607,13 @@ type startReq struct {
 	TrackIDTimeoutS        int     `json:"track_id_timeout_seconds"`
 	MaxConsecutiveFailures int     `json:"max_consecutive_failures"`
 
+	// Protocol selects sftp / ftp / ftps. Empty = sftp (back-compat with
+	// configs saved before v0.13.0).
+	Protocol              string `json:"protocol,omitempty"`
+	TLSMode               string `json:"tls_mode,omitempty"`
+	TLSInsecureSkipVerify bool   `json:"tls_insecure_skip_verify,omitempty"`
+	TLSServerName         string `json:"tls_server_name,omitempty"`
+
 	NormalEnabled     bool   `json:"normal_enabled"`
 	FilesPerMinute    int    `json:"files_per_minute"`
 	NormalMinMB       int    `json:"normal_min_mb"`
@@ -560,6 +658,10 @@ func buildRunConfig(req startReq) (*config.RunConfig, error) {
 		MaxConsecutiveFailures: req.MaxConsecutiveFailures,
 		PrivateKeyPEM:          req.PrivateKeyPEM,
 		PrivateKeyPassphrase:   req.PrivateKeyPassphrase,
+		Protocol:               req.Protocol,
+		TLSMode:                req.TLSMode,
+		TLSInsecureSkipVerify:  req.TLSInsecureSkipVerify,
+		TLSServerName:          req.TLSServerName,
 	}
 	if req.NormalEnabled {
 		cfg.Normal = &config.NormalLoad{
@@ -652,7 +754,12 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	// single dial with the first available user via the capture callback;
 	// if consent is needed, return the structured response so the UI can
 	// prompt and re-call /api/start once the operator accepts.
-	if s.getHostKeyStore() != nil || s.getKnownHostsPath() != "" {
+	//
+	// SFTP-only path: FTP and FTPS don't use SSH host keys. FTPS cert TOFU
+	// is exercised by the probe handler before the operator hits Start Run;
+	// re-checking it here would only add a redundant dial.
+	preflightProto := protocol.Normalize(req.Protocol)
+	if preflightProto == protocol.SFTP && (s.getHostKeyStore() != nil || s.getKnownHostsPath() != "") {
 		creds := firstStartCredential(req)
 		if creds.user != "" && req.Host != "" && req.Port > 0 {
 			// When the run is configured with a shared private key, the

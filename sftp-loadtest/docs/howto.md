@@ -30,7 +30,7 @@ instructions to the UI.
 
 ---
 
-## 2. Running a basic load test
+## 2. Running a basic load test (SFTP)
 
 1. In `[Configure → Target]`, fill **Host**, **Port**, **Folder**,
    **Username**, **Password**.
@@ -48,6 +48,50 @@ instructions to the UI.
 6. When the duration elapses (or you click `[Topbar → Stop]`), the run
    finishes. Click `[Configure → Action zone → Download CSV]` to grab the
    per-file report.
+
+---
+
+## 2a. Running a load test against an FTP server (v0.13.0)
+
+1. In `[Configure → Target → Quick checks]`, click the **FTP** segment of
+   the protocol picker. The port snaps to `21` automatically (don't worry —
+   if you've already typed a custom port, your value is preserved).
+2. Fill **Host**, **Username**, **Password**, and **Folder** as you would
+   for SFTP. The **Folder** convention (e.g. `inbox`) matches the FTP
+   server's working directory.
+3. Click **Test connection**. The probe runs `connect → AUTH (USER/PASS)
+   → list folder` and reports per-stage timings.
+4. The Workload card, user CSV, files-per-minute, parallelism — every
+   knob — works identically to SFTP. The track-id watcher polls the same
+   way; servers that already rename `foo.txt` → `foo.txt#<id>` are
+   detected without any FTP-specific tweak.
+5. Click **Run**. The slim run-summary chip reads `proto: ftp` while
+   the run is active.
+
+> The mock at `cmd/mockftpserver` (used by the test suite) is a 100-LOC
+> protocol implementation — handy for smoke-running the tool offline.
+
+---
+
+## 2b. Running against an FTPS server with cert TOFU (v0.13.0)
+
+1. In `[Configure → Target → Quick checks]`, click **FTPS** in the
+   protocol picker. Two FTPS-specific controls appear:
+   - **TLS mode** segmented — **Explicit** (AUTH TLS upgrade on the
+     standard port 21) or **Implicit** (TLS from byte 0, port 990). The
+     port snaps to the right default automatically.
+   - **Server name** — SNI override; defaults to the host you typed.
+   - **Trust self-signed cert** toggle — opt-in for lab servers whose
+     certs aren't anchored in your system trust store.
+2. Click **Test connection**. On success the OK card carries an extra
+   **TLS certificate fingerprint** chip with the SHA-256 of the server's
+   leaf cert. Verify out-of-band (e.g. against the cert your platform
+   team published) before running real load against the box.
+3. The fingerprint is also surfaced via `/api/probe` as `tls_fingerprint`,
+   so automated CI gates can pin it. The fingerprint store + UI consent
+   prompt for cert renewal is on the v0.14.x roadmap; for now the
+   "Trust self-signed cert" toggle is the operator's explicit gate.
+4. Click **Run**. The slim run-summary chip reads `proto: ftps`.
 
 ---
 

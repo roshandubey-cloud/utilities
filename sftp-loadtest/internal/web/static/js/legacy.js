@@ -678,9 +678,20 @@ function buildRequestBody() {
     privateKeyPEM = pkEl.value;
     if (pkPassEl && pkPassEl.value) privateKeyPass = pkPassEl.value;
   }
+  // Read the v0.13.0 multi-protocol fields. The picker drives a hidden
+  // #protocol input; FTPS-only knobs are read directly so empty values
+  // never leak as truthy strings into /api/start.
+  const protocol = (document.getElementById('protocol')?.value || 'sftp').toLowerCase();
+  const tlsMode = (document.getElementById('tls_mode')?.value || '').toLowerCase();
+  const tlsServerName = (document.getElementById('tls_server_name')?.value || '').trim();
+  const tlsSkipVerify = !!document.getElementById('tls_skip_verify')?.checked;
   return {
     host: $('host').value.trim(),
     port: parseInt($('port').value) || 22,
+    protocol,
+    tls_mode: protocol === 'ftps' ? tlsMode : '',
+    tls_server_name: protocol === 'ftps' ? tlsServerName : '',
+    tls_insecure_skip_verify: protocol === 'ftps' ? tlsSkipVerify : false,
     upload_folder: $('folder').value.trim(),
     parallel_streams: parseInt($('parallel').value) || 1,
     duration_hours: parseFloat($('duration').value) || 1,
@@ -768,9 +779,38 @@ function importConfigPayload(cfg) {
       el.dispatchEvent(new Event('change'));
     }
   };
+  // Multi-protocol restore (v0.13.0). Fall back to "sftp" so configs
+  // saved before the upgrade load identically to today.
+  const proto = (cfg.protocol || 'sftp').toLowerCase();
+  if (typeof window !== 'undefined' && typeof window.__sftplSetProtocol === 'function') {
+    window.__sftplSetProtocol(proto);
+  }
+  if (cfg.tls_mode && typeof window !== 'undefined' && typeof window.__sftplSetTLSMode === 'function') {
+    window.__sftplSetTLSMode(cfg.tls_mode);
+  }
+  const tlsSkip = document.getElementById('tls_skip_verify');
+  if (tlsSkip) tlsSkip.checked = !!cfg.tls_insecure_skip_verify;
+  const tlsServer = document.getElementById('tls_server_name');
+  if (tlsServer) tlsServer.value = cfg.tls_server_name || '';
   strSet('host', cfg.host);
   strSet('port', cfg.port);
   strSet('folder', cfg.upload_folder);
+  // Sync the Quick Checks visible inputs so the protocol picker doesn't
+  // silently leave a stale port behind. strSet alone targets the legacy
+  // #port hidden input; without an explicit change event the QC mirror
+  // doesn't pick up the new value.
+  if (cfg.host !== undefined) {
+    const ch = document.getElementById('conn-host');
+    if (ch) { ch.value = String(cfg.host || ''); ch.dispatchEvent(new Event('change', { bubbles: true })); }
+  }
+  if (cfg.port !== undefined) {
+    const cp = document.getElementById('conn-port');
+    if (cp) { cp.value = String(cfg.port || ''); cp.dispatchEvent(new Event('change', { bubbles: true })); }
+  }
+  if (cfg.upload_folder !== undefined) {
+    const cf = document.getElementById('conn-folder');
+    if (cf) { cf.value = String(cfg.upload_folder || ''); cf.dispatchEvent(new Event('change', { bubbles: true })); }
+  }
   strSet('parallel', cfg.parallel_streams);
   strSet('duration', cfg.duration_hours);
   strSet('poll', cfg.poll_seconds);

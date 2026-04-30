@@ -5,7 +5,8 @@ import { rmSync } from 'node:fs';
 export default async function globalTeardown() {
   const procs = globalThis.__SFTPL_PROCS;
   if (!procs) return;
-  for (const [name, p] of [['web', procs.web], ['mock', procs.mock]]) {
+  for (const [name, p] of [['web', procs.web], ['mock', procs.mock], ['mockftp', procs.mockftp]]) {
+    if (!p) continue;
     try {
       p.kill('SIGTERM');
     } catch { /* already gone */ }

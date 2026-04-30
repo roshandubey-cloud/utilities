@@ -22,6 +22,7 @@ import (
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/metrics"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/persist"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/proc"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/protocol"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/report"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/sftpx"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/trackid"
@@ -630,35 +631,55 @@ func (r *Run) ReportStreamPath() string {
 
 func (r *Run) DisabledUsers() []DisabledSnapshot { return r.disable.snapshot() }
 
-// poolSlot is one position in a user's connection pool. It holds the SSH
+// poolSlot is one position in a user's connection pool. It holds the
 // credentials so a dead/dropped client can be lazily redialed on the next
 // get(). Concurrent callers serialise through slot.mu — at worst, two
 // uploaders waiting on the same slot will redial it once between them.
 type poolSlot struct {
 	user, pass, host string
 	port             int
+	proto            protocol.Protocol // sftp / ftp / ftps
 	// auth, when non-empty, replaces the password fallback for every dial
 	// from this slot. Set when the run is configured with a shared
 	// PrivateKeyPEM — the parsed signer is reused across every slot of
 	// every user so we don't re-parse 50× per second on a 3000 fpm run.
+	// Only meaningful for SFTP.
 	auth []ssh.AuthMethod
+	// FTPS-only.
+	tlsMode            protocol.TLSMode
+	tlsInsecureSkip    bool
+	tlsServerName      string
 
 	mu     sync.Mutex
-	client *sftpx.Client
+	client protocol.Conn
+}
+
+// dialOpts builds the protocol.DialOpts for this slot.
+func (s *poolSlot) dialOpts() protocol.DialOpts {
+	return protocol.DialOpts{
+		Host:               s.host,
+		Port:               s.port,
+		User:               s.user,
+		Pass:               s.pass,
+		SSHAuth:            s.auth,
+		TLSMode:            s.tlsMode,
+		InsecureSkipVerify: s.tlsInsecureSkip,
+		TLSServerName:      s.tlsServerName,
+	}
 }
 
 // get returns a live client for this slot, redialing if needed. dialDur
 // is non-zero only when this call had to actually redial — callers feed
 // it into the dial-latency histogram so the cold-reconnect cost is
 // observable separately from steady-state upload latency.
-func (s *poolSlot) get() (client *sftpx.Client, dialDur time.Duration, err error) {
+func (s *poolSlot) get() (client protocol.Conn, dialDur time.Duration, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.client != nil {
 		return s.client, 0, nil
 	}
 	t0 := time.Now()
-	c, derr := sftpx.DialWithOpts(s.host, s.port, s.user, s.pass, sftpx.DialOpts{Auth: s.auth})
+	c, derr := protocol.Dial(context.Background(), s.proto, s.dialOpts())
 	if derr != nil {
 		return nil, time.Since(t0), derr
 	}
@@ -692,7 +713,7 @@ type clientPool struct {
 // in the same pool before giving up — a single dead slot doesn't stall the
 // user. Returns the dial duration on the slot that won (zero when the
 // slot was already warm) so callers can feed it into a latency histogram.
-func (p *clientPool) get() (*sftpx.Client, *poolSlot, time.Duration, error) {
+func (p *clientPool) get() (protocol.Conn, *poolSlot, time.Duration, error) {
 	p.mu.Lock()
 	n := len(p.slots)
 	if n == 0 {
@@ -792,9 +813,20 @@ func StartWithPersist(parent context.Context, cfg *config.RunConfig, reportsDir 
 		r.Report.SetStream(sw)
 	}
 
-	opener := func(user string) (*sftpx.Client, error) {
+	proto := protocol.Normalize(cfg.Protocol)
+	tlsMode := protocol.ParseTLSMode(cfg.TLSMode)
+	opener := func(user string) (protocol.Conn, error) {
 		pass := findPassword(cfg, user)
-		return sftpx.DialWithOpts(cfg.Host, cfg.Port, user, pass, sftpx.DialOpts{Auth: sharedAuth})
+		return protocol.Dial(ctx, proto, protocol.DialOpts{
+			Host:               cfg.Host,
+			Port:               cfg.Port,
+			User:               user,
+			Pass:               pass,
+			SSHAuth:            sharedAuth,
+			TLSMode:            tlsMode,
+			InsecureSkipVerify: cfg.TLSInsecureSkipVerify,
+			TLSServerName:      cfg.TLSServerName,
+		})
 	}
 	r.Watcher = trackid.New(cfg.UploadFolder, cfg.PollInterval, cfg.TrackIDTimeout, opener)
 
@@ -1051,17 +1083,28 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 	// clear on any List error so the NEXT tick redials. This keeps a
 	// multi-hour run alive across SSH idle-timeouts and transient drops
 	// without silently stalling this user's downloads.
-	var listClient *sftpx.Client
+	var listClient protocol.Conn
 	defer func() {
 		if listClient != nil {
 			listClient.Close()
 		}
 	}()
-	ensureList := func() (*sftpx.Client, error) {
+	proto := protocol.Normalize(r.Cfg.Protocol)
+	tlsMode := protocol.ParseTLSMode(r.Cfg.TLSMode)
+	ensureList := func() (protocol.Conn, error) {
 		if listClient != nil {
 			return listClient, nil
 		}
-		c, derr := sftpx.DialWithOpts(r.Cfg.Host, r.Cfg.Port, u.Username, u.Password, sftpx.DialOpts{Auth: r.sharedAuth})
+		c, derr := protocol.Dial(ctx, proto, protocol.DialOpts{
+			Host:               r.Cfg.Host,
+			Port:               r.Cfg.Port,
+			User:               u.Username,
+			Pass:               u.Password,
+			SSHAuth:            r.sharedAuth,
+			TLSMode:            tlsMode,
+			InsecureSkipVerify: r.Cfg.TLSInsecureSkipVerify,
+			TLSServerName:      r.Cfg.TLSServerName,
+		})
 		if derr != nil {
 			return nil, derr
 		}
@@ -1108,7 +1151,7 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 		// that preserves at least the marker substring.
 		filenameMode := r.Cfg.Download != nil && r.Cfg.Download.MatchMode == config.MatchModeFilename
 		for _, e := range entries {
-			name := e.Name()
+			name := e.Name
 			if _, done := seen[name]; done {
 				continue
 			}
@@ -1140,7 +1183,7 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 			result := report.DownloadResult{
 				DownloadUser: u.Username,
 				StartTime:    start,
-				AvailableAt:  e.ModTime(),
+				AvailableAt:  e.ModTime,
 			}
 			if err != nil {
 				result.EndTime = start
@@ -1148,7 +1191,7 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 				r.errCounts.inc("DOWNLOAD")
 				r.disable.onFailureFor(u.Username, "download", "DOWNLOAD", basename)
 			} else {
-				n, derr := c.Download(path.Join(folder, name))
+				n, derr := protocol.Drain(c, path.Join(folder, name))
 				result.EndTime = time.Now()
 				result.SizeBytes = n
 				if derr != nil {
@@ -1496,7 +1539,7 @@ func (r *Run) uploadOne(u config.UserCreds, size int64, kind string, intendedSta
 	if dialDur > 0 {
 		r.DialLatency.Add(dialDur)
 	}
-	n, stage, err := c.Upload(remote, generator.FastReader(size, content))
+	n, stage, err := c.Upload(remote, generator.FastReader(size, content), size)
 	end := time.Now()
 	rec.EndTime = end
 	if err != nil {
@@ -1560,16 +1603,22 @@ func buildPool(cfg *config.RunConfig, u config.UserCreds, size int, auth []ssh.A
 	if size < 1 {
 		size = 1
 	}
+	proto := protocol.Normalize(cfg.Protocol)
+	tlsMode := protocol.ParseTLSMode(cfg.TLSMode)
 	p := &clientPool{}
 	for i := 0; i < size; i++ {
 		slot := &poolSlot{
-			user: u.Username,
-			pass: u.Password,
-			host: cfg.Host,
-			port: cfg.Port,
-			auth: auth,
+			user:            u.Username,
+			pass:            u.Password,
+			host:            cfg.Host,
+			port:            cfg.Port,
+			proto:           proto,
+			auth:            auth,
+			tlsMode:         tlsMode,
+			tlsInsecureSkip: cfg.TLSInsecureSkipVerify,
+			tlsServerName:   cfg.TLSServerName,
 		}
-		c, err := sftpx.DialWithOpts(cfg.Host, cfg.Port, u.Username, u.Password, sftpx.DialOpts{Auth: auth})
+		c, err := protocol.Dial(context.Background(), proto, slot.dialOpts())
 		if err != nil {
 			p.closeAll()
 			return nil, err
