@@ -407,6 +407,18 @@ function wireViews(shell, main) {
 
 function setView(id, shell, main) {
   if (!VIEWS.find((v) => v.id === id)) id = 'workbench';
+  // Restore the main container — run-detail.js hides .shell-main when
+  // it opens a detail pane. Without this, a click on any sidebar nav
+  // row would silently no-op (view containers toggle inside an
+  // invisible main). Always force-restore + dismiss any sibling
+  // detail pane so primary nav is the universal escape hatch.
+  if (main.dataset.hidden === '1' || main.style.display === 'none') {
+    main.dataset.hidden = '0';
+    main.style.display = '';
+  }
+  document.querySelectorAll('.run-detail-view').forEach((el) => {
+    el.style.display = 'none';
+  });
   // Toggle aria-selected on rows.
   shell.querySelectorAll('[data-action="view"]').forEach((row) => {
     row.setAttribute('aria-selected', String(row.dataset.view === id));
