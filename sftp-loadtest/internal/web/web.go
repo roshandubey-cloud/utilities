@@ -585,6 +585,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/worker/spawn", s.handleWorkerSpawn)
 	mux.HandleFunc("/api/worker/despawn", s.handleWorkerDespawn)
 	mux.HandleFunc("/api/worker/spawned", s.handleWorkerSpawnedList)
+	mux.HandleFunc("/api/worker/preflight", s.handleWorkerPreflight)
+	mux.HandleFunc("/api/worker/probe", s.handleWorkerProbe)
 	return mux
 }
 

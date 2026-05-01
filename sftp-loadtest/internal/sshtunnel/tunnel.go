@@ -323,6 +323,157 @@ func buildAuth(opts SpawnOpts) ([]ssh.AuthMethod, error) {
 	return []ssh.AuthMethod{ssh.Password(opts.Password)}, nil
 }
 
+// PreflightResult is what Preflight returns — a structured snapshot of
+// "can the master actually do this?" answered before the operator
+// commits to a full Spawn. Each field is true iff the corresponding
+// remote check came back clean. The Log mirrors Spawn's step-by-step
+// log so the UI can render it identically.
+type PreflightResult struct {
+	OK          bool     `json:"ok"`
+	Reachable   bool     `json:"reachable"`     // SSH dial + auth succeeded
+	Arch        string   `json:"arch,omitempty"` // detected platform-arch
+	CanWrite    bool     `json:"can_write"`     // remote bin path's parent is writable
+	HasCurl     bool     `json:"has_curl"`      // download method requires curl + unzip
+	HasUnzip    bool     `json:"has_unzip"`
+	WhoAmI      string   `json:"whoami,omitempty"` // remote `id -un`
+	Hostname    string   `json:"hostname,omitempty"`
+	Log         []string `json:"log"`
+	Error       string   `json:"error,omitempty"`
+}
+
+// Preflight dials SSH with the same auth + host-key behaviour Spawn uses,
+// runs a handful of read-only checks, and returns a structured answer.
+// No state is mutated on the remote — no install, no spawn, no pkill.
+// Operators run this BEFORE Spawn to verify the remote is reachable, the
+// credentials work, the install path is writable, and (for download
+// method) curl + unzip are present.
+func Preflight(ctx context.Context, opts SpawnOpts) (*PreflightResult, error) {
+	if opts.Host == "" {
+		return nil, errors.New("host required")
+	}
+	if opts.User == "" {
+		return nil, errors.New("user required")
+	}
+	if opts.Password == "" && opts.PrivateKeyPEM == "" {
+		return nil, errors.New("either Password or PrivateKeyPEM required")
+	}
+	port := opts.Port
+	if port == "" {
+		port = "22"
+	}
+	bin := opts.RemoteBinaryPath
+	if bin == "" {
+		bin = "/tmp/sftp-loadtest"
+	}
+	res := &PreflightResult{}
+	appendLog := func(s string) { res.Log = append(res.Log, s) }
+
+	appendLog("Dialing SSH " + opts.Host + ":" + port + " as " + opts.User)
+	auth, err := buildAuth(opts)
+	if err != nil {
+		res.Error = "auth: " + err.Error()
+		appendLog("✗ auth setup: " + err.Error())
+		return res, nil
+	}
+	hk := opts.HostKey
+	if hk == nil {
+		hk = ssh.InsecureIgnoreHostKey()
+	}
+	cfg := &ssh.ClientConfig{
+		User:            opts.User,
+		Auth:            auth,
+		HostKeyCallback: hk,
+		Timeout:         15 * time.Second,
+	}
+	sshAddr := net.JoinHostPort(opts.Host, port)
+
+	dialDone := make(chan struct{})
+	var client *ssh.Client
+	var dialErr error
+	go func() {
+		defer close(dialDone)
+		client, dialErr = ssh.Dial("tcp", sshAddr, cfg)
+	}()
+	select {
+	case <-ctx.Done():
+		res.Error = "ssh dial cancelled: " + ctx.Err().Error()
+		appendLog("✗ ssh dial cancelled")
+		return res, nil
+	case <-dialDone:
+	}
+	if dialErr != nil {
+		res.Error = "ssh dial: " + dialErr.Error()
+		appendLog("✗ ssh dial: " + dialErr.Error())
+		return res, nil
+	}
+	defer client.Close()
+	res.Reachable = true
+	appendLog("✓ ssh dial + auth ok")
+
+	// Detect arch — same uname trick Spawn uses.
+	if out, runErr := runExec(client, "uname -s -m"); runErr == nil && out != "" {
+		if arch, mapErr := mapArch(out); mapErr == nil {
+			res.Arch = arch
+			appendLog("✓ remote arch: " + arch + " (" + strings.TrimSpace(out) + ")")
+		} else {
+			appendLog("✗ uname returned unsupported platform: " + strings.TrimSpace(out))
+		}
+	} else if runErr != nil {
+		appendLog("✗ uname failed: " + runErr.Error())
+	}
+
+	// Identity — useful diagnostic for the operator.
+	if out, err := runExec(client, "id -un"); err == nil {
+		res.WhoAmI = strings.TrimSpace(out)
+		appendLog("✓ remote whoami: " + res.WhoAmI)
+	}
+	if out, err := runExec(client, "hostname"); err == nil {
+		res.Hostname = strings.TrimSpace(out)
+		appendLog("✓ remote hostname: " + res.Hostname)
+	}
+
+	// Write check on the install path's parent. If the operator chose a
+	// custom path (e.g. /opt/sftp-loadtest), this is where we confirm
+	// they have permission to drop the binary there.
+	parent := bin
+	if i := strings.LastIndex(bin, "/"); i > 0 {
+		parent = bin[:i]
+	} else {
+		parent = "/tmp"
+	}
+	writeCmd := fmt.Sprintf("test -d %s && test -w %s && echo OK", parent, parent)
+	if out, err := runExec(client, writeCmd); err == nil && strings.TrimSpace(out) == "OK" {
+		res.CanWrite = true
+		appendLog("✓ install path writable: " + parent)
+	} else {
+		appendLog("✗ install path NOT writable: " + parent + " (need a directory the operator's user can write)")
+	}
+
+	// curl + unzip — required only for the download install method, but
+	// always check so the UI can warn the operator they'll have to switch
+	// to upload mode if the binaries aren't present.
+	if out, err := runExec(client, "command -v curl"); err == nil && strings.TrimSpace(out) != "" {
+		res.HasCurl = true
+		appendLog("✓ curl available")
+	} else {
+		appendLog("✗ curl not found (required for download install method)")
+	}
+	if out, err := runExec(client, "command -v unzip"); err == nil && strings.TrimSpace(out) != "" {
+		res.HasUnzip = true
+		appendLog("✓ unzip available")
+	} else {
+		appendLog("✗ unzip not found (required for download install method)")
+	}
+
+	res.OK = res.Reachable && res.Arch != "" && res.CanWrite
+	if res.OK {
+		appendLog("Preflight passed — ready to spawn.")
+	} else {
+		appendLog("Preflight INCOMPLETE — fix the failing checks above before spawning.")
+	}
+	return res, nil
+}
+
 // runExec opens a fresh exec channel, runs cmd, and returns the combined
 // stdout+stderr trimmed. A non-zero exit status from the command is NOT
 // treated as a hard error here — the caller decides whether the output is

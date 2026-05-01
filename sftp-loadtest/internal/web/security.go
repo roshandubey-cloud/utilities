@@ -54,8 +54,10 @@ var bodySizeLimits = map[string]int64{
 	"/api/hostkeys/remove": 1 << 10,
 	"/api/cluster/start":   4 << 20, // worker creds + config; can be large
 	"/api/cluster/stop":    1 << 10,
-	"/api/worker/spawn":    256 << 10, // SSH PEM + creds
-	"/api/worker/despawn":  1 << 10,
+	"/api/worker/spawn":     256 << 10, // SSH PEM + creds
+	"/api/worker/despawn":   1 << 10,
+	"/api/worker/preflight": 256 << 10, // SSH PEM + creds (same as spawn)
+	"/api/worker/probe":     1 << 10,   // worker URL + optional basic auth
 }
 
 // BodySizeLimit caps r.Body via http.MaxBytesReader before the handler reads
@@ -138,8 +140,10 @@ var rateLimitedPaths = map[string]rateLimit{
 	"/api/hostkeys/remove": {capacity: 10, refill: 1.0},
 	"/api/cluster/start":   {capacity: 5, refill: 0.5},
 	"/api/cluster/stop":    {capacity: 10, refill: 1.0},
-	"/api/worker/spawn":    {capacity: 5, refill: 0.5},
-	"/api/worker/despawn":  {capacity: 10, refill: 1.0},
+	"/api/worker/spawn":     {capacity: 5, refill: 0.5},
+	"/api/worker/despawn":   {capacity: 10, refill: 1.0},
+	"/api/worker/preflight": {capacity: 10, refill: 1.0},
+	"/api/worker/probe":     {capacity: 120, refill: 60.0}, // sidebar polls 5s
 	"/api/runs":            {capacity: 60, refill: 30.0},
 	"/api/host":            {capacity: 60, refill: 30.0},
 	"/api/status":          {capacity: 60, refill: 30.0},

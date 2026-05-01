@@ -24,6 +24,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -227,6 +228,138 @@ func (s *Server) handleWorkerSpawnedList(w http.ResponseWriter, r *http.Request)
 	spawnMu.Unlock()
 	writeJSON(w, map[string]any{"workers": out})
 }
+
+// handleWorkerPreflight runs sshtunnel.Preflight against the same
+// credentials the operator would use for /worker/spawn. No state is
+// mutated on the remote — this is the "Test SSH" button's backend.
+// Returns the structured PreflightResult so the UI can render a
+// step-by-step verdict (reachable / arch / writable / curl / unzip).
+func (s *Server) handleWorkerPreflight(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	var req spawnReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Host == "" || req.User == "" {
+		http.Error(w, "host and user required", http.StatusBadRequest)
+		return
+	}
+	if req.Password == "" && req.PrivateKeyPEM == "" {
+		http.Error(w, "password or private key required", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+	res, err := sshtunnel.Preflight(ctx, sshtunnel.SpawnOpts{
+		Host:             req.Host,
+		Port:             req.Port,
+		User:             req.User,
+		Password:         req.Password,
+		PrivateKeyPEM:    req.PrivateKeyPEM,
+		Passphrase:       req.Passphrase,
+		RemoteBinaryPath: req.RemoteBinaryPath,
+	})
+	if err != nil {
+		// Preflight returns nil error for "checks ran, some failed";
+		// a non-nil error means the input was malformed.
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, res)
+}
+
+// workerProbeResult is what /api/worker/probe returns. Same shape as
+// the generic upstream healthz so the UI doesn't need a per-source
+// adapter — manual URL workers and SSH-bootstrapped workers both
+// produce this.
+type workerProbeResult struct {
+	OK          bool   `json:"ok"`
+	URL         string `json:"url"`
+	Status      int    `json:"status"`
+	Active      bool   `json:"active"`
+	ActiveRunID string `json:"active_run_id,omitempty"`
+	UptimeSec   int64  `json:"uptime_sec,omitempty"`
+	Latency     int64  `json:"latency_ms"`
+	Error       string `json:"error,omitempty"`
+}
+
+// handleWorkerProbe pings a worker's /healthz from the master. CORS
+// blocks the browser from doing this directly (workers run on
+// different origins), so the master proxies the check. Used by the
+// sidebar Workers section to render a live status LED per row.
+//
+// Body: {"url": "http://host:port", "auth_user": "...", "auth_pass": "..."}.
+// Auth fields optional — only forwarded when the operator configured
+// HTTP basic auth on the worker.
+func (s *Server) handleWorkerProbe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		URL      string `json:"url"`
+		AuthUser string `json:"auth_user"`
+		AuthPass string `json:"auth_pass"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.URL == "" {
+		http.Error(w, "url required", http.StatusBadRequest)
+		return
+	}
+	out := workerProbeResult{URL: req.URL}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	target := strings.TrimRight(req.URL, "/") + "/healthz?detail=1"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		out.Error = err.Error()
+		writeJSON(w, out)
+		return
+	}
+	httpReq.Header.Set("X-Requested-With", "sftp-loadtest")
+	if req.AuthUser != "" {
+		httpReq.SetBasicAuth(req.AuthUser, req.AuthPass)
+	}
+	t0 := time.Now()
+	resp, err := workerHTTPClient.Do(httpReq)
+	out.Latency = time.Since(t0).Milliseconds()
+	if err != nil {
+		out.Error = err.Error()
+		writeJSON(w, out)
+		return
+	}
+	defer resp.Body.Close()
+	out.Status = resp.StatusCode
+	out.OK = resp.StatusCode == http.StatusOK
+	if !out.OK {
+		out.Error = "worker returned HTTP " + resp.Status
+		writeJSON(w, out)
+		return
+	}
+	var body struct {
+		Status      string `json:"status"`
+		ActiveRun   bool   `json:"active_run"`
+		ActiveRunID string `json:"active_run_id"`
+		UptimeSec   int64  `json:"uptime_sec"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	out.Active = body.ActiveRun
+	out.ActiveRunID = body.ActiveRunID
+	out.UptimeSec = body.UptimeSec
+	writeJSON(w, out)
+}
+
+// workerHTTPClient is the master-side HTTP client used for worker
+// probes. Short timeouts so an unresponsive worker doesn't hold the
+// sidebar poll loop hostage.
+var workerHTTPClient = &http.Client{Timeout: 5 * time.Second}
 
 // closeAllSpawned tears down every registered tunnel. Called from
 // Server.Shutdown so the master never leaves an orphan SSH session

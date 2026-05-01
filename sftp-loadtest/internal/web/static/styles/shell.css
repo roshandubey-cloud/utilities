@@ -1183,6 +1183,74 @@ body.wails-linux {
 .cluster-ssh-spawn-log-row.is-error { color: var(--danger-fg-soft); }
 .cluster-ssh-spawn-log-row.is-error .status { color: var(--danger-fg-soft); }
 
+/* Preflight panel reuses spawn-log row styling but lives in its own
+   collapsible block so the operator can run preflight then spawn
+   without losing either result. Verdict pill summarises the outcome
+   in one line. */
+.cluster-ssh-preflight-log {
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-2);
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.cluster-ssh-preflight-verdict {
+  margin-top: var(--sp-2);
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-semibold);
+  font-family: var(--font-sans);
+  display: inline-block;
+}
+.cluster-ssh-preflight-verdict.is-ok {
+  background: rgba(16, 185, 129, 0.14);
+  color: var(--success-fg-soft);
+  border: var(--bw-1) solid rgba(16, 185, 129, 0.30);
+}
+.cluster-ssh-preflight-verdict.is-warn {
+  background: rgba(255, 159, 73, 0.14);
+  color: var(--warning-fg-soft);
+  border: var(--bw-1) solid rgba(255, 159, 73, 0.32);
+}
+
+/* Sidebar worker rows now carry a status LED that reflects live
+   reachability via /api/worker/probe — replaces the static row-icon
+   so the operator sees at a glance which workers are up. Colours
+   tied to the row's data-health attribute. */
+.shell-sidebar-row .worker-led {
+  width: 8px; height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  margin-right: var(--sp-2);
+  transition: background var(--t-fast), box-shadow var(--t-fast);
+}
+.shell-sidebar-row[data-health="idle"]   .worker-led {
+  background: var(--success-fg-soft);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.40);
+}
+.shell-sidebar-row[data-health="active"] .worker-led {
+  background: var(--success-fg-soft);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.60);
+  animation: workerLedPulse 1.6s ease-in-out infinite;
+}
+.shell-sidebar-row[data-health="down"]   .worker-led {
+  background: var(--danger-fg-soft);
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.40);
+}
+.shell-sidebar-row[data-health="unknown"] .worker-led { background: var(--text-tertiary); }
+@keyframes workerLedPulse { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }
+.modal-actions-inline {
+  display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+  margin-top: var(--sp-2);
+}
+.modal-actions-hint { font-size: var(--fs-11); color: var(--text-tertiary); }
+
 .cluster-ssh-badge {
   display: inline-flex;
   align-items: center;

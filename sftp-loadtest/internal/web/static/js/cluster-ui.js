@@ -101,18 +101,21 @@ export function mountClusterSidebar() {
     slot.innerHTML = list.map((w) => `
       <div class="shell-sidebar-row sidebar-row-with-action" data-id="${w.id}"
            data-source="${escapeAttr(w.source || 'manual')}"
+           data-url="${escapeAttr(w.url)}"
+           data-auth-user="${escapeAttr(w.auth_user || '')}"
+           data-auth-pass="${escapeAttr(w.auth_pass || '')}"
+           data-health="unknown"
            title="${escapeAttr(w.url)}">
-        <span class="row-icon" aria-hidden="true">
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
-               stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2" y="3" width="12" height="4" rx="1"/><rect x="2" y="9" width="12" height="4" rx="1"/>
-            <circle cx="4" cy="5" r="0.6" fill="currentColor"/><circle cx="4" cy="11" r="0.6" fill="currentColor"/></svg>
-        </span>
+        <span class="worker-led" data-role="worker-led" aria-hidden="true"
+              title="Health unknown — will check next tick"></span>
         <span class="row-label">${escapeHTML(prettyURL(w.url))}</span>
         ${w.source === 'ssh' ? '<span class="cluster-ssh-badge" title="Bootstrapped over SSH">🔗 SSH</span>' : ''}
         <span class="row-meta" data-role="worker-state" data-enabled="${w.enabled}">${w.enabled ? 'on' : 'off'}</span>
         <button type="button" class="row-action-btn" data-action="del" data-id="${w.id}" title="Remove">×</button>
       </div>`).join('');
+    // Kick off an immediate health check for every row, then keep
+    // refreshing on the heartbeat below.
+    pollWorkerHealth(slot);
     slot.querySelectorAll('.shell-sidebar-row').forEach((row) => {
       row.addEventListener('click', (ev) => {
         if (ev.target.closest('[data-action="del"]')) return;
@@ -161,6 +164,57 @@ export function mountClusterSidebar() {
   setInterval(render, REFRESH_MS);
   window.addEventListener('storage', (ev) => {
     if (ev.key === KEY) render();
+  });
+  // Health poll — every 5 s, ping each registered worker via the
+  // master-side proxy /api/worker/probe and update the LED. Slower
+  // than the local render heartbeat (3 s) so we don't hammer remote
+  // workers unnecessarily.
+  setInterval(() => {
+    const slot = sidebar.querySelector('[data-role="sidebar-workers"]');
+    if (slot) pollWorkerHealth(slot);
+  }, 5000);
+}
+
+// pollWorkerHealth fans out one /api/worker/probe per row and writes
+// the result back to the row's data-health + LED tooltip. Probe is
+// concurrent — slow workers don't block the others.
+async function pollWorkerHealth(slot) {
+  const rows = slot.querySelectorAll('.shell-sidebar-row[data-url]');
+  rows.forEach(async (row) => {
+    const url = row.dataset.url;
+    if (!url) return;
+    try {
+      const r = await apiFetch('/api/worker/probe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url,
+          auth_user: row.dataset.authUser || '',
+          auth_pass: row.dataset.authPass || '',
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      const led = row.querySelector('[data-role="worker-led"]');
+      if (!led) return;
+      if (j.ok && j.active) {
+        row.dataset.health = 'active';
+        led.title = `Reachable · run active (${j.active_run_id || 'unknown id'}) · ${j.latency_ms} ms`;
+      } else if (j.ok) {
+        row.dataset.health = 'idle';
+        led.title = `Reachable · idle · ${j.latency_ms} ms`;
+      } else {
+        row.dataset.health = 'down';
+        led.title = j.error
+          ? `Unreachable: ${j.error}`
+          : 'Unreachable';
+      }
+    } catch (e) {
+      const led = row.querySelector('[data-role="worker-led"]');
+      if (led) {
+        row.dataset.health = 'down';
+        led.title = `Probe error: ${e.message || e}`;
+      }
+    }
   });
 }
 
@@ -237,6 +291,11 @@ async function promptAddWorker() {
               <label class="modal-radio"><input type="radio" name="ssh_install" value="download" checked /> Download from GitHub release (needs internet on remote)</label>
               <label class="modal-radio"><input type="radio" name="ssh_install" value="upload" /> Upload local binary over SSH (no egress required)</label>
             </div>
+            <div class="modal-actions-inline">
+              <button type="button" class="btn btn-ghost" data-role="ssh-preflight">Test SSH access</button>
+              <span class="modal-actions-hint">Verifies reach + auth + write rights without installing anything.</span>
+            </div>
+            <div class="cluster-ssh-preflight-log" data-role="preflight-log" hidden></div>
             <div class="cluster-ssh-spawn-log" data-role="spawn-log" hidden></div>
           </div>
         </div>
@@ -260,6 +319,98 @@ async function promptAddWorker() {
     document.addEventListener('keydown', onKey, true);
     cancelBtn.addEventListener('click', () => close(null));
     bd.addEventListener('click', (ev) => { if (ev.target === bd) close(null); });
+
+    // Test SSH access button — POSTs /api/worker/preflight and renders a
+    // checklist of remote-side capabilities (reachable / arch detected /
+    // install path writable / curl + unzip if needed). Operator runs this
+    // BEFORE Spawn so they don't commit to a multi-step install before
+    // knowing the basics work.
+    const preflightBtn = bd.querySelector('[data-role="ssh-preflight"]');
+    const preflightLog = bd.querySelector('[data-role="preflight-log"]');
+    if (preflightBtn && preflightLog) {
+      preflightBtn.addEventListener('click', async () => {
+        const host = (bd.querySelector('#ssh_host').value || '').trim();
+        const port = (bd.querySelector('#ssh_port').value || '22').trim();
+        const sshUser = (bd.querySelector('#ssh_user').value || '').trim();
+        const password = bd.querySelector('#ssh_password').value || '';
+        const pkPem = bd.querySelector('#ssh_key').value || '';
+        const passphrase = bd.querySelector('#ssh_passphrase').value || '';
+        if (!host || !sshUser) {
+          pushToast('Host and User are required', 'error');
+          return;
+        }
+        if (!password && !pkPem) {
+          pushToast('Provide a password or a private key', 'error');
+          return;
+        }
+        preflightLog.hidden = false;
+        preflightLog.innerHTML = '<div class="cluster-ssh-spawn-log-row"><span class="status">⏳</span><span class="label">Running preflight…</span></div>';
+        preflightBtn.disabled = true;
+        const previousLabel = preflightBtn.textContent;
+        preflightBtn.textContent = 'Testing…';
+        try {
+          const r = await apiFetch('/api/worker/preflight', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              host, port, user: sshUser,
+              password,
+              private_key_pem: pkPem,
+              passphrase,
+            }),
+          });
+          if (!r.ok) {
+            const txt = await r.text();
+            preflightLog.innerHTML = `<div class="cluster-ssh-spawn-log-row is-error"><span class="status">✗</span><span class="label">${escapeHTML(txt || 'HTTP ' + r.status)}</span></div>`;
+            return;
+          }
+          const j = await r.json();
+          // Render each log line — Preflight already prefixes ✓ / ✗ on
+          // each step, so we just need consistent row markup.
+          preflightLog.innerHTML = '';
+          (j.log || []).forEach((line) => {
+            const row = document.createElement('div');
+            const isErr = line.startsWith('✗');
+            row.className = 'cluster-ssh-spawn-log-row' + (isErr ? ' is-error' : '');
+            const sym = line.startsWith('✓') ? '✓' : (isErr ? '✗' : '·');
+            const text = line.replace(/^[✓✗·]\s*/, '');
+            row.innerHTML = `<span class="status">${sym}</span><span class="label">${escapeHTML(text)}</span>`;
+            preflightLog.appendChild(row);
+          });
+          // Verdict pill — the operator's at-a-glance answer.
+          const verdict = document.createElement('div');
+          verdict.className = 'cluster-ssh-preflight-verdict' + (j.ok ? ' is-ok' : ' is-warn');
+          if (j.ok) {
+            verdict.textContent = `READY — arch: ${j.arch}, user: ${j.whoami || '(unknown)'}, host: ${j.hostname || '(unknown)'}`;
+          } else if (!j.reachable) {
+            verdict.textContent = `BLOCKED — cannot reach ${host}:${port} (check SSH credentials + firewall)`;
+          } else if (!j.can_write) {
+            verdict.textContent = `BLOCKED — install path not writable by user ${j.whoami || sshUser}`;
+          } else if (!j.arch) {
+            verdict.textContent = `BLOCKED — uname could not detect a supported platform`;
+          } else {
+            verdict.textContent = `INCOMPLETE — see failed checks above`;
+          }
+          preflightLog.appendChild(verdict);
+          // Disable the Spawn primary button if the install method is
+          // download but curl/unzip are missing — the spawn would just
+          // fail later. The operator either ticks "upload" or fixes the
+          // remote.
+          const installMethod = panel.querySelector('input[name="ssh_install"]:checked')?.value || 'download';
+          if (installMethod === 'download' && (!j.has_curl || !j.has_unzip)) {
+            const warn = document.createElement('div');
+            warn.className = 'cluster-ssh-preflight-verdict is-warn';
+            warn.textContent = 'curl + unzip required for download method — switch to upload OR install them on the remote.';
+            preflightLog.appendChild(warn);
+          }
+        } catch (e) {
+          preflightLog.innerHTML = `<div class="cluster-ssh-spawn-log-row is-error"><span class="status">✗</span><span class="label">${escapeHTML(e.message || String(e))}</span></div>`;
+        } finally {
+          preflightBtn.disabled = false;
+          preflightBtn.textContent = previousLabel;
+        }
+      });
+    }
 
     let activeTab = 'direct';
     function switchTab(name) {
