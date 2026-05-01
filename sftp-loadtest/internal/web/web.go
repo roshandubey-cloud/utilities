@@ -57,6 +57,10 @@ type Server struct {
 	// semantics as hostKeyStore — first probe captures, the UI prompts,
 	// accept appends, future probes verify against it.
 	tlsStore *hostkeys.TLSStore
+	// version is the platform version string surfaced on /healthz?detail=1
+	// so the cluster coordinator can detect worker / master skew. Wired
+	// from main.go via SetVersion. Empty until SetVersion is called.
+	version string
 }
 
 // NewServer constructs the HTTP server. schedulesDir may be empty, in which
@@ -127,6 +131,21 @@ func (s *Server) getTLSStore() *hostkeys.TLSStore {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.tlsStore
+}
+
+// SetVersion records the platform version string. Surfaced on
+// /healthz?detail=1 so a cluster master can compare its own version
+// against each worker's during fan-out.
+func (s *Server) SetVersion(v string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.version = v
+}
+
+func (s *Server) getVersion() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.version
 }
 
 // startedAt is recorded once at construction for the /healthz uptime field.
@@ -555,6 +574,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		out["active_run"] = active != nil
 		if active != nil {
 			out["active_run_id"] = active.ID
+		}
+		if v := s.getVersion(); v != "" {
+			out["version"] = v
 		}
 	}
 	writeJSON(w, out)

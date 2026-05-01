@@ -52,12 +52,13 @@ type StartReq struct {
 // server holds at most one Coordinator at a time; concurrent cluster
 // runs would conflict on the workers' single-active-run constraint.
 type Coordinator struct {
-	mu        sync.Mutex
-	active    bool
-	startedAt time.Time
-	stoppedAt time.Time
-	workers   []runningWorker
-	httpc     *http.Client
+	mu            sync.Mutex
+	active        bool
+	startedAt     time.Time
+	stoppedAt     time.Time
+	workers       []runningWorker
+	httpc         *http.Client
+	masterVersion string // captured once at New() — never mutated
 }
 
 // runningWorker tracks a worker's id from /api/start so the master can
@@ -67,6 +68,7 @@ type Coordinator struct {
 type runningWorker struct {
 	Worker
 	RunID    string `json:"run_id"`
+	Version  string `json:"version,omitempty"` // worker's reported platform version, captured once at /api/start
 	LastErr  string `json:"last_err,omitempty"`
 	LastStat Status `json:"last_stat,omitempty"`
 }
@@ -77,6 +79,7 @@ type runningWorker struct {
 type Status struct {
 	Active            bool             `json:"active"`
 	StartedAt         time.Time        `json:"started_at,omitempty"`
+	MasterVersion     string           `json:"master_version,omitempty"` // master's own platform version, for skew detection
 	TotalFiles        int64            `json:"total_files"`
 	TotalBytes        int64            `json:"total_bytes"`
 	FailedFiles       int64            `json:"failed_files"`
@@ -88,22 +91,29 @@ type Status struct {
 
 // WorkerStatus is one row of Status.Workers.
 type WorkerStatus struct {
-	URL           string  `json:"url"`
-	RunID         string  `json:"run_id"`
-	Active        bool    `json:"active"`
-	TotalFiles    int64   `json:"total_files"`
-	FailedFiles   int64   `json:"failed_files"`
-	DispatchSkips int64   `json:"dispatch_skips"`
-	OverallMBps   float64 `json:"overall_mbps"`
-	WindowMBps    float64 `json:"window_mbps"`
-	Reachable     bool    `json:"reachable"`
-	Err           string  `json:"err,omitempty"`
+	URL             string  `json:"url"`
+	RunID           string  `json:"run_id"`
+	Version         string  `json:"version,omitempty"`           // worker's platform version (empty if pre-version-negotiation)
+	VersionMismatch bool    `json:"version_mismatch,omitempty"`  // true when worker.Version != master.Version (both non-empty)
+	Active          bool    `json:"active"`
+	TotalFiles      int64   `json:"total_files"`
+	FailedFiles     int64   `json:"failed_files"`
+	DispatchSkips   int64   `json:"dispatch_skips"`
+	OverallMBps     float64 `json:"overall_mbps"`
+	WindowMBps      float64 `json:"window_mbps"`
+	Reachable       bool    `json:"reachable"`
+	Err             string  `json:"err,omitempty"`
 }
 
-// New returns a Coordinator with sensible HTTP timeouts.
-func New() *Coordinator {
+// New returns a Coordinator with sensible HTTP timeouts. masterVersion
+// is the calling process's own platform version; when non-empty, every
+// worker's version is compared against it so the UI can flag skew.
+// Pass "" if version negotiation is not desired (the cluster will still
+// capture worker versions but skip the mismatch flag).
+func New(masterVersion string) *Coordinator {
 	return &Coordinator{
-		httpc: &http.Client{Timeout: 15 * time.Second},
+		httpc:         &http.Client{Timeout: 15 * time.Second},
+		masterVersion: masterVersion,
 	}
 }
 
@@ -145,7 +155,12 @@ func (c *Coordinator) Start(ctx context.Context, req StartReq) ([]string, error)
 			}
 			return nil, fmt.Errorf("worker %s: %w", w.URL, serr)
 		}
-		rws[i] = runningWorker{Worker: w, RunID: runID}
+		// Best-effort version negotiation. A worker that doesn't expose
+		// /healthz?detail=1 (older release, restricted by auth) leaves
+		// Version empty — we still let the run proceed, since version
+		// skew is informational, not gating.
+		ver, _ := c.negotiateOne(ctx, w)
+		rws[i] = runningWorker{Worker: w, RunID: runID, Version: ver}
 		ids[i] = runID
 	}
 
@@ -170,7 +185,7 @@ func (c *Coordinator) Status(ctx context.Context) Status {
 		c.mu.Unlock()
 		// Even after stop, expose the last-seen counters so the UI
 		// can show "the run completed at N files".
-		return mergeWorkerStatuses(false, started, stoppedAt, workers)
+		return mergeWorkerStatuses(false, started, stoppedAt, c.masterVersion, workers)
 	}
 	workers := append([]runningWorker(nil), c.workers...)
 	started := c.startedAt
@@ -198,7 +213,7 @@ func (c *Coordinator) Status(ctx context.Context) Status {
 	c.mu.Lock()
 	c.workers = out
 	c.mu.Unlock()
-	return mergeWorkerStatuses(true, started, time.Time{}, out)
+	return mergeWorkerStatuses(true, started, time.Time{}, c.masterVersion, out)
 }
 
 // Stop fans out /api/stop to every worker. Errors are accumulated but
@@ -292,6 +307,28 @@ func (c *Coordinator) statusOne(ctx context.Context, rw runningWorker) (Status, 
 	}, nil
 }
 
+// negotiateOne asks a worker for its platform version via
+// /healthz?detail=1. Returns "" with a non-nil error when the worker
+// doesn't expose version (older release, network blip, auth refusal) —
+// callers treat that as "version unknown" rather than fatal.
+func (c *Coordinator) negotiateOne(ctx context.Context, w Worker) (string, error) {
+	resp, err := c.do(ctx, w, http.MethodGet, "/healthz?detail=1", nil)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	var raw struct {
+		Version string `json:"version"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return "", fmt.Errorf("decode healthz: %w", err)
+	}
+	return raw.Version, nil
+}
+
 // stopOne posts /api/stop. The worker's reply is ignored beyond a 2xx
 // status check.
 func (c *Coordinator) stopOne(ctx context.Context, rw runningWorker) error {
@@ -362,10 +399,13 @@ func splitConfig(raw []byte, n int) ([]byte, error) {
 // snapshots and tags each worker with reachability info for the UI.
 // throughput is summed (each worker is independently driving load
 // against the same target), counts are summed, dispatch skips are summed.
-func mergeWorkerStatuses(active bool, started, stopped time.Time, workers []runningWorker) Status {
-	out := Status{Active: active, StartedAt: started, Workers: make([]WorkerStatus, 0, len(workers))}
+func mergeWorkerStatuses(active bool, started, stopped time.Time, masterVersion string, workers []runningWorker) Status {
+	out := Status{Active: active, StartedAt: started, MasterVersion: masterVersion, Workers: make([]WorkerStatus, 0, len(workers))}
 	for _, w := range workers {
-		ws := WorkerStatus{URL: w.URL, RunID: w.RunID, Reachable: w.LastErr == ""}
+		ws := WorkerStatus{URL: w.URL, RunID: w.RunID, Version: w.Version, Reachable: w.LastErr == ""}
+		if masterVersion != "" && w.Version != "" && w.Version != masterVersion {
+			ws.VersionMismatch = true
+		}
 		if w.LastErr != "" {
 			ws.Err = w.LastErr
 		}

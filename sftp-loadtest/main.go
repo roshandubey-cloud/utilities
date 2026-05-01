@@ -27,7 +27,7 @@ import (
 // freshness. Also surfaced via the `-version` flag — the SSH-bootstrap
 // smoke test on a remote host runs `<bin> -version` to confirm the
 // binary it just installed actually executes.
-const platformVersion = "0.13.4"
+const platformVersion = "0.13.5"
 
 func main() {
 	if len(os.Args) >= 2 && (os.Args[1] == "-version" || os.Args[1] == "--version") {
@@ -148,6 +148,7 @@ func main() {
 
 	srv := web.NewServer(absDir, absSchedules)
 	defer srv.Shutdown()
+	srv.SetVersion(platformVersion)
 	// Tell the probe handler where the known_hosts file lives — that's the
 	// only place TOFU will append to. When the operator launched in
 	// -insecure-host-key mode, this stays empty and the probe handler

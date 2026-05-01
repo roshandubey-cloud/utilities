@@ -10,17 +10,23 @@ import (
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/cluster"
 )
 
-// clusterCoord is the master-side coordinator instance held by the
-// Server. Lazily constructed because the cluster surface is a no-op for
+// clusterCoord is the master-side coordinator instance. Lazily
+// constructed via sync.Once because the cluster surface is a no-op for
 // instances that never act as a master (i.e. workers never reach these
 // handlers, the operator just doesn't post to them).
+//
+// We hold it at package level rather than on Server because the
+// coordinator's lifetime spans the whole process, not a single request,
+// and the Server's identity isn't carried into the handlers' shared
+// state. When constructed, it captures the Server's platform version
+// for worker-skew negotiation; subsequent calls return the same coord.
 var (
 	clusterCoordOnce sync.Once
 	clusterCoord     *cluster.Coordinator
 )
 
-func getClusterCoord() *cluster.Coordinator {
-	clusterCoordOnce.Do(func() { clusterCoord = cluster.New() })
+func (s *Server) getClusterCoord() *cluster.Coordinator {
+	clusterCoordOnce.Do(func() { clusterCoord = cluster.New(s.getVersion()) })
 	return clusterCoord
 }
 
@@ -42,7 +48,7 @@ func (s *Server) handleClusterStart(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	ids, err := getClusterCoord().Start(ctx, req)
+	ids, err := s.getClusterCoord().Start(ctx, req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -54,7 +60,7 @@ func (s *Server) handleClusterStart(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	writeJSON(w, getClusterCoord().Status(ctx))
+	writeJSON(w, s.getClusterCoord().Status(ctx))
 }
 
 // /api/cluster/stop — fan out /api/stop to every worker.
@@ -65,7 +71,7 @@ func (s *Server) handleClusterStop(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := getClusterCoord().Stop(ctx); err != nil {
+	if err := s.getClusterCoord().Stop(ctx); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}

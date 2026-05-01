@@ -25,6 +25,7 @@ type fakeWorker struct {
 	statusCalls    *atomic.Int32
 	startResp      string
 	statusResp     string
+	healthzVersion string // when "", /healthz returns 404
 	requireXReqWith bool
 }
 
@@ -40,8 +41,29 @@ func newFakeWorker(startResp, statusResp string) *fakeWorker {
 	}
 }
 
+// healthzVersion, when non-empty, is what the fake worker reports under
+// /healthz?detail=1 → {"version": ...}. Empty means "endpoint not
+// implemented" — the worker returns 404 and the coordinator records
+// no Version, simulating a pre-negotiation worker.
+func (f *fakeWorker) withHealthzVersion(v string) *fakeWorker {
+	f.healthzVersion = v
+	return f
+}
+
 func (f *fakeWorker) handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		if f.healthzVersion == "" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("detail") == "1" {
+			_, _ = io.WriteString(w, `{"status":"ok","version":"`+f.healthzVersion+`"}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"status":"ok"}`)
+	})
 	mux.HandleFunc("/api/start", func(w http.ResponseWriter, r *http.Request) {
 		if f.requireXReqWith && r.Header.Get("X-Requested-With") != "sftp-loadtest" {
 			http.Error(w, "missing X-Requested-With", http.StatusForbidden)
@@ -78,7 +100,7 @@ func TestCoordinator_StartFansOutAndDividesFPM(t *testing.T) {
 	s1.Config.Handler = recordingHandler(s1.Config.Handler, func(b []byte) { got1 = b })
 	s2.Config.Handler = recordingHandler(s2.Config.Handler, func(b []byte) { got2 = b })
 
-	c := New()
+	c := New("")
 	cfg := []byte(`{"host":"x","port":22,"files_per_minute":1000}`)
 	ids, err := c.Start(context.Background(), StartReq{
 		Workers: []Worker{{URL: s1.URL}, {URL: s2.URL}},
@@ -107,6 +129,55 @@ func TestCoordinator_StartFansOutAndDividesFPM(t *testing.T) {
 	}
 }
 
+// TestCoordinator_VersionNegotiation pins the negotiation behaviour:
+// - master records each worker's version when /healthz?detail=1 returns it
+// - VersionMismatch fires when worker.version != master.version
+// - a worker that doesn't expose /healthz (404) leaves Version empty,
+//   and the master does NOT flag mismatch in that case (informational
+//   gap, not a hard failure)
+func TestCoordinator_VersionNegotiation(t *testing.T) {
+	matched := newFakeWorker(`{"run_id":"a"}`, `{"active":true}`).withHealthzVersion("0.13.4")
+	skewed := newFakeWorker(`{"run_id":"b"}`, `{"active":true}`).withHealthzVersion("0.12.9")
+	silent := newFakeWorker(`{"run_id":"c"}`, `{"active":true}`) // no healthz version
+
+	sM := httptest.NewServer(matched.handler())
+	defer sM.Close()
+	sS := httptest.NewServer(skewed.handler())
+	defer sS.Close()
+	sN := httptest.NewServer(silent.handler())
+	defer sN.Close()
+
+	c := New("0.13.4")
+	_, err := c.Start(context.Background(), StartReq{
+		Workers: []Worker{{URL: sM.URL}, {URL: sS.URL}, {URL: sN.URL}},
+		Config:  []byte(`{"files_per_minute":300}`),
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	st := c.Status(context.Background())
+	if st.MasterVersion != "0.13.4" {
+		t.Errorf("MasterVersion=%q, want 0.13.4", st.MasterVersion)
+	}
+	if len(st.Workers) != 3 {
+		t.Fatalf("Workers count=%d, want 3", len(st.Workers))
+	}
+	byURL := map[string]WorkerStatus{}
+	for _, w := range st.Workers {
+		byURL[w.URL] = w
+	}
+	if got := byURL[sM.URL]; got.Version != "0.13.4" || got.VersionMismatch {
+		t.Errorf("matched worker: Version=%q Mismatch=%v, want 0.13.4 / false", got.Version, got.VersionMismatch)
+	}
+	if got := byURL[sS.URL]; got.Version != "0.12.9" || !got.VersionMismatch {
+		t.Errorf("skewed worker: Version=%q Mismatch=%v, want 0.12.9 / true", got.Version, got.VersionMismatch)
+	}
+	if got := byURL[sN.URL]; got.Version != "" || got.VersionMismatch {
+		t.Errorf("silent worker: Version=%q Mismatch=%v, want empty / false", got.Version, got.VersionMismatch)
+	}
+}
+
 func TestCoordinator_StartRollsBackOnPartialFailure(t *testing.T) {
 	w1 := newFakeWorker(`{"run_id":"ok-1"}`, `{}`)
 	bad := newFakeWorker(`bad-not-json`, `{}`)
@@ -115,7 +186,7 @@ func TestCoordinator_StartRollsBackOnPartialFailure(t *testing.T) {
 	sBad := httptest.NewServer(bad.handler())
 	defer sBad.Close()
 
-	c := New()
+	c := New("")
 	_, err := c.Start(context.Background(), StartReq{
 		Workers: []Worker{{URL: s1.URL}, {URL: sBad.URL}},
 		Config:  []byte(`{"files_per_minute":600}`),
@@ -141,7 +212,7 @@ func TestCoordinator_StatusAggregates(t *testing.T) {
 	s2 := httptest.NewServer(w2.handler())
 	defer s2.Close()
 
-	c := New()
+	c := New("")
 	if _, err := c.Start(context.Background(), StartReq{
 		Workers: []Worker{{URL: s1.URL}, {URL: s2.URL}},
 		Config:  []byte(`{"files_per_minute":600}`),
@@ -184,7 +255,7 @@ func TestCoordinator_StatusFlagsUnreachable(t *testing.T) {
 	s1 := httptest.NewServer(w1.handler())
 	defer s1.Close()
 
-	c := New()
+	c := New("")
 	if _, err := c.Start(context.Background(), StartReq{
 		Workers: []Worker{{URL: s1.URL}, {URL: "http://127.0.0.1:1"}}, // 2nd unreachable
 		Config:  []byte(`{"files_per_minute":600}`),
@@ -201,7 +272,7 @@ func TestCoordinator_Stop(t *testing.T) {
 	s2 := httptest.NewServer(w2.handler())
 	defer s2.Close()
 
-	c := New()
+	c := New("")
 	if _, err := c.Start(context.Background(), StartReq{
 		Workers: []Worker{{URL: s1.URL}, {URL: s2.URL}},
 		Config:  []byte(`{"files_per_minute":600}`),
@@ -225,7 +296,7 @@ func TestCoordinator_RejectsOverlappingStarts(t *testing.T) {
 	s1 := httptest.NewServer(w1.handler())
 	defer s1.Close()
 
-	c := New()
+	c := New("")
 	if _, err := c.Start(context.Background(), StartReq{
 		Workers: []Worker{{URL: s1.URL}},
 		Config:  []byte(`{"files_per_minute":600}`),
@@ -272,9 +343,13 @@ func TestSplitConfig_FloorOfOne(t *testing.T) {
 // recordingHandler tees the request body to a sink before delegating to
 // the wrapped handler, so tests can assert on exactly what each worker
 // received without rewriting the worker mock to expose its bodies.
+// Only POST /api/start bodies are recorded — the coordinator now also
+// fires GET /healthz?detail=1 during version negotiation, and capturing
+// that no-body request would overwrite the start payload tests want to
+// inspect.
 func recordingHandler(next http.Handler, sink func([]byte)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Body != nil {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/start" && r.Body != nil {
 			b, _ := io.ReadAll(r.Body)
 			sink(b)
 			r.Body = io.NopCloser(bytes.NewReader(b))
@@ -294,7 +369,7 @@ func abs(x float64) float64 {
 // callers on the package default. Keeping this here because adding a
 // dedicated _timeout test file feels like overkill.
 func TestCoordinator_TimeoutNonZero(t *testing.T) {
-	c := New()
+	c := New("")
 	if c.httpc.Timeout < time.Second {
 		t.Fatalf("default timeout must be > 1s, got %s", c.httpc.Timeout)
 	}
