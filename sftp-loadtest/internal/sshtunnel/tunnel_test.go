@@ -27,14 +27,26 @@ import (
 // requests by net.Dial-ing the requested address — that's how the
 // reverse tunnel actually works in the test.
 type fakeSSHServer struct {
-	listener     net.Listener
-	hostKey      ssh.Signer
-	addr         string
-	t            *testing.T
-	closeWorker  func()
+	listener       net.Listener
+	hostKey        ssh.Signer
+	addr           string
+	t              *testing.T
+	closeWorker    func()
 	workerListener net.Listener
-	mu           sync.Mutex
-	stopped      bool
+	mu             sync.Mutex
+	stopped        bool
+	// unameOut, when non-empty, overrides the canned "Linux x86_64"
+	// response so a test can drive a darwin code path through the same
+	// in-process server.
+	unameOut string
+	// sshdConfigOut, when non-empty, is returned by the canned grep
+	// response on `/etc/ssh/sshd_config`. Used to exercise the
+	// PasswordAuthentication probe.
+	sshdConfigOut string
+	// execLog records every command the server processed, so a test can
+	// assert (e.g.) that `xattr -d com.apple.quarantine` ran on darwin.
+	execLog   []string
+	execLogMu sync.Mutex
 }
 
 func newFakeSSH(t *testing.T) *fakeSSHServer {
@@ -180,6 +192,9 @@ func (s *fakeSSHServer) handleSession(ch ssh.Channel, reqs <-chan *ssh.Request) 
 			continue
 		}
 		cmd := string(req.Payload[4 : 4+n])
+		s.execLogMu.Lock()
+		s.execLog = append(s.execLog, cmd)
+		s.execLogMu.Unlock()
 		_ = req.Reply(true, nil)
 
 		var (
@@ -188,7 +203,18 @@ func (s *fakeSSHServer) handleSession(ch ssh.Channel, reqs <-chan *ssh.Request) 
 		)
 		switch {
 		case strings.HasPrefix(cmd, "uname"):
-			stdout = "Linux x86_64\n"
+			if s.unameOut != "" {
+				stdout = s.unameOut
+			} else {
+				stdout = "Linux x86_64\n"
+			}
+		case strings.HasPrefix(cmd, "grep") && strings.Contains(cmd, "sshd_config"):
+			stdout = s.sshdConfigOut
+		case strings.HasPrefix(cmd, "xattr"):
+			// Pretend xattr exists on the remote — Spawn discards the
+			// output anyway; we just want the server to record the
+			// invocation so the test can assert on it.
+			stdout = ""
 		case strings.HasPrefix(cmd, "pkill"):
 			// pkill returns 0 when killed something, 1 when nothing matched.
 			// Either is fine; we go with 0 because runExec doesn't care.
@@ -331,6 +357,217 @@ func TestSpawn_UploadEndToEnd(t *testing.T) {
 	c := &http.Client{Timeout: 500 * time.Millisecond}
 	if _, err := c.Get(tun.LocalURL + "/probe-test"); err == nil {
 		t.Fatalf("expected GET to fail after Close, got nil err")
+	}
+}
+
+// TestSpawn_OnStepEmitsAllStepsInOrder asserts that every named step in
+// the documented protocol fires through OnStep, in order, and each one
+// reaches a terminal "ok" status on the happy path. The wizard's NDJSON
+// streaming wire is exactly this sequence — if a step ever stops emitting,
+// the corresponding ⏳ in the wizard would never flip.
+func TestSpawn_OnStepEmitsAllStepsInOrder(t *testing.T) {
+	srv := newFakeSSH(t)
+	defer srv.Close()
+	host, port := srv.host()
+
+	var mu sync.Mutex
+	var got []StepUpdate
+	collect := func(u StepUpdate) {
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, u)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	tun, err := Spawn(ctx, SpawnOpts{
+		Host:          host,
+		Port:          port,
+		User:          "test",
+		Password:      "testpass",
+		HostKey:       ssh.InsecureIgnoreHostKey(),
+		InstallMethod: "download",
+		ReleaseTag:    "v0.11.0",
+		OnStep:        collect,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	defer tun.Close()
+
+	// Expected step names in expected order; each must appear at least
+	// once with a terminal "ok" status.
+	want := []string{
+		"ssh-dial",
+		"arch-detect",
+		"pkill-orphans",
+		"install",
+		"smoke",
+		"spawn-process",
+		"wait-ready",
+		"tunnel-listener",
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) == 0 {
+		t.Fatal("OnStep was never called")
+	}
+	terminals := map[string]string{}
+	firstSeen := map[string]int{}
+	for i, u := range got {
+		if _, ok := firstSeen[u.Step]; !ok {
+			firstSeen[u.Step] = i
+		}
+		if u.Status == "ok" || u.Status == "err" {
+			terminals[u.Step] = u.Status
+		}
+	}
+	for _, name := range want {
+		if _, ok := firstSeen[name]; !ok {
+			t.Errorf("missing OnStep call for step %q", name)
+		}
+		if terminals[name] != "ok" {
+			t.Errorf("step %q terminal status = %q, want ok (got events: %+v)", name, terminals[name], got)
+		}
+	}
+	// Strict order: first-seen index must be monotonically increasing in
+	// the documented order.
+	prevIdx := -1
+	for _, name := range want {
+		idx, ok := firstSeen[name]
+		if !ok {
+			continue
+		}
+		if idx <= prevIdx {
+			t.Errorf("step %q first-seen at index %d, but previous step was at %d (out of order)", name, idx, prevIdx)
+		}
+		prevIdx = idx
+	}
+}
+
+// TestSpawn_DarwinStripsQuarantineXattr drives Spawn against a fake
+// darwin remote and asserts the `xattr -d com.apple.quarantine` cleanup
+// command was run on the install path. Critical for v0.13.5 — without
+// the strip, Gatekeeper SIGKILLs the freshly-arrived binary as soon as
+// the worker tries to exec.
+func TestSpawn_DarwinStripsQuarantineXattr(t *testing.T) {
+	srv := newFakeSSH(t)
+	defer srv.Close()
+	srv.unameOut = "Darwin arm64\n"
+	host, port := srv.host()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	tun, err := Spawn(ctx, SpawnOpts{
+		Host:          host,
+		Port:          port,
+		User:          "test",
+		Password:      "testpass",
+		HostKey:       ssh.InsecureIgnoreHostKey(),
+		InstallMethod: "download",
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	defer tun.Close()
+	if tun.Arch != "darwin-arm64" {
+		t.Fatalf("Arch = %q, want darwin-arm64", tun.Arch)
+	}
+
+	srv.execLogMu.Lock()
+	defer srv.execLogMu.Unlock()
+	sawXattr := false
+	for _, c := range srv.execLog {
+		if strings.Contains(c, "xattr -d com.apple.quarantine") {
+			sawXattr = true
+			break
+		}
+	}
+	if !sawXattr {
+		t.Fatalf("expected xattr -d com.apple.quarantine to run on darwin remote, exec log: %v", srv.execLog)
+	}
+}
+
+// TestPreflight_DarwinPasswordAuthDisabled checks that the new
+// password_auth_disabled flag gets set when the macOS sshd_config probe
+// returns a literal "PasswordAuthentication no" line. This is the
+// pre-spawn warning the wizard surfaces on Step S2.
+func TestPreflight_DarwinPasswordAuthDisabled(t *testing.T) {
+	srv := newFakeSSH(t)
+	defer srv.Close()
+	srv.unameOut = "Darwin arm64\n"
+	srv.sshdConfigOut = "PasswordAuthentication no\n"
+	host, port := srv.host()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	res, err := Preflight(ctx, SpawnOpts{
+		Host:     host,
+		Port:     port,
+		User:     "test",
+		Password: "testpass",
+		HostKey:  ssh.InsecureIgnoreHostKey(),
+	})
+	if err != nil {
+		t.Fatalf("Preflight: %v", err)
+	}
+	if !res.Reachable {
+		t.Fatalf("expected reachable, got log: %v", res.Log)
+	}
+	if !res.PasswordAuthDisabled {
+		t.Fatalf("PasswordAuthDisabled = false; expected true on darwin with sshd_config 'PasswordAuthentication no'")
+	}
+}
+
+// TestPreflight_LinuxNoPasswordAuthFlag asserts the password-auth probe
+// is darwin-only — Linux remotes never get the flag set even if they
+// happen to have a "PasswordAuthentication no" line. Linux operators
+// usually realise this through their cloud console or terminal first;
+// the warning is a macOS-specific gotcha.
+func TestPreflight_LinuxNoPasswordAuthFlag(t *testing.T) {
+	srv := newFakeSSH(t)
+	defer srv.Close()
+	srv.sshdConfigOut = "PasswordAuthentication no\n" // would-be setting; should be ignored on linux
+	host, port := srv.host()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	res, err := Preflight(ctx, SpawnOpts{
+		Host:     host,
+		Port:     port,
+		User:     "test",
+		Password: "testpass",
+		HostKey:  ssh.InsecureIgnoreHostKey(),
+	})
+	if err != nil {
+		t.Fatalf("Preflight: %v", err)
+	}
+	if res.PasswordAuthDisabled {
+		t.Fatal("PasswordAuthDisabled true on linux — should only fire on darwin")
+	}
+}
+
+func TestDetectMacPasswordAuthDisabled_Parsing(t *testing.T) {
+	// Direct unit test of the parser. We can't easily inject an
+	// *ssh.Client here, so verify the parsing branches via a small
+	// inline helper that mirrors the production logic.
+	cases := []struct {
+		grepOut string
+		want    bool
+	}{
+		{"", false},
+		{"PasswordAuthentication no", true},
+		{"PasswordAuthentication  no", true},
+		{"  PasswordAuthentication no  ", true},
+		{"PasswordAuthentication yes", false},
+		{"#PasswordAuthentication no", false},
+		{"# PasswordAuthentication no", false},
+	}
+	for _, tc := range cases {
+		got := parsePasswordAuthLine(tc.grepOut)
+		if got != tc.want {
+			t.Errorf("parsePasswordAuthLine(%q) = %v, want %v", tc.grepOut, got, tc.want)
+		}
 	}
 }
 

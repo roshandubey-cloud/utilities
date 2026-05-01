@@ -88,6 +88,19 @@ type spawnResp struct {
 // The local-binary path is derived server-side via os.Executable() when
 // install_method=="upload" — the UI never gets to point us at an arbitrary
 // local file, which would be a server-side LFI vector.
+//
+// Wire negotiation:
+//
+//   Accept: application/x-ndjson  → streaming response. One JSON object
+//                                   per line for each StepUpdate, then a
+//                                   final {"done": true, ...} envelope.
+//                                   Used by the wizard so each ⏳ flips to
+//                                   ✓ / ✗ as the step actually completes.
+//
+//   Accept: application/json (or anything else) → legacy single-shot
+//                                   {id, url, arch, log[]} blob written
+//                                   when Spawn returns. Backwards-compat
+//                                   path for old clients and tests.
 func (s *Server) handleWorkerSpawn(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST required", http.StatusMethodNotAllowed)
@@ -141,13 +154,23 @@ func (s *Server) handleWorkerSpawn(w http.ResponseWriter, r *http.Request) {
 		opts.HostKey = store.StrictCallback()
 	}
 
+	streaming := strings.Contains(strings.ToLower(r.Header.Get("Accept")), "application/x-ndjson")
+	if streaming {
+		s.runSpawnStreaming(w, r, req, method, opts)
+		return
+	}
+	s.runSpawnLegacy(w, r, req, method, opts)
+}
+
+// runSpawnLegacy is the pre-v0.13.5 single-shot wire — block until Spawn
+// returns, then write a JSON blob. Kept verbatim so old clients and
+// existing specs that don't send Accept: application/x-ndjson keep working.
+func (s *Server) runSpawnLegacy(w http.ResponseWriter, r *http.Request, req spawnReq, method string, opts sshtunnel.SpawnOpts) {
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 	t, err := sshtunnel.Spawn(ctx, opts)
 	if err != nil {
 		log.Printf("spawn worker %s@%s: %v", req.User, req.Host, err)
-		// Best-effort: include the partial spawn log so the UI can show
-		// which step actually failed.
 		var partial []string
 		if t != nil {
 			partial = t.SpawnLog
@@ -181,6 +204,91 @@ func (s *Server) handleWorkerSpawn(w http.ResponseWriter, r *http.Request) {
 		URL:  t.LocalURL,
 		Arch: t.Arch,
 		Log:  t.SpawnLog,
+	})
+}
+
+// runSpawnStreaming wires sshtunnel.Spawn's OnStep callback into a
+// chunked NDJSON response. Each StepUpdate becomes one line; a final
+// {"done": true, ...} envelope carries the success or failure summary.
+//
+// Wire shape (each line is one JSON object, \n-terminated):
+//
+//   {"step":"ssh-dial","status":"running","detail":"Dialing host:22 ..."}
+//   {"step":"ssh-dial","status":"ok","detail":"Connected"}
+//   ...
+//   success → {"done":true,"ok":true,"id":"ssh-...","url":"http://...","arch":"linux-amd64"}
+//   failure → {"done":true,"ok":false,"error":"...","last_step":"install"}
+//
+// Flushed per-event via http.Flusher so the UI sees them immediately.
+func (s *Server) runSpawnStreaming(w http.ResponseWriter, r *http.Request, req spawnReq, method string, opts sshtunnel.SpawnOpts) {
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no") // disable nginx response buffering
+	flusher, _ := w.(http.Flusher)
+
+	var (
+		mu       sync.Mutex
+		lastStep string
+	)
+	writeLine := func(obj any) {
+		mu.Lock()
+		defer mu.Unlock()
+		buf, err := json.Marshal(obj)
+		if err != nil {
+			return
+		}
+		buf = append(buf, '\n')
+		_, _ = w.Write(buf)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+
+	opts.OnStep = func(u sshtunnel.StepUpdate) {
+		mu.Lock()
+		lastStep = u.Step
+		mu.Unlock()
+		writeLine(u)
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	t, err := sshtunnel.Spawn(ctx, opts)
+	if err != nil {
+		log.Printf("spawn worker %s@%s: %v", req.User, req.Host, err)
+		if t != nil {
+			_ = t.Close()
+		}
+		writeLine(map[string]any{
+			"done":      true,
+			"ok":        false,
+			"error":     err.Error(),
+			"last_step": lastStep,
+		})
+		return
+	}
+
+	id := nextSpawnID()
+	entry := &spawnedWorker{
+		ID:            id,
+		URL:           t.LocalURL,
+		RemoteHost:    req.Host,
+		Arch:          t.Arch,
+		InstallMethod: method,
+		SpawnedAt:     time.Now(),
+		SpawnLog:      t.SpawnLog,
+		tunnel:        t,
+	}
+	spawnMu.Lock()
+	spawnedByID[id] = entry
+	spawnMu.Unlock()
+
+	writeLine(map[string]any{
+		"done": true,
+		"ok":   true,
+		"id":   id,
+		"url":  t.LocalURL,
+		"arch": t.Arch,
 	})
 }
 

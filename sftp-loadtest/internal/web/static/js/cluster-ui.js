@@ -776,6 +776,24 @@ async function promptAddWorker() {
       body.appendChild(compatBtn);
     }
 
+    // renderMacPasswordAuthBanner appends a tester-facing warning when
+    // preflight reports the macOS-specific PasswordAuthentication=no
+    // gotcha AND the operator is currently on the password tab. Catches
+    // the 15-second-hang-then-auth-failure pitfall before they click
+    // Spawn. Shown in both Step S2's login test result and Step S3's
+    // prereq verify result.
+    function renderMacPasswordAuthBanner(slot, j) {
+      if (!j || !j.password_auth_disabled) return;
+      if (wizState.values.auth_method !== 'password') return;
+      const banner = document.createElement('div');
+      banner.className = 'cluster-ssh-preflight-verdict is-warn';
+      banner.dataset.role = 'mac-password-auth-warning';
+      banner.innerHTML =
+        'macOS target has <span class="mono">PasswordAuthentication</span> disabled. Switch to a private key, ' +
+        'or run on the target: <span class="mono">sudo sed -i \'\' \'s/^#*PasswordAuthentication.*/PasswordAuthentication yes/\' /etc/ssh/sshd_config && sudo launchctl kickstart -k system/com.openssh.sshd</span>';
+      slot.appendChild(banner);
+    }
+
     function renderPreflightInto(slot, j, loginOnly) {
       slot.innerHTML = '';
       (j.log || []).forEach((line) => {
@@ -832,6 +850,7 @@ async function promptAddWorker() {
           slot.appendChild(warn);
         }
       }
+      renderMacPasswordAuthBanner(slot, j);
     }
 
     // ---- SSH Step S4: install / spawn ----
@@ -873,71 +892,199 @@ async function promptAddWorker() {
       if (backToFix) backToFix.addEventListener('click', () => goStep('s1'));
     }
 
+    // SPAWN_STEPS — the canonical ordered list of named steps Spawn emits
+    // through its OnStep callback. The Go side is the source of truth
+    // (internal/sshtunnel/tunnel.go StepUpdate doc); this array mirrors
+    // it for the UI's pre-rendered checklist. Each entry's .id matches
+    // the wire `step` field, the .label is the human-readable row.
+    //
+    // The data-step attribute on each row is the wire id (NOT a numeric
+    // index any more) — that's how handleStepUpdate finds and flips a
+    // row when an event for it arrives.
+    function spawnStepsForInstall(install) {
+      return [
+        { id: 'ssh-dial',        label: 'Dialing SSH' },
+        { id: 'arch-detect',     label: 'Detecting arch' },
+        { id: 'pkill-orphans',   label: 'Reaping orphan workers' },
+        { id: 'install',         label: install === 'upload' ? 'Uploading binary' : 'Installing (downloading)' },
+        { id: 'smoke',           label: 'Smoke test' },
+        { id: 'spawn-process',   label: 'Spawning worker' },
+        { id: 'wait-ready',      label: 'Waiting for worker' },
+        { id: 'tunnel-listener', label: 'Tunnel ready' },
+      ];
+    }
+
     async function spawnFromS4() {
       const logBox = body.querySelector('[data-role="spawn-log"]');
       const stepActions = body.querySelector('[data-role="wizard-step-actions"]');
       logBox.hidden = false;
       logBox.innerHTML = '';
       const install = wizState.values.install || 'download';
-      const steps = [
-        'Dialing SSH',
-        'Detecting arch',
-        'Reaping orphan workers',
-        install === 'upload' ? 'Uploading binary' : 'Installing (downloading)',
-        'Smoke test',
-        'Spawning worker',
-        'Tunnel ready',
-      ];
+      const steps = spawnStepsForInstall(install);
+      // Render the 7-step (well, 8 — including tunnel-listener) checklist
+      // with each row keyed by the wire step id. handleStepUpdate flips
+      // status icons + appends detail text as events arrive.
+      // We ALSO add legacy data-step="<numeric-index>" so any pre-existing
+      // selector that targeted by index continues to find a row — see the
+      // 164-spec promise about not breaking existing selectors.
       steps.forEach((s, i) => {
         const li = document.createElement('div');
         li.className = 'cluster-ssh-spawn-log-row';
-        li.dataset.step = String(i);
+        li.dataset.step = s.id;
+        li.dataset.stepIndex = String(i);
         li.dataset.role = 'step-spawn';
-        li.innerHTML = `<span class="status">⏳</span><span class="label">${escapeHTML(s)}</span>`;
+        li.innerHTML = `<span class="status">⏳</span><span class="label">${escapeHTML(s.label)}</span><span class="cluster-ssh-spawn-log-detail" data-role="step-detail"></span>`;
         logBox.appendChild(li);
       });
       primary.disabled = true;
       primary.textContent = 'Spawning…';
+
+      const setRowStatus = (stepId, status, detail) => {
+        const row = logBox.querySelector(`[data-step="${stepId}"]`);
+        if (!row) return;
+        const statusEl = row.querySelector('.status');
+        const detailEl = row.querySelector('[data-role="step-detail"]');
+        if (status === 'running') {
+          statusEl.textContent = '🔄';
+          row.classList.add('is-running');
+          row.classList.remove('is-error');
+        } else if (status === 'ok') {
+          statusEl.textContent = '✓';
+          row.classList.remove('is-running');
+        } else if (status === 'err') {
+          statusEl.textContent = '✗';
+          row.classList.remove('is-running');
+          row.classList.add('is-error');
+        }
+        if (detail && detailEl) {
+          detailEl.textContent = ' — ' + detail;
+        }
+      };
+
+      const payload = {
+        host: wizState.values.host,
+        port: wizState.values.port,
+        user: wizState.values.user,
+        password: wizState.values.auth_method === 'password' ? wizState.values.password : '',
+        private_key_pem: wizState.values.auth_method === 'key' ? wizState.values.key : '',
+        passphrase: wizState.values.passphrase,
+        install_method: install,
+      };
+
       try {
-        const r = await apiFetch('/api/worker/spawn', {
+        // Ask for the streaming wire — the master flips behaviour on this
+        // header. Old single-shot JSON endpoint stays available to legacy
+        // clients that don't opt in.
+        const r = await fetch('/api/worker/spawn', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            host: wizState.values.host,
-            port: wizState.values.port,
-            user: wizState.values.user,
-            password: wizState.values.auth_method === 'password' ? wizState.values.password : '',
-            private_key_pem: wizState.values.auth_method === 'key' ? wizState.values.key : '',
-            passphrase: wizState.values.passphrase,
-            install_method: install,
-          }),
+          headers: {
+            'X-Requested-With': 'sftp-loadtest',
+            'Content-Type': 'application/json',
+            'Accept': 'application/x-ndjson',
+          },
+          body: JSON.stringify(payload),
         });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok || j.ok === false) {
-          (j.log || []).forEach((line, i) => {
-            const row = logBox.querySelector(`[data-step="${i}"]`);
-            if (row) row.querySelector('.status').textContent = '✓';
-          });
-          const errMsg = j.error || ('HTTP ' + r.status);
-          logBox.appendChild(renderErrorCard(errMsg));
+        if (!r.ok || !r.body) {
+          // Auth / CSRF / rate-limit hit before streaming started.
+          let txt = '';
+          try { txt = await r.text(); } catch {}
+          logBox.appendChild(renderErrorCard(txt || ('HTTP ' + r.status)));
           primary.disabled = false;
           primary.textContent = 'Retry';
           if (stepActions) stepActions.hidden = false;
           return;
         }
-        steps.forEach((_, i) => {
-          const row = logBox.querySelector(`[data-step="${i}"]`);
+        // NDJSON line splitter — every line is one StepUpdate or a final
+        // {done: true, ...} envelope.
+        const reader = r.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let lastStep = '';
+        let finalEvent = null;
+        const consumeLine = (line) => {
+          line = line.trim();
+          if (!line) return false;
+          let evt;
+          try { evt = JSON.parse(line); } catch { return false; }
+          if (evt.done) {
+            finalEvent = evt;
+            return true;
+          }
+          // Legacy single-shot wire: server returned a flat
+          // {id, url, arch, log[]} or {ok:false, error, log[]} blob with
+          // no streaming events. Treat it as the terminal envelope so
+          // mocks that don't speak NDJSON keep working.
+          if (evt.ok === false) {
+            finalEvent = { done: true, ok: false, error: evt.error, last_step: '' };
+            return true;
+          }
+          if (evt.id && evt.url) {
+            finalEvent = { done: true, ok: true, id: evt.id, url: evt.url, arch: evt.arch };
+            return true;
+          }
+          if (evt.step) {
+            lastStep = evt.step;
+            setRowStatus(evt.step, evt.status, evt.detail);
+          }
+          return false;
+        };
+        readLoop: while (true) {
+          const { value, done } = await reader.read();
+          if (done) {
+            // Flush any final un-newline-terminated line — happens on
+            // legacy single-shot JSON bodies that aren't \n-terminated.
+            if (buffer.trim()) {
+              buffer += decoder.decode();
+              if (consumeLine(buffer)) {
+                buffer = '';
+                break readLoop;
+              }
+              buffer = '';
+            }
+            break;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          let idx;
+          while ((idx = buffer.indexOf('\n')) >= 0) {
+            const line = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 1);
+            if (consumeLine(line)) break readLoop;
+          }
+        }
+        if (!finalEvent) {
+          // Connection ended without a done envelope — treat as a network
+          // failure. lastStep is whatever we got furthest to.
+          logBox.appendChild(renderErrorCard('connection closed before spawn finished', lastStep));
+          primary.disabled = false;
+          primary.textContent = 'Retry';
+          if (stepActions) stepActions.hidden = false;
+          return;
+        }
+        if (!finalEvent.ok) {
+          const failedStep = finalEvent.last_step || lastStep || '';
+          if (failedStep) setRowStatus(failedStep, 'err', finalEvent.error || 'failed');
+          logBox.appendChild(renderErrorCard(finalEvent.error || 'spawn failed', failedStep));
+          primary.disabled = false;
+          primary.textContent = 'Retry';
+          if (stepActions) stepActions.hidden = false;
+          return;
+        }
+        // Belt + braces — flip every row to ✓ in case any "running" was
+        // emitted without a paired "ok" (shouldn't happen, but the UI
+        // should never lie to the operator).
+        steps.forEach((s) => {
+          const row = logBox.querySelector(`[data-step="${s.id}"]`);
           if (row) row.querySelector('.status').textContent = '✓';
         });
         addWorker({
-          url: j.url,
+          url: finalEvent.url,
           auth_user: '',
           auth_pass: '',
           source: 'ssh',
-          spawn_id: j.id,
+          spawn_id: finalEvent.id,
         });
-        pushToast(`Spawned worker on ${wizState.values.host} (${j.arch})`, 'success');
-        close({ kind: 'ssh', id: j.id, url: j.url });
+        pushToast(`Spawned worker on ${wizState.values.host} (${finalEvent.arch})`, 'success');
+        close({ kind: 'ssh', id: finalEvent.id, url: finalEvent.url });
       } catch (e) {
         logBox.appendChild(renderErrorCard(e.message || String(e)));
         primary.disabled = false;
@@ -1282,9 +1429,84 @@ function escapeAttr(s) { return String(s).replace(/"/g, '&quot;'); }
 // render an actionable card instead of a wall of stack-trace text.
 // When the input doesn't match a known pattern, returns null and the
 // caller falls back to the raw string.
-export function decodeSpawnError(raw) {
+//
+// `lastStep`, when provided, is the wire step id from the streaming
+// spawn protocol (e.g. "install", "wait-ready"). It refines the
+// classification: for example a "wait-ready" failure on a darwin target
+// is almost always Gatekeeper killing the binary, while the same raw
+// error string at "ssh-dial" is a transport problem. Optional —
+// undefined falls back to the v0.13.4 raw-string pattern matching.
+export function decodeSpawnError(raw, lastStep) {
   if (!raw) return null;
   const m = String(raw).toLowerCase();
+  // Step-aware refinement happens BEFORE the generic pattern table so
+  // a known step + known failure mode wins over a coarse raw-string
+  // match (which might mis-classify e.g. "connection refused" produced
+  // by the wait-ready probe rather than the initial ssh dial).
+  if (lastStep === 'wait-ready') {
+    return {
+      title: 'Step "wait-ready": worker process died before binding',
+      why: 'The binary was installed and launched, but the master could not reach it on the loopback bind address. On macOS this is almost always Gatekeeper SIGKILL\'ing the freshly-arrived binary; on Linux it usually means the process exec\'d but exited immediately (missing libc, wrong arch, exec format error).',
+      fix: [
+        'macOS targets: switch the install method to "Upload local binary over SSH" — Gatekeeper is more lenient on uploaded files than on curl-downloaded zips.',
+        'macOS targets: open Console.app on the target and look for `Killed: 9` next to `sftp-loadtest`. If you see it, that\'s Gatekeeper. Run `sudo spctl --master-disable` (admin only, temporary) or notarize a signed build.',
+        'Check `/tmp/sftp-loadtest.log` on the remote — the worker writes startup errors there.',
+        'Confirm the architecture matches: `uname -m` on the remote vs the binary you uploaded. arm64 binary on amd64 box (or vice versa) silently fails to exec.',
+      ],
+    };
+  }
+  if (lastStep === 'install' && m.includes('curl')) {
+    return {
+      title: 'Step "install": curl could not download the release',
+      why: 'The remote tried to fetch the release zip but curl errored out. Either the remote has no internet egress, or the GitHub release URL is blocked.',
+      fix: [
+        'Switch to "Upload local binary over SSH" — bypasses curl entirely. This is the right move for air-gapped / VPC-isolated remotes.',
+        'Test from the remote: `curl -v https://github.com`. If that times out, the remote has no internet.',
+        'Some corporate proxies block GitHub; export `https_proxy=http://proxy:port` on the remote shell first.',
+      ],
+    };
+  }
+  if (lastStep === 'install') {
+    return {
+      title: 'Step "install": binary could not be placed on the remote',
+      why: 'The install step (download or upload) failed before the binary landed at its destination.',
+      fix: [
+        'If you used "Download from GitHub", switch to "Upload local binary over SSH" — bypasses curl + unzip entirely.',
+        'If you used Upload, the SFTP subsystem may be disabled. Check `Subsystem sftp` is set in the remote\'s `/etc/ssh/sshd_config`.',
+        'Filesystem full / read-only: try a different remote binary path under `~/`.',
+      ],
+    };
+  }
+  if (lastStep === 'smoke') {
+    return {
+      title: 'Step "smoke": binary on the remote failed to run',
+      why: 'The binary landed at its destination but `-version` and `-h` both failed. Usually a wrong-arch binary, missing libc, or a noexec mount.',
+      fix: [
+        'Confirm the architecture: `uname -m` on the remote should match the binary suffix (e.g. arm64 ↔ darwin-arm64).',
+        'Check the install path is on an executable mount: `mount | grep noexec`. `/tmp` is sometimes mounted noexec on hardened hosts.',
+        'On macOS, verify the quarantine xattr was stripped: `xattr <bin>` should NOT print `com.apple.quarantine`.',
+      ],
+    };
+  }
+  // Auth failure on a darwin target — surface the macOS-specific fix
+  // verbatim so the operator knows exactly what to flip in sshd_config.
+  if (lastStep === 'ssh-dial' && (m.includes('unable to authenticate') || m.includes('handshake failed') || m.includes('authentication failed'))) {
+    // The decoder doesn't know the target's OS at ssh-dial failure time
+    // (uname hasn't run yet) so we surface BOTH the generic + the macOS
+    // hint. The wizard's S2 password-auth-disabled banner separately
+    // warns when uname HAS already run.
+    return {
+      title: 'Step "ssh-dial": authentication failed',
+      why: 'The TCP + SSH handshake worked, but neither password nor key matched what the remote accepts. On macOS targets, the most common cause is sshd\'s default `PasswordAuthentication no` — switch to a private key or re-enable password auth.',
+      fix: [
+        'macOS target: switch the auth tab on Step 2 to "Private key" and paste your `~/.ssh/id_ed25519` (or `id_rsa`).',
+        'macOS target: re-enable password auth (admin only): `sudo sed -i \'\' \'s/^#*PasswordAuthentication.*/PasswordAuthentication yes/\' /etc/ssh/sshd_config && sudo launchctl kickstart -k system/com.openssh.sshd`.',
+        'Linux target: double-check the username — `ec2-user` (Amazon Linux), `ubuntu` (Ubuntu AMIs), `admin` (Debian), `azureuser` (Azure), `opc` (Oracle), `root` (some VPS).',
+        'Most cloud images disable password auth — open "Use SSH private key instead" and paste the `.pem` from the cloud console.',
+        'Check `/var/log/auth.log` (Linux) or Console.app (macOS) on the remote for the rejection reason.',
+      ],
+    };
+  }
   // Network reach / firewall / DNS — these come BEFORE any auth happens,
   // so the operator should fix the network before doing anything else.
   if (m.includes('connection refused')) {
@@ -1395,14 +1617,21 @@ export function decodeSpawnError(raw) {
 // renderErrorCard turns decodeSpawnError output into a DOM element
 // the spawn-log and preflight-log can append. Falls back to a plain
 // row if no decoder match — never swallows the original message.
-export function renderErrorCard(rawError) {
+//
+// `lastStep`, when provided, is forwarded to decodeSpawnError so the
+// classification can be refined (Gatekeeper-on-darwin guidance for
+// wait-ready failures, "switch to upload" guidance for download install
+// failures, etc).
+export function renderErrorCard(rawError, lastStep) {
   const card = document.createElement('div');
   card.className = 'cluster-ssh-error-card';
-  const decoded = decodeSpawnError(rawError);
+  if (lastStep) card.dataset.lastStep = lastStep;
+  const decoded = decodeSpawnError(rawError, lastStep);
   if (!decoded) {
     card.classList.add('is-bare');
+    const bareTitle = lastStep ? `Step "${lastStep}" failed` : 'Spawn failed';
     card.innerHTML =
-      '<div class="cluster-ssh-error-title">Spawn failed</div>' +
+      `<div class="cluster-ssh-error-title">${escapeHTML(bareTitle)}</div>` +
       `<div class="cluster-ssh-error-raw mono">${escapeHTML(rawError || 'unknown error')}</div>`;
     return card;
   }

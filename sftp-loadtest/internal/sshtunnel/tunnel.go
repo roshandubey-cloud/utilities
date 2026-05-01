@@ -83,6 +83,40 @@ type SpawnOpts struct {
 	// RemoteBindAddr is the bind address the spawned worker listens on
 	// (always loopback on the remote). Defaults to "127.0.0.1:18081".
 	RemoteBindAddr string
+
+	// OnStep, when non-nil, is called as each named step starts and ends.
+	// It is the streaming hook the HTTP handler uses to forward NDJSON
+	// progress events to the wizard. Calls are synchronous on the goroutine
+	// running Spawn, so a slow callback throttles the bootstrap. Pass a
+	// non-blocking callback in production.
+	OnStep func(StepUpdate)
+}
+
+// StepUpdate is one progress event emitted by Spawn through OnStep. The
+// wizard's spawn-log row keyed off Step.Name flips its icon from ⏳ to 🔄
+// (running) to ✓ / ✗ (ok / err) as updates arrive. Detail is the
+// human-readable trace fragment ("Detected linux-amd64", "Uploading
+// 14.2 MB", "Worker bound to 127.0.0.1:18081").
+//
+// Step names are stable wire identifiers — the streaming protocol uses
+// them as map keys on the client. The full set:
+//
+//   ssh-dial         — TCP + SSH handshake + auth
+//   arch-detect      — uname -s -m
+//   pkill-orphans    — defensive reap
+//   install          — download or upload
+//   smoke            — -version / -h
+//   spawn-process    — nohup binary
+//   wait-ready       — direct-tcpip probe loop
+//   tunnel-listener  — local 127.0.0.1:0 listen + accept loop start
+//
+// Status is one of "running", "ok", "err". A given step always emits at
+// least one "running" then exactly one "ok" or "err".
+type StepUpdate struct {
+	Step    string `json:"step"`
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
+	Detail  string `json:"detail,omitempty"`
 }
 
 // Tunnel is the live state of one SSH-bootstrapped worker. LocalURL is
@@ -145,10 +179,19 @@ func Spawn(ctx context.Context, opts SpawnOpts) (*Tunnel, error) {
 		binaryPath: bin,
 	}
 
+	emit := func(step, status, detail string) {
+		if opts.OnStep == nil {
+			return
+		}
+		opts.OnStep(StepUpdate{Step: step, Status: status, Detail: detail})
+	}
+
 	// Step 1 — SSH dial + auth.
 	t.appendLog("Dialing SSH " + opts.Host + ":" + port + " as " + opts.User)
+	emit("ssh-dial", "running", "Dialing "+opts.Host+":"+port+" as "+opts.User)
 	auth, err := buildAuth(opts)
 	if err != nil {
+		emit("ssh-dial", "err", err.Error())
 		return nil, err
 	}
 	hk := opts.HostKey
@@ -164,44 +207,64 @@ func Spawn(ctx context.Context, opts SpawnOpts) (*Tunnel, error) {
 	sshAddr := net.JoinHostPort(opts.Host, port)
 	client, err := dialSSHContext(ctx, sshAddr, cfg)
 	if err != nil {
+		emit("ssh-dial", "err", err.Error())
 		return nil, fmt.Errorf("ssh dial %s: %w", sshAddr, err)
 	}
 	t.sshClient = client
+	emit("ssh-dial", "ok", "Connected")
 
 	// From here on, any error path must Close the tunnel.
-	finish := func(err error) (*Tunnel, error) {
+	finish := func(step string, err error) (*Tunnel, error) {
+		if step != "" {
+			emit(step, "err", err.Error())
+		}
 		_ = t.Close()
 		return nil, err
 	}
 
 	// Step 2 — Detect arch.
 	t.appendLog("Detecting remote arch (uname -s -m)")
+	emit("arch-detect", "running", "Running uname -s -m")
 	out, err := runExec(client, "uname -s -m")
 	if err != nil {
-		return finish(fmt.Errorf("uname: %w", err))
+		return finish("arch-detect", fmt.Errorf("uname: %w", err))
 	}
 	arch, err := mapArch(out)
 	if err != nil {
-		return finish(err)
+		return finish("arch-detect", err)
 	}
 	t.Arch = arch
 	t.appendLog("Detected arch: " + arch)
+	emit("arch-detect", "ok", "Detected "+arch)
+
+	// macOS has $HOME-rooted default install path because Gatekeeper
+	// occasionally treats /tmp writes as quarantined. Operators can still
+	// override via opts.RemoteBinaryPath; we only nudge the default when
+	// the caller didn't pin a path.
+	isDarwin := strings.HasPrefix(arch, "darwin-")
+	if isDarwin && opts.RemoteBinaryPath == "" {
+		bin = "$HOME/sftp-loadtest"
+		t.binaryPath = bin
+	}
 
 	// Step 3 — Defensive cleanup of any orphan from a previous master.
 	t.appendLog("Reaping orphan workers (pkill)")
+	emit("pkill-orphans", "running", "Reaping any orphan worker on "+bindAddr)
 	pkillCmd := fmt.Sprintf("pkill -f 'sftp-loadtest -addr %s' 2>/dev/null; sleep 0.3; true", regexEscape(bindAddr))
 	if _, err := runExec(client, pkillCmd); err != nil {
 		// pkill returning non-zero (no matches) is normal — runExec only
 		// surfaces hard errors (channel failures), not non-zero exits.
 		t.appendLog("pkill warning: " + err.Error())
 	}
+	emit("pkill-orphans", "ok", "Reap done")
 
 	// Step 4 — Install.
+	emit("install", "running", "Installing via "+opts.InstallMethod)
 	switch opts.InstallMethod {
 	case "download":
 		assetSuffix, err := assetSuffixForArch(arch)
 		if err != nil {
-			return finish(err)
+			return finish("install", err)
 		}
 		tag := opts.ReleaseTag
 		var releasePath string
@@ -215,6 +278,7 @@ func Spawn(ctx context.Context, opts SpawnOpts) (*Tunnel, error) {
 			releasePath, assetSuffix,
 		)
 		t.appendLog("Downloading from " + releaseURL)
+		emit("install", "running", "Downloading "+releaseURL)
 		dlCmd := fmt.Sprintf(
 			"curl -fsSL %q -o /tmp/sftp-loadtest.zip && "+
 				"unzip -o /tmp/sftp-loadtest.zip -d /tmp/sftp-loadtest-bin && "+
@@ -223,60 +287,82 @@ func Spawn(ctx context.Context, opts SpawnOpts) (*Tunnel, error) {
 			releaseURL, assetSuffix, bin, bin,
 		)
 		if _, err := runExec(client, dlCmd); err != nil {
-			return finish(fmt.Errorf("download install: %w", err))
+			return finish("install", fmt.Errorf("download install: %w", err))
 		}
 	case "upload":
 		t.appendLog("Uploading local binary " + opts.LocalBinaryPath + " to " + bin)
-		if _, err := os.Stat(opts.LocalBinaryPath); err != nil {
-			return finish(fmt.Errorf("local binary: %w", err))
+		emit("install", "running", "Uploading "+opts.LocalBinaryPath)
+		fi, err := os.Stat(opts.LocalBinaryPath)
+		if err != nil {
+			return finish("install", fmt.Errorf("local binary: %w", err))
 		}
 		sc, err := sftp.NewClient(client)
 		if err != nil {
-			return finish(fmt.Errorf("open sftp subsystem: %w", err))
+			return finish("install", fmt.Errorf("open sftp subsystem: %w", err))
 		}
 		t.sftpClient = sc
 		if err := uploadBinary(sc, opts.LocalBinaryPath, bin); err != nil {
-			return finish(fmt.Errorf("upload binary: %w", err))
+			return finish("install", fmt.Errorf("upload binary: %w", err))
 		}
+		emit("install", "running", fmt.Sprintf("Uploaded %d bytes", fi.Size()))
+	}
+	// macOS quarantine attribute strip — Gatekeeper otherwise can SIGKILL
+	// the freshly-arrived binary when it tries to exec. No-op on non-mac
+	// targets (xattr is mac-only) but we run unconditionally on darwin
+	// so download AND upload both clear the flag.
+	if isDarwin {
+		stripCmd := fmt.Sprintf("xattr -d com.apple.quarantine %s 2>/dev/null || true", bin)
+		_, _ = runExec(client, stripCmd)
+		t.appendLog("Stripped com.apple.quarantine xattr")
+		emit("install", "running", "Stripped com.apple.quarantine xattr")
 	}
 	t.appendLog("Installed at " + bin)
+	emit("install", "ok", "Installed at "+bin)
 
 	// Step 5 — Smoke test.
 	t.appendLog("Smoke test: " + bin + " -version")
+	emit("smoke", "running", "Running "+bin+" -version")
 	smokeOut, smokeErr := runExec(client, bin+" -version 2>&1")
 	if smokeErr != nil || strings.TrimSpace(smokeOut) == "" {
 		// Fall back to -h: a clean exit + "sftp-loadtest" mention is enough.
 		t.appendLog("(-version unavailable, falling back to -h)")
+		emit("smoke", "running", "-version unavailable, falling back to -h")
 		hOut, hErr := runExec(client, bin+" -h 2>&1; true")
 		if hErr != nil {
-			return finish(fmt.Errorf("smoke test failed: %w", hErr))
+			return finish("smoke", fmt.Errorf("smoke test failed: %w", hErr))
 		}
 		if !strings.Contains(strings.ToLower(hOut), "sftp-loadtest") {
-			return finish(fmt.Errorf("smoke test: -h output did not contain 'sftp-loadtest'"))
+			return finish("smoke", fmt.Errorf("smoke test: -h output did not contain 'sftp-loadtest'"))
 		}
 	}
+	emit("smoke", "ok", "Binary runs")
 
 	// Step 6 — Spawn the worker. nohup detaches; the exec channel returns
 	// immediately because we redirect both stdout and stderr to the log.
 	t.appendLog("Spawning worker on " + bindAddr)
+	emit("spawn-process", "running", "nohup worker → "+bindAddr)
 	spawnCmd := fmt.Sprintf(
-		"nohup %q -addr %s -insecure-host-key > /tmp/sftp-loadtest.log 2>&1 &",
+		"nohup %s -addr %s -insecure-host-key > /tmp/sftp-loadtest.log 2>&1 &",
 		bin, bindAddr,
 	)
 	if _, err := runExec(client, spawnCmd); err != nil {
-		return finish(fmt.Errorf("spawn: %w", err))
+		return finish("spawn-process", fmt.Errorf("spawn: %w", err))
 	}
+	emit("spawn-process", "ok", "Worker process detached")
 
 	// Step 7 — Wait for the worker to accept connections on the remote.
 	t.appendLog("Waiting for worker to be ready on " + bindAddr)
+	emit("wait-ready", "running", "Probing "+bindAddr)
 	if err := waitRemoteReady(ctx, client, bindAddr, 5*time.Second); err != nil {
-		return finish(fmt.Errorf("worker did not become ready: %w", err))
+		return finish("wait-ready", fmt.Errorf("worker did not become ready: %w", err))
 	}
+	emit("wait-ready", "ok", "Worker bound to "+bindAddr)
 
 	// Step 8 — Open the master-side reverse tunnel.
+	emit("tunnel-listener", "running", "Opening loopback listener")
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return finish(fmt.Errorf("local listen: %w", err))
+		return finish("tunnel-listener", fmt.Errorf("local listen: %w", err))
 	}
 	t.listener = listener
 	localAddr := listener.Addr().String()
@@ -288,6 +374,7 @@ func Spawn(ctx context.Context, opts SpawnOpts) (*Tunnel, error) {
 	t.wg.Add(1)
 	go t.acceptLoop(tunCtx)
 
+	emit("tunnel-listener", "ok", "Tunnel ready: "+t.LocalURL)
 	return t, nil
 }
 
@@ -329,16 +416,22 @@ func buildAuth(opts SpawnOpts) ([]ssh.AuthMethod, error) {
 // remote check came back clean. The Log mirrors Spawn's step-by-step
 // log so the UI can render it identically.
 type PreflightResult struct {
-	OK          bool     `json:"ok"`
-	Reachable   bool     `json:"reachable"`     // SSH dial + auth succeeded
-	Arch        string   `json:"arch,omitempty"` // detected platform-arch
-	CanWrite    bool     `json:"can_write"`     // remote bin path's parent is writable
-	HasCurl     bool     `json:"has_curl"`      // download method requires curl + unzip
-	HasUnzip    bool     `json:"has_unzip"`
-	WhoAmI      string   `json:"whoami,omitempty"` // remote `id -un`
-	Hostname    string   `json:"hostname,omitempty"`
-	Log         []string `json:"log"`
-	Error       string   `json:"error,omitempty"`
+	OK        bool   `json:"ok"`
+	Reachable bool   `json:"reachable"`      // SSH dial + auth succeeded
+	Arch      string `json:"arch,omitempty"` // detected platform-arch
+	CanWrite  bool   `json:"can_write"`      // remote bin path's parent is writable
+	HasCurl   bool   `json:"has_curl"`       // download method requires curl + unzip
+	HasUnzip  bool   `json:"has_unzip"`
+	WhoAmI    string `json:"whoami,omitempty"` // remote `id -un`
+	Hostname  string `json:"hostname,omitempty"`
+	// PasswordAuthDisabled is true on darwin remotes whose sshd_config
+	// pins PasswordAuthentication to "no". macOS ships with this default
+	// since Ventura — operators trying to spawn with password auth will
+	// see a 15-second hang then "unable to authenticate" otherwise. The
+	// wizard reads this flag on Step S2 and warns BEFORE the spawn.
+	PasswordAuthDisabled bool     `json:"password_auth_disabled,omitempty"`
+	Log                  []string `json:"log"`
+	Error                string   `json:"error,omitempty"`
 }
 
 // Preflight dials SSH with the same auth + host-key behaviour Spawn uses,
@@ -430,6 +523,16 @@ func Preflight(ctx context.Context, opts SpawnOpts) (*PreflightResult, error) {
 	if out, err := runExec(client, "hostname"); err == nil {
 		res.Hostname = strings.TrimSpace(out)
 		appendLog("✓ remote hostname: " + res.Hostname)
+	}
+
+	// macOS: probe sshd_config for PasswordAuthentication. Catches the
+	// "default macOS sshd refuses passwords" gotcha BEFORE the operator
+	// burns 15 seconds on a hanging dial.
+	if strings.HasPrefix(res.Arch, "darwin-") {
+		res.PasswordAuthDisabled = detectMacPasswordAuthDisabled(client)
+		if res.PasswordAuthDisabled {
+			appendLog("⚠ macOS sshd has PasswordAuthentication disabled — switch to a private key")
+		}
 	}
 
 	// Write check on the install path's parent. If the operator chose a
@@ -690,6 +793,44 @@ func assetSuffixForArch(arch string) (string, error) {
 		return "windows-amd64", nil
 	}
 	return "", fmt.Errorf("no release asset known for arch %q", arch)
+}
+
+// detectMacPasswordAuthDisabled reads /etc/ssh/sshd_config on a darwin
+// remote and returns true iff the last PasswordAuthentication directive
+// resolves to "no". macOS Ventura+ ships with this default — the wizard
+// uses the result to warn the operator before they click Spawn.
+//
+// Returns false on any read error (file unreadable / sudo required) — we
+// don't want to spook the operator when we genuinely don't know.
+func detectMacPasswordAuthDisabled(client *ssh.Client) bool {
+	out, err := runExec(client, "grep -E '^[[:space:]]*PasswordAuthentication' /etc/ssh/sshd_config 2>/dev/null | tail -n1")
+	if err != nil {
+		return false
+	}
+	return parsePasswordAuthLine(out)
+}
+
+// parsePasswordAuthLine returns true iff the (possibly empty) sshd_config
+// line resolves to a literal `PasswordAuthentication no`. Commented-out
+// lines and the empty string return false — we only flag explicit "no".
+// Extracted into its own helper so the test suite can exercise the
+// parsing branches without standing up a fake SSH server.
+func parsePasswordAuthLine(grepOut string) bool {
+	line := strings.ToLower(strings.TrimSpace(grepOut))
+	if line == "" {
+		return false
+	}
+	// Commented-out config: platform default applies. On macOS Ventura+
+	// that default is "no", but we don't claim certainty without an
+	// explicit setting, so we don't flag it.
+	if strings.HasPrefix(line, "#") {
+		return false
+	}
+	fields := strings.Fields(line)
+	if len(fields) >= 2 && fields[0] == "passwordauthentication" && fields[1] == "no" {
+		return true
+	}
+	return false
 }
 
 // regexEscape escapes a literal so it's safe to embed inside a pkill -f
