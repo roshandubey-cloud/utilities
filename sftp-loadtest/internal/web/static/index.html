@@ -725,7 +725,7 @@
   </main>
 
   <header class="masthead">
-    <div class="meta" style="margin-bottom:8px">
+    <div class="meta" style="margin-bottom:var(--sp-2)">
       <span><span class="edition">The Transfer Desk</span><span class="sep">·</span>Late Edition</span>
       <span style="display:flex; align-items:center; gap:10px">
         <span id="m_date">—</span><span class="sep">·</span><span id="m_clock">—</span>
@@ -781,7 +781,7 @@
             </div>
           </div>
           <div class="chips" id="conn_chips"></div>
-          <div class="actions" style="padding:8px 0 0">
+          <div class="actions" style="padding:var(--sp-2) 0 0">
             <button type="button" class="ghost" id="probeBtn">Test connection</button>
             <label style="display:inline-flex;align-items:center;gap:6px;margin:0 0 0 12px;text-transform:none;letter-spacing:0;font-size:12.5px;color:var(--muted);font-weight:400;cursor:pointer" title="On first connect, capture this server's host key into known_hosts. Subsequent connects to the same server are silent. A CHANGED key for an already-known server is always refused (MITM signal).">
               <input type="checkbox" id="probe_tofu"> Auto-add server key on first connect (TOFU)
@@ -887,14 +887,14 @@
           </div>
           <label style="margin-top:10px">Round-trip tracking mode</label>
           <div class="row" style="gap:14px; align-items:flex-start">
-            <label style="flex:1; display:flex; gap:8px; align-items:flex-start; cursor:pointer">
+            <label style="flex:1; display:flex; gap:var(--sp-2); align-items:flex-start; cursor:pointer">
               <input type="radio" name="download_match_mode" value="trackid" id="dmm_trackid" checked>
               <span>
                 <b>Track-id suffix</b> <span class="hint" style="display:inline">(default)</span>
                 <div class="hint" style="margin-top:2px">Server appends <code>#&lt;trackid&gt;</code> to each processed file and places it in the download user's outbox. Required for OFTP/EDI gateways that already do this.</div>
               </span>
             </label>
-            <label style="flex:1; display:flex; gap:8px; align-items:flex-start; cursor:pointer">
+            <label style="flex:1; display:flex; gap:var(--sp-2); align-items:flex-start; cursor:pointer">
               <input type="radio" name="download_match_mode" value="filename" id="dmm_filename">
               <span>
                 <b>Filename pattern</b> <span class="hint" style="display:inline">(no track-id needed)</span>
@@ -958,7 +958,7 @@
               <input id="sched_note" type="text" placeholder="nightly soak against prod-sftp-1">
             </div>
           </div>
-          <div class="actions" style="padding:8px 0 0">
+          <div class="actions" style="padding:var(--sp-2) 0 0">
             <button type="button" class="ghost" id="scheduleBtn">Schedule this config</button>
           </div>
           <div class="hint">
