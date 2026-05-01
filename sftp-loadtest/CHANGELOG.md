@@ -41,6 +41,19 @@ self-update.
 - CI: bumped `actions/checkout@v4 → v5` and `actions/setup-go@v5 → v6` (Node.js
   20 deprecation, enforcement 2026-06-02).
 
+## [v0.13.5] — 2026-05-01
+Same content as Unreleased above; tag was cut on 2026-05-01 to ship the
+cluster keepalive + version negotiation + linux-arm64 desktop SKU + UI
+token-ify batch.
+
+### Fixed (post-release CI hygiene, applied on `main` after the tag)
+- Forced `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` at the workflow level
+  so `softprops/action-gh-release@v2` (still Node 20) keeps working past
+  the June 2 deadline.
+- Pinned `cache-dependency-path: sftp-loadtest/go.sum` on all four
+  release-pipeline `setup-go@v6` invocations — ends the "Dependencies
+  file is not found" cache miss on every release run.
+
 ## [v0.13.4] — 2026-05-01
 ### Added
 - Cluster: NDJSON streaming spawn with real-time per-step status events to the
