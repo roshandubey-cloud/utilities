@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -66,6 +67,11 @@ type spawnReq struct {
 	ReleaseTag       string `json:"release_tag"`
 	RemoteBinaryPath string `json:"remote_binary_path"`
 	RemoteBindAddr   string `json:"remote_bind_addr"`
+	// TCPOnly short-circuits handleWorkerPreflight to a credential-free
+	// net.DialTimeout against host:port. Used by the wizard's Step S1
+	// "Test reachability" button so the operator can verify the network
+	// before they have to type the SSH user / key.
+	TCPOnly bool `json:"tcp_only"`
 }
 
 type spawnResp struct {
@@ -242,6 +248,45 @@ func (s *Server) handleWorkerPreflight(w http.ResponseWriter, r *http.Request) {
 	var req spawnReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	// TCP-only mode: wizard Step S1 "Test reachability" before the
+	// operator has typed any credentials. We skip auth entirely and
+	// just confirm a TCP socket can be opened to host:port. Returns the
+	// same {ok, reachable, log[]} shape the full preflight uses so the
+	// UI renders identically.
+	if req.TCPOnly {
+		if req.Host == "" {
+			http.Error(w, "host required", http.StatusBadRequest)
+			return
+		}
+		port := req.Port
+		if port == "" {
+			port = "22"
+		}
+		addr := net.JoinHostPort(req.Host, port)
+		t0 := time.Now()
+		conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+		latency := time.Since(t0).Milliseconds()
+		out := map[string]any{
+			"ok":         err == nil,
+			"reachable":  err == nil,
+			"latency_ms": latency,
+		}
+		if err != nil {
+			out["error"] = err.Error()
+			out["log"] = []string{
+				"Probing TCP " + addr,
+				"✗ tcp dial: " + err.Error(),
+			}
+		} else {
+			_ = conn.Close()
+			out["log"] = []string{
+				"Probing TCP " + addr,
+				fmt.Sprintf("✓ tcp dial ok in %d ms", latency),
+			}
+		}
+		writeJSON(w, out)
 		return
 	}
 	if req.Host == "" || req.User == "" {

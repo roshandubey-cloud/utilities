@@ -1371,3 +1371,153 @@ body.wails-linux {
   color: var(--text-secondary);
   margin-left: 6px;
 }
+
+/* ---------- Add Worker wizard (v0.13.4) ----------
+   The Add Worker form was replaced with a guided wizard. Step 0 is the
+   entry choice, then either the URL flow (1 screen) or the SSH wizard
+   (S1 Where → S2 Who → S3 How → S4 Install). Only the field(s) for the
+   active step are visible. */
+.modal-panel-wizard { width: 640px; }
+.modal-head-sub {
+  display: block;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-regular);
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.wizard-progress {
+  display: flex; align-items: center;
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--surface);
+  border-bottom: var(--bw-1) solid var(--border-weak);
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.wizard-progress-step {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: none; cursor: default;
+  padding: 4px 8px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-12);
+  font-family: var(--font-sans);
+  color: var(--text-tertiary);
+}
+.wizard-progress-step:not(:disabled) { cursor: pointer; }
+.wizard-progress-step.is-active {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+.wizard-progress-step.is-done { color: var(--success-fg-soft); }
+.wizard-progress-step:hover:not(:disabled) { background: var(--action-hover); }
+.wizard-progress-marker {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+}
+.wizard-progress-step.is-active .wizard-progress-marker {
+  background: var(--accent); color: var(--accent-fg); border-color: var(--accent);
+}
+.wizard-progress-step.is-done .wizard-progress-marker {
+  background: rgba(16, 185, 129, 0.18);
+  color: var(--success-fg-soft);
+  border-color: rgba(16, 185, 129, 0.32);
+}
+.wizard-progress-sep { color: var(--text-tertiary); font-size: var(--fs-12); }
+
+.wizard-body { padding: var(--sp-4); }
+.wizard-foot { padding: var(--sp-3) var(--sp-4); }
+.wizard-foot-spacer { flex: 1; }
+.wizard-help { margin: 0 var(--sp-4) var(--sp-3) var(--sp-4); }
+
+.wizard-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-3);
+}
+.wizard-choice-card {
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 8px;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-3);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-sans);
+  transition: border-color var(--t-fast), background var(--t-fast), box-shadow var(--t-fast);
+}
+.wizard-choice-card:hover {
+  border-color: var(--accent);
+  background: var(--action-hover);
+  box-shadow: var(--focus-ring-strong);
+}
+.wizard-choice-card-icon { font-size: 24px; line-height: 1; }
+.wizard-choice-card-title {
+  font-size: var(--fs-14);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+.wizard-choice-card-sub {
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  line-height: var(--lh-normal);
+}
+
+.wizard-step { display: flex; flex-direction: column; gap: var(--sp-3); }
+.wizard-step-head { display: flex; flex-direction: column; gap: 2px; }
+.wizard-step-title {
+  font-size: var(--fs-14);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.wizard-auth-tabs {
+  display: inline-flex;
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+  padding: 2px;
+  gap: 2px;
+  align-self: flex-start;
+}
+.wizard-auth-tab {
+  background: none; border: none;
+  padding: 4px 12px;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--r-2);
+  font-family: var(--font-sans);
+}
+.wizard-auth-tab:hover { color: var(--text-primary); }
+.wizard-auth-tab.is-active {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  box-shadow: var(--focus-ring-strong);
+}
+.wizard-auth-panel { display: flex; flex-direction: column; gap: var(--sp-3); }
+
+.wizard-review-card {
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+  padding: var(--sp-3);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.wizard-review-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: var(--fs-12);
+}
+.wizard-review-row .label { color: var(--text-tertiary); text-transform: uppercase; letter-spacing: var(--tracking-loose); font-weight: var(--fw-semibold); font-size: var(--fs-11); }
+.wizard-review-row .value { color: var(--text-primary); }
+.wizard-review-row .value.mono { font-family: var(--font-mono); }
+.wizard-step-actions {
+  display: flex; justify-content: flex-end; gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}

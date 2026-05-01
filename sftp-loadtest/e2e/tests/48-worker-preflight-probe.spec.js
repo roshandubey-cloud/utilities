@@ -1,22 +1,31 @@
-// 48-worker-preflight-probe.spec.js — Test SSH access button +
-// sidebar worker health LED.
+// 48-worker-preflight-probe.spec.js — preflight verification +
+// sidebar worker health LED. Updated for the v0.13.4 wizard.
 //
-// Three gaps closed in this release:
-//   1. Add Worker → SSH bootstrap had no way to verify reach + auth +
-//      install rights BEFORE the long spawn flow. New "Test SSH access"
-//      button POSTs /api/worker/preflight and renders a verdict pill.
-//   2. Sidebar Workers section showed worker as "on" based purely on
-//      the user toggle, never pinged the worker. New live LED per row
-//      reflects /api/worker/probe results (idle / active / down).
-//   3. /api/worker/probe is a master-side proxy so browsers can ask
-//      "is this worker actually answering?" without CORS.
+// In the wizard, the "full preflight" lives on Step S3 ("How does the
+// binary get installed?"). The button is [data-role="step-test-prereq"]
+// and a hidden compat alias [data-role="ssh-preflight"] still exists so
+// older specs continue to pass. Output goes into both
+// [data-role="step-test-prereq-log"] and the legacy [data-role="preflight-log"].
 
 import { test, expect, request as playwrightRequest } from '@playwright/test';
 
 const CSRF = { 'X-Requested-With': 'sftp-loadtest' };
 
+async function openWizardOnStepS3(page) {
+  await page.goto('/');
+  await page.locator('[data-action="view"][data-view="cluster"]').click();
+  await page.locator('[data-role="cluster-add"]').click();
+  await page.locator('[data-role="choice-ssh"]').click();
+  await page.locator('#ssh_host').fill('10.0.0.5');
+  await page.locator('.modal-foot [data-role="primary"]').click();
+  await page.locator('#ssh_user').fill('ec2-user');
+  await page.locator('#ssh_password').fill('s3cret');
+  await page.locator('.modal-foot [data-role="primary"]').click();
+  await expect(page.locator('[data-role="wizard-step"][data-step-id="s3"]')).toBeVisible();
+}
+
 test.describe('worker preflight + live probe', () => {
-  test('Test SSH access button surfaces a preflight log + verdict', async ({ page }) => {
+  test('Step S3 prereq button surfaces a preflight log + verdict', async ({ page }) => {
     await page.route('**/api/worker/preflight', (route) => route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -42,14 +51,8 @@ test.describe('worker preflight + live probe', () => {
         ],
       }),
     }));
-    await page.goto('/');
-    await page.locator('[data-action="view"][data-view="cluster"]').click();
-    await page.locator('[data-role="cluster-add"]').click();
-    await page.locator('.modal-tab[data-tab="ssh"]').click();
-    await page.locator('#ssh_host').fill('10.0.0.5');
-    await page.locator('#ssh_user').fill('ec2-user');
-    await page.locator('#ssh_password').fill('s3cret');
-    await page.locator('[data-role="ssh-preflight"]').click();
+    await openWizardOnStepS3(page);
+    await page.locator('[data-role="step-test-prereq"]').click();
     const log = page.locator('[data-role="preflight-log"]');
     await expect(log).toBeVisible();
     await expect(log).toContainText('ssh dial + auth ok');
@@ -78,14 +81,8 @@ test.describe('worker preflight + live probe', () => {
         ],
       }),
     }));
-    await page.goto('/');
-    await page.locator('[data-action="view"][data-view="cluster"]').click();
-    await page.locator('[data-role="cluster-add"]').click();
-    await page.locator('.modal-tab[data-tab="ssh"]').click();
-    await page.locator('#ssh_host').fill('10.0.0.5');
-    await page.locator('#ssh_user').fill('webuser');
-    await page.locator('#ssh_password').fill('p');
-    await page.locator('[data-role="ssh-preflight"]').click();
+    await openWizardOnStepS3(page);
+    await page.locator('[data-role="step-test-prereq"]').click();
     const log = page.locator('[data-role="preflight-log"]');
     await expect(log).toBeVisible();
     const verdict = log.locator('.cluster-ssh-preflight-verdict.is-warn');
@@ -151,10 +148,8 @@ test.describe('worker preflight + live probe', () => {
     const ctx = await playwrightRequest.newContext({
       baseURL, extraHTTPHeaders: CSRF,
     });
-    // Empty url → 400.
     const bad = await ctx.post('/api/worker/probe', { data: { url: '' } });
     expect(bad.status()).toBe(400);
-    // Unreachable url → 200 with ok:false and an error string.
     const r = await ctx.post('/api/worker/probe', { data: { url: 'http://127.0.0.1:1' } });
     expect(r.ok()).toBe(true);
     const j = await r.json();

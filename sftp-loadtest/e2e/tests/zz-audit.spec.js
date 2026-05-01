@@ -81,4 +81,27 @@ test.describe('full visual audit', () => {
     await page.waitForTimeout(500);
     await page.screenshot({ path: 'playwright-report/audit-add-worker-modal.png', fullPage: true });
   });
+
+  test('add worker wizard — every step', async ({ page }) => {
+    await page.goto('/');
+    await page.locator('[data-action="view"][data-view="cluster"]').click();
+    await page.locator('[data-role="cluster-add"]').click();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: 'playwright-report/audit-add-worker-step0-choice.png', fullPage: true });
+    await page.locator('[data-role="choice-ssh"]').click();
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: 'playwright-report/audit-add-worker-s1-where.png', fullPage: true });
+    await page.locator('#ssh_host').fill('10.0.0.5');
+    await page.locator('.modal-foot [data-role="primary"]').click();
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: 'playwright-report/audit-add-worker-s2-who.png', fullPage: true });
+    await page.locator('#ssh_user').fill('ec2-user');
+    await page.locator('#ssh_password').fill('p');
+    await page.locator('.modal-foot [data-role="primary"]').click();
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: 'playwright-report/audit-add-worker-s3-how.png', fullPage: true });
+    await page.locator('.modal-foot [data-role="primary"]').click();
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: 'playwright-report/audit-add-worker-s4-install.png', fullPage: true });
+  });
 });
