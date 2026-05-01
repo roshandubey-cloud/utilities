@@ -35,6 +35,10 @@ type fakeSSHServer struct {
 	workerListener net.Listener
 	mu             sync.Mutex
 	stopped        bool
+	// acceptedConns tracks every TCP conn the server handed off to
+	// handleConn. The keepalive failure test calls killAcceptedConns()
+	// to simulate a remote SSH session dying mid-run.
+	acceptedConns []net.Conn
 	// unameOut, when non-empty, overrides the canned "Linux x86_64"
 	// response so a test can drive a darwin code path through the same
 	// in-process server.
@@ -141,7 +145,24 @@ func (s *fakeSSHServer) acceptLoop() {
 		if err != nil {
 			return
 		}
+		s.mu.Lock()
+		s.acceptedConns = append(s.acceptedConns, conn)
+		s.mu.Unlock()
 		go s.handleConn(conn, cfg)
+	}
+}
+
+// killAcceptedConns force-closes every TCP conn the server has handed
+// off to handleConn. The remote *ssh.ClientConn held by sshtunnel.Tunnel
+// will see I/O errors on its next SendRequest, which is exactly what
+// the keepalive loop is supposed to detect.
+func (s *fakeSSHServer) killAcceptedConns() {
+	s.mu.Lock()
+	conns := append([]net.Conn(nil), s.acceptedConns...)
+	s.acceptedConns = nil
+	s.mu.Unlock()
+	for _, c := range conns {
+		_ = c.Close()
 	}
 }
 
@@ -357,6 +378,85 @@ func TestSpawn_UploadEndToEnd(t *testing.T) {
 	c := &http.Client{Timeout: 500 * time.Millisecond}
 	if _, err := c.Get(tun.LocalURL + "/probe-test"); err == nil {
 		t.Fatalf("expected GET to fail after Close, got nil err")
+	}
+}
+
+// TestKeepAlive_ClosesTunnelOnSessionLoss is the runtime pin for the SSH
+// KeepAlive loop. The loop's job is: notice a dead SSH session within
+// keepAliveMaxFails × keepAliveInterval and proactively Close the tunnel
+// so cluster status flips to "unreachable" instead of silently aggregating
+// zero progress.
+//
+// We exercise the fixed feature, not a symptom: spawn a real tunnel against
+// the in-process fake server, then yank the rug by closing the server's
+// listener and forcibly killing every accepted SSH conn it holds. The
+// keepalive's SendRequest must error, accumulate fails, and trigger Close
+// inside the shrunk interval window.
+func TestKeepAlive_ClosesTunnelOnSessionLoss(t *testing.T) {
+	// Override the production knobs so the test runs in ~150ms instead
+	// of 90s. Restored on exit.
+	savedInterval, savedMax := keepAliveInterval, keepAliveMaxFails
+	keepAliveInterval = 30 * time.Millisecond
+	keepAliveMaxFails = 2
+	defer func() {
+		keepAliveInterval = savedInterval
+		keepAliveMaxFails = savedMax
+	}()
+
+	srv := newFakeSSH(t)
+	host, port := srv.host()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	tun, err := Spawn(ctx, SpawnOpts{
+		Host:          host,
+		Port:          port,
+		User:          "test",
+		Password:      "testpass",
+		HostKey:       ssh.InsecureIgnoreHostKey(),
+		InstallMethod: "download",
+		ReleaseTag:    "v0.11.0",
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	defer tun.Close()
+	if tun.IsClosed() {
+		t.Fatal("tunnel should not be closed immediately after Spawn")
+	}
+
+	// Kill the underlying TCP conns the server accepted — the *ssh.Client
+	// held by the tunnel will see I/O errors on its next SendRequest.
+	// listener.Close() alone wouldn't do it; existing conns survive that.
+	srv.killAcceptedConns()
+	defer srv.Close()
+
+	// Within keepAliveMaxFails × keepAliveInterval (60ms) the loop should
+	// flip the tunnel to closed. Allow generous headroom for CI noise.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if tun.IsClosed() {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !tun.IsClosed() {
+		t.Fatalf("keepalive did not close tunnel after session loss; SpawnLog=%v", tun.SpawnLog)
+	}
+
+	// SpawnLog should have at least one keepalive-failed entry; this
+	// confirms the loop ran the failure branch rather than the tunnel
+	// closing for some other reason (context cancel, etc).
+	sawKeepalive := false
+	for _, line := range tun.SpawnLog {
+		if strings.Contains(line, "keepalive failed") || strings.Contains(line, "ssh session lost") {
+			sawKeepalive = true
+			break
+		}
+	}
+	if !sawKeepalive {
+		t.Fatalf("expected keepalive failure log entry; got %v", tun.SpawnLog)
 	}
 }
 

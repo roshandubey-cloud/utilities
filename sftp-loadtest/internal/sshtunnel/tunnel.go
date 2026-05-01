@@ -373,9 +373,80 @@ func Spawn(ctx context.Context, opts SpawnOpts) (*Tunnel, error) {
 	t.cancel = cancel
 	t.wg.Add(1)
 	go t.acceptLoop(tunCtx)
+	t.wg.Add(1)
+	go t.keepAliveLoop(tunCtx)
 
 	emit("tunnel-listener", "ok", "Tunnel ready: "+t.LocalURL)
 	return t, nil
+}
+
+// keepAliveInterval / keepAliveMaxFails control the SSH keepalive cadence.
+// 30s × 3 = 90s max staleness window before the master notices a dead
+// session — short enough that the cluster status flips to "unreachable"
+// inside one operator attention span, long enough not to spam the wire.
+// They are vars (not consts) so tests can shrink them to milliseconds
+// without waiting 90s per assertion.
+var (
+	keepAliveInterval = 30 * time.Second
+	keepAliveMaxFails = 3
+)
+
+// IsClosed reports whether Close has been called. Useful for cluster-side
+// callers that want to drop a tunnel after the keepalive loop tore it
+// down on session loss.
+func (t *Tunnel) IsClosed() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.closed
+}
+
+// keepAliveLoop pings the SSH session periodically with the OpenSSH
+// keepalive global request. A live session ACKs it; a TCP-dead one (NAT
+// timed out, intermediate switch rebooted, remote sshd crashed) returns
+// an error. After keepAliveMaxFails consecutive failures we proactively
+// close the tunnel so callers polling /api/cluster/status see the worker
+// as unreachable instead of silently aggregating zero progress.
+//
+// Without this loop, a dead SSH session was only detected on the next
+// reverse-tunnel dial, which only happens when the cluster coordinator
+// reaches out — workers that the coordinator wasn't actively polling
+// could be dead for an entire run with no UI signal.
+func (t *Tunnel) keepAliveLoop(ctx context.Context) {
+	defer t.wg.Done()
+	ticker := time.NewTicker(keepAliveInterval)
+	defer ticker.Stop()
+	fails := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		t.mu.Lock()
+		client := t.sshClient
+		closed := t.closed
+		t.mu.Unlock()
+		if closed || client == nil {
+			return
+		}
+		_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+		if err != nil {
+			fails++
+			t.appendLog(fmt.Sprintf("keepalive failed (%d/%d): %v", fails, keepAliveMaxFails, err))
+			if fails >= keepAliveMaxFails {
+				t.appendLog("ssh session lost; closing tunnel")
+				// Close on a separate goroutine so we don't deadlock
+				// against our own wg.Wait inside Close.
+				go func() { _ = t.Close() }()
+				return
+			}
+			continue
+		}
+		if fails > 0 {
+			t.appendLog("keepalive recovered")
+			fails = 0
+		}
+	}
 }
 
 // dialSSHContext lets a caller-supplied context cancel an otherwise
