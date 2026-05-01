@@ -136,7 +136,13 @@ test('SSH bootstrap tab surfaces server errors in the spawn log', async ({ page 
   await page.locator('#ssh_password').fill('hunter2');
   await page.locator('.modal-foot [data-role="primary"]').click();
 
-  await expect(page.locator('.cluster-ssh-spawn-log .is-error')).toContainText(/connection refused/);
+  // v0.13.3: failed spawns now render a structured error card with
+  // a decoded title, why, and fix-list. Raw error stays accessible
+  // via the collapsible disclosure inside the card.
+  const card = page.locator('.cluster-ssh-spawn-log .cluster-ssh-error-card');
+  await expect(card).toBeVisible();
+  await expect(card).toContainText(/Connection refused.*SSH not listening/i);
+  await expect(card.locator('.cluster-ssh-error-raw-disclosure')).toContainText(/Raw error/);
   // Modal stays open, button reverts to Retry.
   await expect(page.locator('.modal-foot [data-role="primary"]')).toHaveText(/Retry/);
 });

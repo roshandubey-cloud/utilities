@@ -255,24 +255,32 @@ async function promptAddWorker() {
             <div class="modal-tab-blurb">
               Master will SSH to the host, install the sftp-loadtest binary, spawn it on
               <span class="mono">127.0.0.1:18081</span>, and tunnel HTTP back through the SSH session — no extra port to open.
+              <strong>The remote needs nothing pre-installed</strong> beyond a working SSH server.
             </div>
             <div class="modal-field-grid-2">
               <div class="modal-field">
                 <label class="modal-field-label" for="ssh_host">Host <span class="modal-field-req">*</span></label>
-                <input class="modal-field-input" id="ssh_host" type="text" placeholder="10.0.0.5" />
+                <input class="modal-field-input" id="ssh_host" type="text" placeholder="10.0.0.5 or my-vm.example.com" />
+                <div class="modal-field-hint">Public IP, private IP, or DNS name of the remote machine. Use <span class="mono">ssh user@host</span> from your terminal first to confirm reachability.</div>
               </div>
               <div class="modal-field">
                 <label class="modal-field-label" for="ssh_port">Port</label>
                 <input class="modal-field-input" id="ssh_port" type="text" value="22" />
+                <div class="modal-field-hint">Default 22. Some hosts use 2222 or a custom port — check the cloud console.</div>
               </div>
             </div>
             <div class="modal-field">
               <label class="modal-field-label" for="ssh_user">User <span class="modal-field-req">*</span></label>
-              <input class="modal-field-input" id="ssh_user" type="text" placeholder="ec2-user" />
+              <input class="modal-field-input" id="ssh_user" type="text" placeholder="(varies — see hint below)" />
+              <div class="modal-field-hint" data-role="user-hint">
+                Common defaults: <span class="mono">ec2-user</span> (Amazon Linux), <span class="mono">ubuntu</span> (Ubuntu AMIs), <span class="mono">admin</span> (Debian),
+                <span class="mono">azureuser</span> (Azure), <span class="mono">opc</span> (Oracle), <span class="mono">root</span> (some VPS), or your local username.
+              </div>
             </div>
             <div class="modal-field">
               <label class="modal-field-label" for="ssh_password">Password</label>
               <input class="modal-field-input" id="ssh_password" type="password" placeholder="(or use a private key below)" />
+              <div class="modal-field-hint">Most cloud VMs disable password auth — use the private-key disclosure below in that case.</div>
             </div>
             <details class="modal-disclosure" id="ssh-private-key-disclosure">
               <summary>Use SSH private key instead</summary>
@@ -280,6 +288,7 @@ async function promptAddWorker() {
                 <label class="modal-field-label" for="ssh_key">Private key (PEM)</label>
                 <textarea class="modal-field-input modal-field-textarea" id="ssh_key" rows="5"
                           placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+                <div class="modal-field-hint">Paste the contents of your <span class="mono">~/.ssh/id_*</span> or the <span class="mono">.pem</span> the cloud console gave you. Held in memory only — never written to localStorage.</div>
               </div>
               <div class="modal-field">
                 <label class="modal-field-label" for="ssh_passphrase">Passphrase (if encrypted)</label>
@@ -297,6 +306,19 @@ async function promptAddWorker() {
             </div>
             <div class="cluster-ssh-preflight-log" data-role="preflight-log" hidden></div>
             <div class="cluster-ssh-spawn-log" data-role="spawn-log" hidden></div>
+            <details class="modal-disclosure cluster-ssh-gotchas">
+              <summary>Common SSH gotchas (click if a step keeps failing)</summary>
+              <ul class="cluster-ssh-gotchas-list">
+                <li><b>Connection refused</b> → SSH daemon not running, or port wrong. Run <span class="mono">systemctl status sshd</span> on the remote, or check the cloud security group / firewall allows port 22 from your IP.</li>
+                <li><b>i/o timeout</b> → firewall blocks your IP. AWS: Security Group inbound rule for port 22; GCP: VPC firewall; Azure: NSG. Check from <span class="mono">curl -v telnet://host:22</span>.</li>
+                <li><b>no such host</b> → DNS lookup failed. Try the IP directly, or <span class="mono">dig &lt;host&gt;</span> from your terminal.</li>
+                <li><b>permission denied (publickey)</b> → server allows ONLY key auth. Open the disclosure above and paste your private key.</li>
+                <li><b>permission denied (password)</b> → wrong username or password. Try <span class="mono">root</span> first if you don't know — many distros let root in.</li>
+                <li><b>install path NOT writable</b> → operator's user can't write to <span class="mono">/tmp</span>. Try a different user (<span class="mono">root</span>, <span class="mono">sudo</span>-capable user), or set the binary path under <span class="mono">/home/&lt;you&gt;/sftp-loadtest</span>.</li>
+                <li><b>curl / unzip not found</b> → switch the install method to "Upload local binary" — bypasses the dependency.</li>
+                <li><b>Don't have an SSH server on the remote yet?</b> Linux: <span class="mono">apt install openssh-server</span> or <span class="mono">yum install openssh-server</span> + <span class="mono">systemctl enable --now sshd</span>. Windows: install OpenSSH Server from "Optional features".</li>
+              </ul>
+            </details>
           </div>
         </div>
         <div class="modal-foot">
@@ -319,6 +341,32 @@ async function promptAddWorker() {
     document.addEventListener('keydown', onKey, true);
     cancelBtn.addEventListener('click', () => close(null));
     bd.addEventListener('click', (ev) => { if (ev.target === bd) close(null); });
+
+    // Smart username hint — when the operator types a host that looks
+    // like a known cloud provider, hint at the most likely username
+    // for that platform so they don't have to guess. Live as the host
+    // is typed.
+    const hostInput = bd.querySelector('#ssh_host');
+    const userHint = bd.querySelector('[data-role="user-hint"]');
+    if (hostInput && userHint) {
+      const defaultHint = userHint.innerHTML;
+      hostInput.addEventListener('input', () => {
+        const h = hostInput.value.toLowerCase();
+        let suggestion = '';
+        if (h.includes('amazonaws.com') || h.includes('compute.internal') || h.includes('ec2-')) {
+          suggestion = '<strong>AWS detected</strong> — try <span class="mono">ec2-user</span> (Amazon Linux), <span class="mono">ubuntu</span> (Ubuntu AMI), <span class="mono">admin</span> (Debian), or <span class="mono">root</span> (some marketplace AMIs).';
+        } else if (h.includes('cloudapp.azure.com') || h.includes('azure.com')) {
+          suggestion = '<strong>Azure detected</strong> — usually <span class="mono">azureuser</span> unless you set a custom name when creating the VM.';
+        } else if (h.includes('googleusercontent.com') || h.includes('compute.googleapis.com')) {
+          suggestion = '<strong>GCP detected</strong> — your local username (the one in <span class="mono">gcloud auth list</span>) when using OS Login; otherwise the SSH key\'s metadata username.';
+        } else if (h.includes('oraclecloud.com')) {
+          suggestion = '<strong>Oracle Cloud detected</strong> — usually <span class="mono">opc</span> on Oracle Linux, <span class="mono">ubuntu</span> on Ubuntu images.';
+        } else if (h.includes('digitalocean') || h.includes('linode') || h.includes('vultr')) {
+          suggestion = '<strong>VPS detected</strong> — usually <span class="mono">root</span> for fresh droplets/instances, your account user otherwise.';
+        }
+        userHint.innerHTML = suggestion || defaultHint;
+      });
+    }
 
     // Test SSH access button — POSTs /api/worker/preflight and renders a
     // checklist of remote-side capabilities (reachable / arch detected /
@@ -361,7 +409,8 @@ async function promptAddWorker() {
           });
           if (!r.ok) {
             const txt = await r.text();
-            preflightLog.innerHTML = `<div class="cluster-ssh-spawn-log-row is-error"><span class="status">✗</span><span class="label">${escapeHTML(txt || 'HTTP ' + r.status)}</span></div>`;
+            preflightLog.innerHTML = '';
+            preflightLog.appendChild(renderErrorCard(txt || 'HTTP ' + r.status));
             return;
           }
           const j = await r.json();
@@ -392,6 +441,23 @@ async function promptAddWorker() {
             verdict.textContent = `INCOMPLETE — see failed checks above`;
           }
           preflightLog.appendChild(verdict);
+          // When something failed, surface a situation-aware fix card.
+          // Walk the log for the first ✗ line and feed it to the
+          // decoder; the operator gets a step-by-step Try-this list
+          // tied to the exact failure mode.
+          if (!j.ok || !j.reachable || !j.can_write || (!j.has_curl || !j.has_unzip)) {
+            let failLine = '';
+            if (!j.reachable) failLine = j.error || 'connect: connection refused';
+            else if (!j.can_write) failLine = 'install path NOT writable';
+            else if (!j.has_curl) failLine = 'curl not found';
+            else if (!j.has_unzip) failLine = 'unzip not found';
+            else failLine = (j.log || []).find((l) => String(l).startsWith('✗')) || '';
+            if (failLine) {
+              const card = renderErrorCard(failLine);
+              card.classList.add('cluster-ssh-error-card-inline');
+              preflightLog.appendChild(card);
+            }
+          }
           // Disable the Spawn primary button if the install method is
           // download but curl/unzip are missing — the spawn would just
           // fail later. The operator either ticks "upload" or fixes the
@@ -404,7 +470,8 @@ async function promptAddWorker() {
             preflightLog.appendChild(warn);
           }
         } catch (e) {
-          preflightLog.innerHTML = `<div class="cluster-ssh-spawn-log-row is-error"><span class="status">✗</span><span class="label">${escapeHTML(e.message || String(e))}</span></div>`;
+          preflightLog.innerHTML = '';
+          preflightLog.appendChild(renderErrorCard(e.message || String(e)));
         } finally {
           preflightBtn.disabled = false;
           preflightBtn.textContent = previousLabel;
@@ -489,15 +556,15 @@ async function promptAddWorker() {
         });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j.ok === false) {
-          // Render the partial log + error.
+          // Render the partial log + a decoded error card so the
+          // operator gets situation-aware guidance instead of a raw
+          // stack trace.
           (j.log || []).forEach((line, i) => {
             const row = logBox.querySelector(`[data-step="${i}"]`);
             if (row) row.querySelector('.status').textContent = '✓';
           });
-          const err = document.createElement('div');
-          err.className = 'cluster-ssh-spawn-log-row is-error';
-          err.innerHTML = `<span class="status">✗</span><span class="label">${escapeHTML(j.error || ('HTTP ' + r.status))}</span>`;
-          logBox.appendChild(err);
+          const errMsg = j.error || ('HTTP ' + r.status);
+          logBox.appendChild(renderErrorCard(errMsg));
           primary.disabled = false;
           primary.textContent = 'Retry';
           return;
@@ -517,10 +584,7 @@ async function promptAddWorker() {
         pushToast(`Spawned worker on ${host} (${j.arch})`, 'success');
         close({ kind: 'ssh', id: j.id, url: j.url });
       } catch (e) {
-        const err = document.createElement('div');
-        err.className = 'cluster-ssh-spawn-log-row is-error';
-        err.innerHTML = `<span class="status">✗</span><span class="label">${escapeHTML(e.message || String(e))}</span>`;
-        logBox.appendChild(err);
+        logBox.appendChild(renderErrorCard(e.message || String(e)));
         primary.disabled = false;
         primary.textContent = 'Retry';
       }
@@ -783,3 +847,143 @@ function prettyURL(u) {
 
 function escapeHTML(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function escapeAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+
+// decodeSpawnError maps a raw SSH / install / spawn error string into
+// situation-aware guidance. Returns {title, why, fix[]} so the UI can
+// render an actionable card instead of a wall of stack-trace text.
+// When the input doesn't match a known pattern, returns null and the
+// caller falls back to the raw string.
+export function decodeSpawnError(raw) {
+  if (!raw) return null;
+  const m = String(raw).toLowerCase();
+  // Network reach / firewall / DNS — these come BEFORE any auth happens,
+  // so the operator should fix the network before doing anything else.
+  if (m.includes('connection refused')) {
+    return {
+      title: 'Connection refused — SSH not listening on that host:port',
+      why: 'The TCP socket said "no thanks." Either the SSH daemon is not running on the remote, or it is listening on a different port than the one you typed.',
+      fix: [
+        'On the remote, check `systemctl status sshd` (Linux) or `Get-Service sshd` (Windows). Start it if stopped: `sudo systemctl enable --now sshd`.',
+        'If SSH is running but on a non-default port, set Port to that value (some setups use 2222).',
+        'If the remote is `127.0.0.1`, you are pointing at YOUR OWN machine — that is rarely what you want. Use the remote\'s actual IP or hostname.',
+        'If the host is in another VPC / cloud, confirm the security group / firewall allows port 22 from your IP.',
+      ],
+    };
+  }
+  if (m.includes('no such host') || m.includes('lookup')) {
+    return {
+      title: 'DNS lookup failed — hostname did not resolve',
+      why: 'Your machine could not translate the hostname to an IP address.',
+      fix: [
+        'Try the IP address directly (e.g. `54.193.10.2` instead of `my-vm.example.com`).',
+        'From your terminal: `dig <hostname>` — if it returns NXDOMAIN, the name is wrong or unreachable.',
+        'If the host is in a private VPC, you will need a VPN or a bastion to reach it.',
+      ],
+    };
+  }
+  if (m.includes('i/o timeout') || m.includes('deadline exceeded') || m.includes('no route to host') || m.includes('network is unreachable')) {
+    return {
+      title: 'Network timeout — packets are not reaching the host',
+      why: 'TCP handshake never completed. Almost always a firewall or routing problem between your machine and the remote.',
+      fix: [
+        'Cloud security groups: open port 22 inbound from your public IP. AWS: Security Groups; GCP: VPC firewall; Azure: NSG.',
+        'From your terminal: `nc -vz <host> 22` should connect within a second. If it hangs, port is blocked.',
+        'VPN / Tailscale / Zero Trust gateway: confirm your client is up and the host is reachable through it.',
+        'Local firewall on YOUR machine could also be blocking outbound 22.',
+      ],
+    };
+  }
+  // Auth — credentials worked enough to talk SSH but not enough to log in.
+  if (m.includes('unable to authenticate') || (m.includes('handshake failed') && m.includes('publickey'))) {
+    return {
+      title: 'Authentication failed — server rejected the credentials',
+      why: 'The TCP + SSH handshake worked, but neither password nor key matched what the remote accepts.',
+      fix: [
+        'Double-check the username — common defaults vary by image: `ec2-user` on Amazon Linux, `ubuntu` on Ubuntu AMIs, `admin` on Debian, `azureuser` on Azure, `opc` on Oracle, sometimes plain `root`.',
+        'If your terminal `ssh user@host` works, copy that exact username here.',
+        'Most cloud images disable password auth — open "Use SSH private key instead" and paste the `.pem` from the cloud console.',
+        'For an encrypted key, fill the Passphrase field too.',
+        'Check `/var/log/auth.log` (Linux) on the remote for the rejection reason — that\'s the ground truth.',
+      ],
+    };
+  }
+  if (m.includes('handshake failed') || m.includes('connection reset')) {
+    return {
+      title: 'SSH handshake aborted by the server',
+      why: 'The remote answered TCP but tore the SSH conversation down before auth completed. Often fail2ban / sshguard / a rate-limiter kicking in.',
+      fix: [
+        'Wait 5–10 minutes — fail2ban typically bans for 10 minutes after a few bad attempts.',
+        'Check `/var/log/auth.log` on the remote for `Connection from ... closed`.',
+        'If this is repeatable from the same source IP, you may be permanently banned — connect from a different network or unblock yourself on the remote.',
+      ],
+    };
+  }
+  // Filesystem / install path issues surfaced by Preflight.
+  if (m.includes('not writable') || m.includes('permission denied') && m.includes('write')) {
+    return {
+      title: 'Install path is not writable by the SSH user',
+      why: 'The operator user does not have write access to the directory where the binary will live.',
+      fix: [
+        'Use a path the user CAN write — try setting the remote binary path to `/home/<your-user>/sftp-loadtest` instead of `/tmp/sftp-loadtest`.',
+        'Or SSH in as a user with write access to `/tmp` (often `root` or any sudo-capable user).',
+        'On hardened hosts, `/tmp` is sometimes mounted noexec — choose a different path.',
+      ],
+    };
+  }
+  if (m.includes('curl') && m.includes('not found')) {
+    return {
+      title: 'curl is missing on the remote',
+      why: '"Download from GitHub" install method needs curl + unzip on the remote to fetch the release zip.',
+      fix: [
+        'Switch the install method to "Upload local binary over SSH" — that bypasses curl entirely.',
+        'Or install curl: `apt install curl unzip` (Debian/Ubuntu) / `yum install curl unzip` (RHEL/Amazon Linux).',
+      ],
+    };
+  }
+  if (m.includes('unzip') && m.includes('not found')) {
+    return {
+      title: 'unzip is missing on the remote',
+      why: '"Download from GitHub" install method needs unzip to extract the release.',
+      fix: [
+        'Switch the install method to "Upload local binary over SSH" — that delivers the binary directly.',
+        'Or install unzip: `apt install unzip` / `yum install unzip`.',
+      ],
+    };
+  }
+  if (m.includes('uname') && m.includes('unsupported')) {
+    return {
+      title: 'Remote platform not supported',
+      why: 'The detected OS / architecture is not in the release matrix.',
+      fix: [
+        'Supported: linux-amd64, linux-arm64, darwin-amd64, darwin-arm64, windows-amd64. Other platforms are not built.',
+        'On unusual ARM boards / BSD / Solaris this tool will not run as a worker.',
+      ],
+    };
+  }
+  return null;
+}
+
+// renderErrorCard turns decodeSpawnError output into a DOM element
+// the spawn-log and preflight-log can append. Falls back to a plain
+// row if no decoder match — never swallows the original message.
+export function renderErrorCard(rawError) {
+  const card = document.createElement('div');
+  card.className = 'cluster-ssh-error-card';
+  const decoded = decodeSpawnError(rawError);
+  if (!decoded) {
+    card.classList.add('is-bare');
+    card.innerHTML =
+      '<div class="cluster-ssh-error-title">Spawn failed</div>' +
+      `<div class="cluster-ssh-error-raw mono">${escapeHTML(rawError || 'unknown error')}</div>`;
+    return card;
+  }
+  const fixHTML = decoded.fix.map((step) => `<li>${escapeHTML(step).replace(/`([^`]+)`/g, '<span class="mono">$1</span>')}</li>`).join('');
+  card.innerHTML =
+    `<div class="cluster-ssh-error-title">${escapeHTML(decoded.title)}</div>` +
+    `<div class="cluster-ssh-error-why">${escapeHTML(decoded.why)}</div>` +
+    `<div class="cluster-ssh-error-fix-label">Try this:</div>` +
+    `<ol class="cluster-ssh-error-fix">${fixHTML}</ol>` +
+    `<details class="cluster-ssh-error-raw-disclosure"><summary>Raw error</summary>` +
+    `<div class="cluster-ssh-error-raw mono">${escapeHTML(rawError)}</div></details>`;
+  return card;
+}

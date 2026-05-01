@@ -1251,6 +1251,113 @@ body.wails-linux {
 }
 .modal-actions-hint { font-size: var(--fs-11); color: var(--text-tertiary); }
 
+/* Inline hints under each SSH-bootstrap field — explain what to type
+   without making the operator guess. */
+.modal-field-hint {
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  margin-top: 4px;
+  line-height: 1.45;
+}
+.modal-field-hint .mono { font-family: var(--font-mono); color: var(--text-secondary); }
+
+/* Gotchas reference — collapsible list at the bottom of the SSH tab.
+   Operator clicks open when something keeps failing. */
+.cluster-ssh-gotchas { margin-top: var(--sp-3); }
+.cluster-ssh-gotchas summary {
+  cursor: pointer;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  padding: 4px 0;
+}
+.cluster-ssh-gotchas summary:hover { color: var(--text-primary); }
+.cluster-ssh-gotchas-list {
+  list-style: disc;
+  padding-left: var(--sp-4);
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+.cluster-ssh-gotchas-list li { margin-bottom: 6px; }
+.cluster-ssh-gotchas-list b { color: var(--text-primary); font-weight: var(--fw-semibold); }
+.cluster-ssh-gotchas-list .mono {
+  font-family: var(--font-mono);
+  background: var(--surface);
+  padding: 1px 5px;
+  border-radius: var(--r-1);
+  font-size: var(--fs-10);
+}
+
+/* Decoded error card — replaces the bare ✗ row when a known SSH /
+   install failure pattern matches. Title, why, fix-list, raw-error
+   collapsible. Visually distinct so the operator stops scrolling
+   when they see it. */
+.cluster-ssh-error-card {
+  margin-top: var(--sp-2);
+  padding: var(--sp-3);
+  border-radius: var(--r-3);
+  background: rgba(239, 68, 68, 0.08);
+  border: var(--bw-1) solid rgba(239, 68, 68, 0.30);
+  font-family: var(--font-sans);
+}
+.cluster-ssh-error-card.is-bare {
+  background: rgba(239, 68, 68, 0.05);
+  border-color: rgba(239, 68, 68, 0.20);
+}
+.cluster-ssh-error-card-inline { margin-top: var(--sp-3); }
+.cluster-ssh-error-title {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  color: var(--danger-fg-soft);
+  margin-bottom: var(--sp-1);
+}
+.cluster-ssh-error-why {
+  font-size: var(--fs-12);
+  color: var(--text-primary);
+  line-height: 1.5;
+  margin-bottom: var(--sp-2);
+}
+.cluster-ssh-error-fix-label {
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-loose);
+  margin-bottom: 4px;
+}
+.cluster-ssh-error-fix {
+  margin: 0 0 var(--sp-2);
+  padding-left: var(--sp-4);
+  font-size: var(--fs-12);
+  color: var(--text-primary);
+  line-height: 1.55;
+}
+.cluster-ssh-error-fix li { margin-bottom: 4px; }
+.cluster-ssh-error-fix .mono {
+  font-family: var(--font-mono);
+  background: var(--surface);
+  padding: 1px 5px;
+  border-radius: var(--r-1);
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+}
+.cluster-ssh-error-raw-disclosure summary {
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.cluster-ssh-error-raw {
+  margin-top: 6px;
+  padding: var(--sp-2);
+  background: var(--surface);
+  border-radius: var(--r-2);
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .cluster-ssh-badge {
   display: inline-flex;
   align-items: center;
