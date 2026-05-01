@@ -12,47 +12,44 @@ self-update.
 
 ## [Unreleased]
 
-### Added
-- Cluster: SSH KeepAlive on every spawned worker tunnel. The master pings
-  `keepalive@openssh.com` every 30s; after 3 consecutive failures the tunnel
-  closes proactively so `/api/cluster/status` flips to "unreachable" within
-  ~90s instead of silently aggregating zero progress. Runtime test
-  `TestKeepAlive_ClosesTunnelOnSessionLoss` exercises the failure path.
-- Cluster: worker version negotiation. `/healthz?detail=1` now reports the
-  master's platform version; `/api/cluster/start` captures each worker's
-  version and the cluster status JSON exposes `master_version`,
-  per-worker `version`, and a `version_mismatch` flag. Workers that don't
-  expose version (older releases) leave Version empty without blocking the
-  run. Pinned by `TestCoordinator_VersionNegotiation`.
-- CI: new `build-linux-arm64-desktop` job on `ubuntu-22.04-arm` ships the
-  desktop-app for linux/arm64 — closes the dual-SKU parity gap (webui
-  already had linux-arm64; desktop-app was amd64-only).
-- UI: token-ified the first batch of inline px styles in `index.html`
-  (`margin-bottom:8px`, `padding:8px 0 0`, `gap:8px` → `var(--sp-2)`).
-  First step toward the v0.9.0 workbench refactor.
+(no changes since v0.13.6)
 
-### Changed
-- Bumped `platformVersion` to `0.13.5` so the tester can verify the build
-  the cluster status UI surfaces this in `master_version`.
-- CI: pinned `wails` CLI to `v2.12.0` (matches `go.mod`) and wrapped install
-  with a 3-attempt retry across mac / linux / windows / linux-arm64 runners.
-  Closes the `proxy.golang.org` timeout class that lost 8 of 20 assets on
-  v0.13.3.
-- CI: bumped `actions/checkout@v4 → v5` and `actions/setup-go@v5 → v6` (Node.js
-  20 deprecation, enforcement 2026-06-02).
-
-## [v0.13.5] — 2026-05-01
-Same content as Unreleased above; tag was cut on 2026-05-01 to ship the
-cluster keepalive + version negotiation + linux-arm64 desktop SKU + UI
-token-ify batch.
-
-### Fixed (post-release CI hygiene, applied on `main` after the tag)
-- Forced `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` at the workflow level
+## [v0.13.6] — 2026-05-01
+### Fixed
+- CI: forced `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` at workflow level
   so `softprops/action-gh-release@v2` (still Node 20) keeps working past
-  the June 2 deadline.
-- Pinned `cache-dependency-path: sftp-loadtest/go.sum` on all four
+  the June 2 2026 deadline. Drops once upstream ships Node-24.
+- CI: pinned `cache-dependency-path: sftp-loadtest/go.sum` on all four
   release-pipeline `setup-go@v6` invocations — ends the "Dependencies
   file is not found" cache miss on every release run.
+
+## [v0.13.5] — 2026-05-01
+First release with full dual-SKU parity (5 platforms × 2 SKUs = 20
+assets). Cluster reliability + UI workbench scaffolding.
+
+### Added
+- Cluster: SSH KeepAlive on every spawned worker tunnel. Pings
+  `keepalive@openssh.com` every 30s; after 3 consecutive failures the
+  tunnel closes proactively so `/api/cluster/status` flips to
+  "unreachable" within ~90s. Runtime test
+  `TestKeepAlive_ClosesTunnelOnSessionLoss`.
+- Cluster: worker version negotiation. `/healthz?detail=1` reports
+  master's platformVersion; cluster status JSON exposes `master_version`,
+  per-worker `version`, and `version_mismatch`. Pinned by
+  `TestCoordinator_VersionNegotiation`.
+- CI: new `build-linux-arm64-desktop` job on `ubuntu-22.04-arm` —
+  closes dual-SKU parity gap (webui already had linux-arm64;
+  desktop-app was amd64-only).
+- UI: token-ified the first batch of inline px styles in `index.html`
+  (`8px → var(--sp-2)` at 5 sites). First step toward v0.9.0 workbench.
+
+### Changed
+- CI: pinned `wails` CLI to `v2.12.0` (matches `go.mod`) + 3-attempt
+  install retry on every runner (mac/linux/linux-arm64/windows).
+  Closes the `proxy.golang.org` timeout class that lost 8 of 20 assets
+  on v0.13.3.
+- CI: bumped `actions/checkout@v4 → v5` and `actions/setup-go@v5 → v6`
+  for the Node.js 20 deprecation (enforcement 2026-06-02).
 
 ## [v0.13.4] — 2026-05-01
 ### Added
@@ -134,7 +131,9 @@ token-ify batch.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.4...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.6...HEAD
+[v0.13.6]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.6
+[v0.13.5]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.5
 [v0.13.4]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.4
 [v0.13.3]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.3
 [v0.13.2]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.2
