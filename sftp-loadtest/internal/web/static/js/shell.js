@@ -335,9 +335,34 @@ function wireRunControls(shell) {
   const legacyStop  = document.getElementById('stopBtn');
   const tbRun = shell.querySelector('[data-role="topbar-run"]');
   const tbStop = shell.querySelector('[data-role="topbar-stop"]');
-  if (legacyStart) tbRun.addEventListener('click', (e) => { e.preventDefault(); legacyStart.click(); });
-  else tbRun.disabled = true;
-  if (legacyStop) tbStop.addEventListener('click', (e) => { e.preventDefault(); legacyStop.click(); });
+  if (legacyStart) {
+    tbRun.addEventListener('click', (e) => {
+      e.preventDefault();
+      // Optimistic disable: a click against a disabled button should
+      // be a no-op anyway, but guard against a double-fire from the
+      // capture-phase pre-flight wrapper. The poll will re-enable
+      // within 2 s if the run never actually started.
+      if (tbRun.disabled) return;
+      tbRun.disabled = true;
+      tbStop.disabled = false;
+      legacyStart.click();
+    });
+  } else {
+    tbRun.disabled = true;
+  }
+  if (legacyStop) {
+    tbStop.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (tbStop.disabled) return;
+      // Optimistic disable so the operator can't double-click Stop
+      // while POST /api/stop is in flight (or in the up-to-2-second
+      // window before the status poll confirms idle). The next tick
+      // reconciles either way.
+      tbStop.disabled = true;
+      tbRun.disabled = false;
+      legacyStop.click();
+    });
+  }
   document.addEventListener('keydown', (ev) => {
     if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') { ev.preventDefault(); tbRun.click(); }
     else if ((ev.metaKey || ev.ctrlKey) && ev.key === '.') { ev.preventDefault(); tbStop.click(); }

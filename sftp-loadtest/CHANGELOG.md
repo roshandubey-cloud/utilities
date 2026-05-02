@@ -486,9 +486,26 @@ Three follow-ups from the v0.13.7 validation pass.
   `userEditedPort` flips and we stop touching the field. Custom
   ports stick across protocol-mode flips.
 
+## [v0.13.28] — 2026-05-01
+### Fixed
+- **Stop button stays clickable after a run ends.** The status poller
+  reconciles `tbRun.disabled` / `tbStop.disabled` from `/api/status`'s
+  `active` flag every 2 s, so after Stop fired the Stop button stayed
+  enabled for up to two seconds — long enough for a frustrated double-
+  click during a slow stop. Same problem on the Run side: clicking Run
+  left it enabled while POST /api/start was in flight, so a quick
+  double-click submitted twice (the second was a 409 but the operator
+  saw a confusing toast).
+- The topbar handlers now optimistically flip the disabled state on
+  click: clicking Run immediately disables Run + enables Stop;
+  clicking Stop does the inverse. The 2-second status poll keeps
+  doing its reconciliation job, so if the optimistic state turns out
+  to be wrong (e.g., /api/start failed validation) it's corrected
+  within one tick.
+
 ## [Unreleased]
 
-(no changes since v0.13.27)
+(no changes since v0.13.28)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -607,7 +624,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.27...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.28...HEAD
+[v0.13.28]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.28
 [v0.13.27]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.27
 [v0.13.26]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.26
 [v0.13.25]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.25
