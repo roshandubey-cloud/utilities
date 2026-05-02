@@ -28,14 +28,87 @@ export function mountSourcesAndSinks() {
   const sinkRoot = document.querySelector('[data-role="sink-disclosure"]');
   if (sinkRoot) wireSinkDisclosure(sinkRoot);
 
+  // Smart auto-link: when a local source is configured AND the
+  // download flow is enabled AND the sink is on local-disk with
+  // empty root, derive the sink root from the source dir. One-shot
+  // — never overrides operator input. Re-runs on relevant changes
+  // so a freshly-typed source dir or a freshly-flipped sink kind
+  // picks it up.
+  installSmartAutoLink();
+
   // Bridge to legacy.js (non-module): legacy form-serializer needs to
   // read the picker state when assembling /api/start payload, and the
   // import-config path needs to populate fields from JSON. Expose the
   // public functions on window so the regular-script consumer can
   // call them without an import statement.
   if (typeof window !== 'undefined') {
-    window.__srcSink = { readSource, readSink, applySource, applySink };
+    window.__srcSink = { readSource, readSink, applySource, applySink, applySmartLink };
   }
+}
+
+// applySmartLink — fills empty sink fields with sensible defaults
+// derived from the configured local source. Idempotent: anything the
+// operator typed sticks; we only touch empty fields.
+//
+// Rules (today):
+//   1. sink kind === local-disk AND sink root empty AND any source
+//      has a non-empty local dir → set sink root to "<srcDir>-downloads".
+//
+// Future rules can layer in here without touching the wire-up.
+function applySmartLink() {
+  const sinkRoot = document.querySelector('[data-role="sink-disclosure"]');
+  if (!sinkRoot) return;
+  const sinkKindEl  = sinkRoot.querySelector('[data-role="sink-kind-value"]');
+  const sinkRootEl  = sinkRoot.querySelector('[data-role="sink-root"]');
+  if (!sinkKindEl || !sinkRootEl) return;
+  if (sinkKindEl.value !== 'local-disk') return;
+  if ((sinkRootEl.value || '').trim() !== '') return; // operator already set it
+
+  // Find the first source disclosure with a non-empty local dir.
+  let sourceDir = '';
+  for (const root of document.querySelectorAll('[data-role="source-disclosure"]')) {
+    const kind = root.querySelector('[data-role="src-kind-value"]')?.value;
+    if (kind === 'local-dir') {
+      const d = (root.querySelector('[data-role="src-dir"]')?.value || '').trim();
+      if (d) { sourceDir = d; break; }
+    } else if (kind === 'local-files') {
+      // Use the parent of the first listed file as a reasonable proxy.
+      const lines = (root.querySelector('[data-role="src-files"]')?.value || '')
+        .split('\n').map((s) => s.trim()).filter(Boolean);
+      if (lines.length) {
+        const parent = lines[0].replace(/\/+[^/]*$/, '');
+        if (parent) { sourceDir = parent; break; }
+      }
+    }
+  }
+  if (!sourceDir) return;
+  // Derive: <dir>-downloads as a sibling. Clean trailing slashes first.
+  const derived = sourceDir.replace(/\/+$/, '') + '-downloads';
+  sinkRootEl.value = derived;
+  sinkRootEl.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+// installSmartAutoLink wires DOM listeners on every input/picker the
+// auto-link rules read. Each emits a microtask-delayed evaluation so
+// applySource() / applySink() can finish their own writes first.
+function installSmartAutoLink() {
+  const schedule = () => Promise.resolve().then(applySmartLink);
+
+  document.querySelectorAll('[data-role="source-disclosure"]').forEach((root) => {
+    root.querySelector('[data-role="src-dir"]')?.addEventListener('input', schedule);
+    root.querySelector('[data-role="src-files"]')?.addEventListener('input', schedule);
+    root.querySelectorAll('[data-role="src-kind"] button').forEach((btn) => {
+      btn.addEventListener('click', schedule);
+    });
+  });
+  const sinkRoot = document.querySelector('[data-role="sink-disclosure"]');
+  if (sinkRoot) {
+    sinkRoot.querySelectorAll('[data-role="sink-kind"] button').forEach((btn) => {
+      btn.addEventListener('click', schedule);
+    });
+  }
+  // Run once on mount so an imported config triggers it.
+  schedule();
 }
 
 function wireSourceDisclosure(root) {

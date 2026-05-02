@@ -558,6 +558,48 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.12] — 2026-05-02
+### Source picker simplified + smart auto-link source→sink
+
+Operator feedback: "what's the point of Local files? Local directory
+already covers it." Right — for 95% of operators the layouts added
+in v0.14.4 (flat / by-account / by-pattern / by-account+pattern)
+make the explicit-paths option redundant. The remaining niche
+(files spread across different parents) is reachable via the
+advanced per-user JSON.
+
+- **Picker simplified to two options:** Synthetic / Local directory.
+  The "Local files" button is gone from both Normal and Large
+  source disclosures. The DOM scaffolding for `kind=local-files`
+  stays in place so a v0.14.4 export still imports cleanly via
+  `applySource()` — the file list textarea reveals when an
+  imported config carries that kind, just no picker button to
+  reach it from a fresh form.
+
+- **Smart auto-link.** When the operator configures a local source
+  AND flips the sink to local-disk, the sink root used to be empty
+  by default. Now `applySmartLink()` derives the root from the
+  source dir — `<srcDir>-downloads` as a sibling — so the round
+  trip wires itself end-to-end without the operator typing the same
+  path twice. One-shot: anything the operator typed sticks; we only
+  fill empty fields. Re-runs on source dir / kind / sink kind
+  changes so a freshly-typed source dir or freshly-flipped sink
+  kind picks it up.
+
+  Example: pick `/data/uploads/` for the source, click "Save to
+  local disk" on the sink → root auto-fills with
+  `/data/uploads-downloads`. Edit it if you don't like the
+  derivation; clear it and re-flip the sink kind to re-derive.
+
+### Internal
+- `internal/web/static/js/sources-sinks.js` — new
+  `applySmartLink()` + `installSmartAutoLink()`. Exposed on
+  `window.__srcSink.applySmartLink` so legacy.js can call it
+  after import-config too.
+- `index.html` — both `data-value="local-files"` picker buttons
+  removed.
+- `main.go` `platformVersion` → `0.14.12`; `wails.json` synced.
+
 ## [v0.14.11] — 2026-05-02
 ### UI — minimalist label pattern + drop "Implicit (TLS from byte 0)"
 
