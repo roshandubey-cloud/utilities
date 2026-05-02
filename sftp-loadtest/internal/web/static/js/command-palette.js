@@ -195,6 +195,14 @@ function renderDetail(entry) {
   const links = (entry.detail.links || []).map((l) =>
     `<a href="${escapeHTML(l.href)}" target="_blank" rel="noopener noreferrer">${escapeHTML(l.label)}</a>`
   ).join(' · ');
+  // "Open related panel" CTA — only when the entry has a meaningful
+  // navigation target. Without this the operator might Enter a help
+  // row expecting it to take them somewhere; with the detail pane the
+  // primary value is reading, so the button makes the secondary
+  // navigation explicit and labelled.
+  const cta = entry.detail.cta
+    ? `<button type="button" class="btn btn-secondary cmdk-detail-cta" data-role="detail-cta">${escapeHTML(entry.detail.cta.label)}</button>`
+    : '';
   detailRoot.innerHTML = `
     <article class="cmdk-detail-card">
       <header class="cmdk-detail-head">
@@ -203,11 +211,20 @@ function renderDetail(entry) {
           <div class="cmdk-detail-title">${escapeHTML(entry.detail.title || entry.label)}</div>
           <div class="cmdk-detail-section">${escapeHTML(entry.section || 'Help')}</div>
         </div>
+        ${cta}
       </header>
       ${entry.detail.lede ? `<p class="cmdk-detail-lede">${escapeHTML(entry.detail.lede)}</p>` : ''}
       ${sections}
       ${links ? `<footer class="cmdk-detail-links">${links}</footer>` : ''}
     </article>`;
+  if (entry.detail.cta) {
+    detailRoot.querySelector('[data-role="detail-cta"]').addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      close();
+      try { entry.detail.cta.action(); } catch (e) { pushToast(`Action failed: ${e.message || e}`, 'error'); }
+    });
+  }
 }
 
 function renderDetailNode(node) {
@@ -682,7 +699,7 @@ function helpEntries() {
       label: 'Trust on First Use (TOFU) — full reference',
       description: 'Pin server identity on first connect; refuse changed identity afterwards. SSH host keys + FTPS leaf certs.',
       keywords: ['tofu', 'trust', 'first', 'use', 'cert', 'fingerprint', 'host', 'key', 'mitm', 'security'],
-      action: () => clickSidebarRow('trust'),
+      action: () => {},
       detail: {
         title: 'Trust on First Use (TOFU)',
         lede: 'How sftp-loadtest decides whether a remote server is who it claims to be — without a CA, without manual fingerprint paste, but still safer than blind-trust.',
@@ -738,6 +755,7 @@ function helpEntries() {
           { label: 'OpenSSH known_hosts spec', href: 'https://man.openbsd.org/sshd.8#SSH_KNOWN_HOSTS_FILE_FORMAT' },
           { label: 'docs/security.md', href: '/docs/security.md' },
         ],
+        cta: { label: 'Open Trust panel', action: () => clickSidebarRow('trust') },
       },
     },
 
@@ -748,7 +766,7 @@ function helpEntries() {
       label: 'Cluster mode — full reference',
       description: 'Master fans out a run across N worker machines via SSH. Aggregates metrics, handles partial failures, version-negotiates.',
       keywords: ['cluster', 'fanout', 'distributed', 'ssh', 'worker', 'spawn', 'master', 'parallel'],
-      action: () => clickSidebarRow('cluster'),
+      action: () => {},
       detail: {
         title: 'Cluster mode',
         lede: 'Run the same load test from N machines simultaneously to break past single-host bandwidth or fd-limit ceilings. The master fan-outs config, polls workers, sums metrics; the workers are stock sftp-loadtest binaries spawned on demand.',
@@ -801,6 +819,7 @@ function helpEntries() {
         links: [
           { label: 'docs/security.md (cluster section)', href: '/docs/security.md#cluster' },
         ],
+        cta: { label: 'Open Cluster panel', action: () => clickSidebarRow('cluster') },
       },
     },
 
@@ -811,7 +830,7 @@ function helpEntries() {
       label: 'Files-per-minute — sizing guide',
       description: 'How fpm interacts with parallel_streams + upload latency. How to size for your target.',
       keywords: ['fpm', 'rate', 'throughput', 'parallel', 'sizing', 'tuning'],
-      action: () => pushToast('Configure → Normal load → files_per_minute', 'info'),
+      action: () => {}, // detail pane carries everything; closing the palette is the action
       detail: {
         title: 'files-per-minute (fpm)',
         lede: 'The dispatcher\'s target rate of new uploads kicked off per minute. Whether that target is hit depends on how fast the target absorbs uploads and how many parallel streams you allow per user.',
@@ -852,7 +871,7 @@ function helpEntries() {
       label: 'Protocol picker — SFTP / FTP / FTPS',
       description: 'When to use each, default ports, security trade-offs, common gotchas.',
       keywords: ['sftp', 'ftp', 'ftps', 'protocol', 'tls', 'implicit', 'explicit', 'auth', 'ssh'],
-      action: () => pushToast('Configure → Protocol picker', 'info'),
+      action: () => {},
       detail: {
         title: 'Picking the right protocol',
         lede: 'Three wire protocols, three security/performance/portability trade-offs. Pick based on what your target server actually exposes — not what you wish it exposed.',
@@ -904,7 +923,7 @@ function helpEntries() {
       label: 'Run reports — schema + retention + access',
       description: 'CSV-per-file + JSON meta layout. Where they live, how to query, how crash-resume works.',
       keywords: ['report', 'csv', 'reports', 'json', 'meta', 'retention', 'history'],
-      action: () => clickSidebarRow('runs'),
+      action: () => {},
       detail: {
         title: 'Run reports',
         lede: 'Two artifacts per run, written atomically to the reports directory. Survive crashes, queryable from the UI or any CSV tool, mode 0600 by default.',
@@ -953,6 +972,7 @@ function helpEntries() {
           { kind: 'h', text: 'Cleaning up' },
           { kind: 'p', text: 'Reports never auto-delete — disk usage is on the operator. Safe to remove ad-hoc with `rm reports/run-*` between runs. The /api/runs list rebuilds from the directory on each call.' },
         ],
+        cta: { label: 'Open Runs panel', action: () => clickSidebarRow('runs') },
       },
     },
 
@@ -963,7 +983,7 @@ function helpEntries() {
       label: 'Reading latency percentiles (p50 / p95 / p99 / cor)',
       description: 'What each percentile means, why corrected latency exists, and how to spot bimodal distributions.',
       keywords: ['latency', 'percentile', 'p50', 'p95', 'p99', 'p99.9', 'cor', 'tail', 'distribution'],
-      action: () => pushToast('Workbench → Live metrics → Latency tiles', 'info'),
+      action: () => {},
       detail: {
         title: 'Latency percentiles',
         lede: 'Mean is a lie. Tail latency is what your users feel. Read p99 first, p50 second, mean almost never.',
@@ -1010,7 +1030,7 @@ function helpEntries() {
       label: 'Scheduling runs — when + how it survives restarts',
       description: 'Wall-clock-scheduled runs. Persists across process restarts. Crashes resume to the next slot.',
       keywords: ['schedule', 'cron', 'wall-clock', 'persist', 'restart', 'timer'],
-      action: () => clickSidebarRow('schedule'),
+      action: () => {},
       detail: {
         title: 'Scheduled runs',
         lede: 'Pick a wall-clock time, the run kicks off then. Survives process restarts (the schedule store is on-disk JSON). Useful for off-hours stress tests, partner-window EDI flows, and overnight soaks.',
@@ -1044,6 +1064,7 @@ function helpEntries() {
             'Single concurrent run — a scheduled fire at 02:00 will fail if a run is already active. The ticker logs the conflict; the schedule is marked "missed".',
           ]},
         ],
+        cta: { label: 'Open Schedule panel', action: () => clickSidebarRow('schedule') },
       },
     },
 
@@ -1054,7 +1075,7 @@ function helpEntries() {
       label: 'HTTP API — every endpoint, what it does',
       description: 'Full reference for the /api surface. Useful for headless / CI integration.',
       keywords: ['api', 'http', 'endpoint', 'curl', 'json', 'integration', 'headless'],
-      action: () => pushToast('See README §HTTP API', 'info'),
+      action: () => {},
       detail: {
         title: 'HTTP API reference',
         lede: 'Every UI button is a thin wrapper over this surface. JSON in, JSON out. CSRF-guarded via X-Requested-With:sftp-loadtest header.',
@@ -1128,7 +1149,7 @@ function helpEntries() {
       label: 'Performance tuning — fd limits, parallel streams, memory',
       description: 'OS knobs (ulimit -n, ephemeral ports), tool knobs (parallel_streams, fpm), memory bounds.',
       keywords: ['tune', 'tuning', 'performance', 'ulimit', 'fd', 'memory', 'optimize'],
-      action: () => pushToast('See README §Resource footprint', 'info'),
+      action: () => {},
       detail: {
         title: 'Performance tuning',
         lede: 'sftp-loadtest is bottlenecked by file descriptors first, network second, CPU third. Tune in that order.',
@@ -1185,7 +1206,7 @@ function helpEntries() {
       label: 'Security posture — what protects this tool',
       description: 'CSRF, rate-limit, body cap, OWASP headers, host-key TOFU, FTPS cert TOFU.',
       keywords: ['security', 'csrf', 'rate', 'limit', 'headers', 'csp', 'auth', 'audit'],
-      action: () => clickSidebarRow('trust'),
+      action: () => {},
       detail: {
         title: 'Security posture',
         lede: 'sftp-loadtest is a load-testing tool; its threat model is "operator runs against their own infra" with optional "shared lab box". Defenses tilt toward defaults that fail safe.',
@@ -1229,6 +1250,7 @@ function helpEntries() {
           { label: 'docs/security.md', href: '/docs/security.md' },
           { label: 'SECURITY.md (disclosure)', href: '/SECURITY.md' },
         ],
+        cta: { label: 'Open Trust panel', action: () => clickSidebarRow('trust') },
       },
     },
 
@@ -1239,7 +1261,7 @@ function helpEntries() {
       label: 'Spawning workers via SSH — what each step does',
       description: '8-step protocol: dial → arch → reap → install → smoke → spawn → wait → tunnel.',
       keywords: ['spawn', 'cluster', 'worker', 'ssh', 'install', 'protocol', 'steps'],
-      action: () => clickSidebarRow('cluster'),
+      action: () => {},
       detail: {
         title: 'Worker spawn protocol',
         lede: 'How the master takes a (host, user, password) tuple and ends up with a sftp-loadtest worker on the other side, ready for fan-out.',
@@ -1275,6 +1297,7 @@ function helpEntries() {
           { kind: 'h', text: 'Cleanup' },
           { kind: 'p', text: 'Tunnel.Close stops accepting, runs the same pkill the spawn step did, closes SSH. Idempotent. Master shutdown calls closeAllSpawned which iterates every active tunnel.' },
         ],
+        cta: { label: 'Open Cluster panel', action: () => clickSidebarRow('cluster') },
       },
     },
   ];

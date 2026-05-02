@@ -775,7 +775,13 @@ body.wails-linux {
   color: var(--text-primary);
   font-size: var(--fs-14);
 }
-.cmdk-detail-headtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cmdk-detail-headtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.cmdk-detail-cta {
+  flex: 0 0 auto;
+  font-size: var(--fs-12);
+  padding: 4px var(--sp-2);
+  white-space: nowrap;
+}
 .cmdk-detail-title {
   font-weight: var(--fw-semibold);
   font-size: var(--fs-14);

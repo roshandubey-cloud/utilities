@@ -333,9 +333,30 @@ Three follow-ups from the v0.13.7 validation pass.
 - Palette width grown 600 → 980 px to fit the two-pane layout.
   Collapses to a stacked list-above-detail under 760 px viewport.
 
+## [v0.13.22] — 2026-05-01
+### Fixed
+- **Help row clicks no longer surprise-navigate or push misleading
+  toasts.** Hangover from the v0.13.19 thin-card era: every Help entry
+  carried either a `pushToast('See README §...')` (purely useless once
+  the detail pane shipped) or a `clickSidebarRow('configure'|'trust'|...)`
+  that yanked the user into a sidebar panel they didn't ask for. With
+  the right-pane guide now carrying the value, the hidden side-effect
+  on row click read as a bug — clicking *Performance tuning* navigated
+  to Configure and toasted "See README §HTTP API".
+- All eleven Help entry actions are now no-ops. Row click closes the
+  palette; the detail stays in the user's head.
+- Each Help entry that has a meaningful destination panel now
+  surfaces an explicit `cta` button in the detail header
+  ("Open Trust panel", "Open Cluster panel", "Open Runs panel",
+  "Open Schedule panel"). Clicking the button is the only way to
+  navigate — no more accidental sidebar swaps from a row click.
+- Detail card layout updated to make space for the CTA: header
+  becomes a flex row with title group on the left, button on the
+  right.
+
 ## [Unreleased]
 
-(no changes since v0.13.21)
+(no changes since v0.13.22)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -454,7 +475,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.21...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.22...HEAD
+[v0.13.22]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.22
 [v0.13.21]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.21
 [v0.13.20]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.20
 [v0.13.19]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.19
