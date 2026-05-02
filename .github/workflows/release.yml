@@ -147,9 +147,20 @@ jobs:
           cache-dependency-path: sftp-loadtest/go.sum
 
       - name: install wails dependencies
+        # --no-install-recommends drops the gstreamer plugin set Wails
+        # doesn't need at build time (it surfaced as 404s on the arm64
+        # runner when ports.ubuntu.com had a stale index for v0.13.7/v0.13.8).
+        # 3-attempt retry + --fix-missing handles the rare case where the
+        # mirror is mid-refresh.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev pkg-config zip
+          for i in 1 2 3; do
+            sudo apt-get update && \
+              sudo apt-get install -y --no-install-recommends --fix-missing \
+                libgtk-3-dev libwebkit2gtk-4.0-dev pkg-config zip && \
+              break
+            echo "apt install attempt $i failed; retrying in $((i*15))s"
+            sleep $((i*15))
+          done
 
       - name: tidy
         working-directory: sftp-loadtest
@@ -391,9 +402,20 @@ jobs:
           cache-dependency-path: sftp-loadtest/go.sum
 
       - name: install wails dependencies
+        # --no-install-recommends drops the gstreamer plugin set Wails
+        # doesn't need at build time (it surfaced as 404s on the arm64
+        # runner when ports.ubuntu.com had a stale index for v0.13.7/v0.13.8).
+        # 3-attempt retry + --fix-missing handles the rare case where the
+        # mirror is mid-refresh.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev pkg-config zip
+          for i in 1 2 3; do
+            sudo apt-get update && \
+              sudo apt-get install -y --no-install-recommends --fix-missing \
+                libgtk-3-dev libwebkit2gtk-4.0-dev pkg-config zip && \
+              break
+            echo "apt install attempt $i failed; retrying in $((i*15))s"
+            sleep $((i*15))
+          done
 
       - name: tidy
         working-directory: sftp-loadtest
