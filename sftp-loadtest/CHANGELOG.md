@@ -228,9 +228,27 @@ Three follow-ups from the v0.13.7 validation pass.
 - For the SFTP path, the preflight body now explicitly sets
   `protocol: 'sftp'` so future protocol-default changes can't trip it.
 
+## [v0.13.18] — 2026-05-01
+### Fixed
+- **Cluster spawn upload to macOS workers no longer fails with
+  "create remote $HOME/sftp-loadtest: file does not exist".** The
+  install-path logic set `bin = "$HOME/sftp-loadtest"` as a literal
+  string when the remote arch was `darwin-*`. The shell-driven
+  download path expanded `$HOME` correctly, but the SFTP-driven
+  upload path treated it as a literal directory name — `pkg/sftp`
+  never expands shell variables — so `Open` failed.
+- Master now resolves the remote home directory at spawn time
+  (`printf %s "$HOME"` with a `whoami → /Users/<who>` fallback for
+  exotic shells) and uses the absolute path for both upload (SFTP)
+  and download (shell). Operators can still override via
+  `RemoteBinaryPath`. The resolved path is recorded in the spawn
+  log: "Resolved install path: /Users/<user>/sftp-loadtest".
+- Test harness updated: `fakeSSHServer` now answers `echo $HOME` /
+  `whoami` so the darwin spawn path can be exercised end-to-end.
+
 ## [Unreleased]
 
-(no changes since v0.13.17)
+(no changes since v0.13.18)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -349,7 +367,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.17...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.18...HEAD
+[v0.13.18]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.18
 [v0.13.17]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.17
 [v0.13.16]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.16
 [v0.13.15]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.15

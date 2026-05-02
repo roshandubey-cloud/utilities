@@ -237,14 +237,35 @@ func Spawn(ctx context.Context, opts SpawnOpts) (*Tunnel, error) {
 	t.appendLog("Detected arch: " + arch)
 	emit("arch-detect", "ok", "Detected "+arch)
 
-	// macOS has $HOME-rooted default install path because Gatekeeper
-	// occasionally treats /tmp writes as quarantined. Operators can still
-	// override via opts.RemoteBinaryPath; we only nudge the default when
-	// the caller didn't pin a path.
+	// Per-OS install path. The default `/tmp/sftp-loadtest` works on
+	// Linux/BSD but NOT on macOS — Gatekeeper occasionally treats /tmp
+	// writes as quarantined and SIGKILLs the binary on first exec. We
+	// fall back to the remote user's home directory there.
+	//
+	// Critical: SFTP does NOT expand `$HOME` — it sees a literal
+	// directory name and Open(2) fails with "file does not exist".
+	// We therefore have to resolve the remote home path BEFORE using
+	// it for either upload (SFTP) or download (shell). One `echo $HOME`
+	// round-trip per spawn, cached locally for the rest of the flow.
 	isDarwin := strings.HasPrefix(arch, "darwin-")
 	if isDarwin && opts.RemoteBinaryPath == "" {
-		bin = "$HOME/sftp-loadtest"
+		homeOut, herr := runExec(client, "printf %s \"$HOME\"")
+		home := strings.TrimSpace(homeOut)
+		if herr != nil || home == "" || !strings.HasPrefix(home, "/") {
+			// Fall back to a per-user-config-dir guess. macOS users always
+			// have ~/Library, so /Users/<whoami>/sftp-loadtest is a safe
+			// secondary. Run whoami if we can; otherwise abort with a
+			// clear error so the operator sets RemoteBinaryPath manually.
+			whoOut, werr := runExec(client, "whoami")
+			who := strings.TrimSpace(whoOut)
+			if werr != nil || who == "" {
+				return finish("install", fmt.Errorf("could not resolve remote $HOME or whoami: set RemoteBinaryPath explicitly"))
+			}
+			home = "/Users/" + who
+		}
+		bin = home + "/sftp-loadtest"
 		t.binaryPath = bin
+		t.appendLog("Resolved install path: " + bin)
 	}
 
 	// Step 3 — Defensive cleanup of any orphan from a previous master.

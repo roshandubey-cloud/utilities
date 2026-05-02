@@ -228,6 +228,12 @@ func (s *fakeSSHServer) handleSession(ch ssh.Channel, reqs <-chan *ssh.Request) 
 			} else {
 				stdout = "Linux x86_64\n"
 			}
+		case strings.Contains(cmd, "$HOME"), strings.HasPrefix(cmd, "echo $HOME"), cmd == `printf %s "$HOME"`:
+			// Fake-resolve the remote home directory so the darwin install
+			// path can be computed without touching the real filesystem.
+			stdout = "/Users/test"
+		case strings.HasPrefix(cmd, "whoami"):
+			stdout = "test"
 		case strings.HasPrefix(cmd, "grep") && strings.Contains(cmd, "sshd_config"):
 			stdout = s.sshdConfigOut
 		case strings.HasPrefix(cmd, "xattr"):
