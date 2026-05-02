@@ -1818,9 +1818,13 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
-  padding: 0 0 var(--sp-3);
-  margin-bottom: var(--sp-3);
-  border-bottom: var(--bw-1) solid var(--border-weak);
+  /* v0.14.15 — removed border-bottom + bottom padding/margin: the line
+     under the folder field was creating a "stripe" effect with the
+     border-top under .source-disclosure, fragmenting fields that all
+     belong to the same "what to upload" mental group. Folder field
+     itself doesn't need to span screen-width — cap it. */
+  max-width: 360px;
+  margin-bottom: var(--sp-2);
 }
 /* Folder preset chips (inbox / incoming / upload) — hidden by default,
    slide in on focus-within so they only show when the operator is
@@ -2571,8 +2575,12 @@ button.primary:hover:not(:disabled),
 }
 .cfg-workload-card[data-enabled="true"] [data-role="workload-body"] {
   display: block;
-  padding: 0 var(--sp-4) var(--sp-4);
-  border-top: var(--bw-1) solid var(--border-weak);
+  /* v0.14.15 — removed border-top divider between the toggle header
+     and body. The header is already visually distinct (font weight,
+     toggle pill, subtitle) — the line was redundant chrome that
+     fragmented the card. Add a small top padding instead so the
+     first body row breathes. */
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
 }
 
 /* The legacy card that's nested INSIDE a workload-card needs its own
@@ -3136,9 +3144,12 @@ button.primary:hover:not(:disabled),
    secondary control, not a second card; the open body indents under
    the summary to keep the host card's hierarchy intact. */
 .source-disclosure {
-  margin-top: var(--sp-3);
-  padding-top: var(--sp-3);
-  border-top: var(--bw-1) solid var(--border-weak);
+  /* v0.14.15 — dropped the border-top + padding-top divider. It
+     was creating a stripe between the Users CSV and the source
+     picker, which read as two unrelated sections instead of the
+     "what to upload" group they belong to. The disclosure caret
+     + summary chrome already mark this as a distinct row. */
+  margin-top: var(--sp-2);
 }
 .source-disclosure > summary {
   list-style: none;
@@ -3167,10 +3178,13 @@ button.primary:hover:not(:disabled),
   font-weight: var(--fw-regular);
 }
 .source-body {
-  padding: var(--sp-3) var(--sp-2) 0;
+  /* v0.14.15 — tightened gap from sp-3 to sp-2 (12px → 8px) so the
+     fields inside the disclosure don't read as a separate widely-
+     spaced inner card. */
+  padding: var(--sp-2) var(--sp-2) 0;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
+  gap: var(--sp-2);
 }
 .source-body .label {
   display: block;

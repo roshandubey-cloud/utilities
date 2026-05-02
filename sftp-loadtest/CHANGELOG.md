@@ -558,6 +558,56 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.15] — 2026-05-02
+### Workload section — kill the random horizontal stripes
+
+Operator feedback: "everything feels widespread; there are random
+horizontal lines for no reason." A subagent audit found three
+decorative dividers fragmenting fields that belong to the same
+mental group, and the Folder field stretching screen-wide when 360px
+suffices.
+
+**Removed three decorative borders:**
+- `.upload-folder-row { border-bottom }` — was creating a stripe
+  under the folder field that visually severed it from the cadence
+  row below. Folder, FPM, Min/Max/Content all belong to "what to
+  upload" — they should read as one group, not three.
+- `.source-disclosure { border-top + padding-top }` — was creating
+  a stripe ABOVE the upload-source picker, severing it from the
+  Users CSV above. The disclosure's own caret + summary chrome
+  already mark it as a distinct row; the line was redundant.
+- `.cfg-workload-card[data-enabled=true] [data-role="workload-body"]
+  { border-top }` — was creating a line between the card head
+  (with the on/off toggle) and the body. The head is already
+  visually distinct via font weight, toggle pill, and subtitle —
+  the line was extra chrome.
+
+**Tightened spacing:**
+- `.source-disclosure { margin-top: sp-3 → sp-2 }` (12px → 8px).
+- `.source-body { padding + gap: sp-3 → sp-2 }` so fields inside
+  the disclosure don't read as a separate widely-spaced inner card.
+- Workload-body padding-top reintroduced so the first body row
+  breathes properly without the divider.
+
+**Capped width:**
+- `.upload-folder-row { max-width: 360px }` — folder paths rarely
+  exceed 30-40 chars; full-screen-width input was creating
+  horizontal sprawl.
+
+### Net result
+The Upload card now reads as one coherent panel: header, then a
+flow of fields (Folder / FPM-Min-Max-Content / Users / Source) that
+visually belong together, instead of four stripes separated by
+horizontal lines. Same for the Download card: the divider chrome
+fragmenting "Download folder", "tracking mode", "Download users",
+"sink" is now ONE flow.
+
+### Internal
+- `internal/web/static/styles/components.css` — three
+  border-removal edits with comments naming the visual problem
+  fixed.
+- `main.go` `platformVersion` → `0.14.15`; `wails.json` synced.
+
 ## [v0.14.14] — 2026-05-02
 ### Workload section — hide what isn't relevant, tooltipify the rest
 
