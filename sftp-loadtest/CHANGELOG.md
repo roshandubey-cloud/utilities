@@ -10,9 +10,38 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.13.7] — 2026-05-01
+### Security
+- **CVE fix:** Bumped `golang.org/x/crypto` from `v0.33.0` to `v0.50.0` —
+  closes `GO-2025-3487` (DoS in `golang.org/x/crypto`) which `govulncheck`
+  flagged in the keepalive loop, sftpx dial, mocksftp, and runExec call
+  paths. Bumped Go module to `1.25` (required by the new x/crypto).
+  Also bumped `x/net 0.35.0 → 0.52.0`, `x/sys 0.30.0 → 0.43.0`,
+  `x/text 0.22.0 → 0.36.0` for transitive consistency.
+- CI: bumped Go runtime from `1.22` to `1.25` on every release + test
+  job (matches the new `go.mod` requirement).
+
+### Added (enterprise hardening)
+- `SECURITY.md` — coordinated-disclosure path + supported-version
+  table.
+- `.github/dependabot.yml` — weekly Go module + GitHub Actions updates.
+- `govulncheck` step in the `test` workflow — every push fails CI if a
+  *called* vulnerability appears.
+- SBOM generation (CycloneDX) in `release.yml` — `sftp-loadtest-sbom-<tag>.cdx.json`
+  uploaded as a release asset on every tag.
+- `Dockerfile` (multi-stage, distroless base) + `.dockerignore` —
+  `docker run roshandubey-cloud/sftp-loadtest` works against the same
+  webui binary the GitHub release ships. Image build runs in CI on
+  every tag; published to GHCR.
+
+### Fixed (hygiene)
+- Removed unused `disablePolicy.allUploadDisabled` (staticcheck U1000).
+- Replaced deprecated `io/ioutil` import in `tunnel_test.go` with
+  `os` / `io` (staticcheck SA1019).
+
 ## [Unreleased]
 
-(no changes since v0.13.6)
+(no changes since v0.13.7)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -131,7 +160,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.6...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.7...HEAD
+[v0.13.7]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.7
 [v0.13.6]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.6
 [v0.13.5]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.5
 [v0.13.4]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.4
