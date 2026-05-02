@@ -3252,27 +3252,13 @@ button.primary:hover:not(:disabled),
   margin-top: var(--sp-2);
   width: 100%;
 }
-/* Quiet "Advanced JSON…" escape hatch (v0.14.13). Hidden by default;
-   surfaces when kind is local-dir / local-files. Click reveals the
-   .source-advanced disclosure. Power users notice; default users
-   never see it. */
-.src-advanced-toggle {
-  display: inline-block;
-  margin-top: var(--sp-2);
-  padding: 4px 8px;
-  background: transparent;
-  border: 0;
-  color: var(--text-tertiary);
-  font-size: var(--fs-11);
-  font-weight: var(--fw-medium);
-  text-transform: uppercase;
-  letter-spacing: 0.10em;
-  cursor: pointer;
-  border-radius: var(--r-2);
-  transition: color var(--t-fast), background var(--t-fast);
-}
-.src-advanced-toggle:hover { color: var(--text-secondary); background: var(--action-hover); }
-.src-advanced-toggle:focus-visible { box-shadow: var(--focus-ring); outline: none; }
+/* v0.14.17 — .src-advanced-toggle button removed. The layout picker
+   (by-user / by-pattern / by-user-pattern) covers every routing case
+   the JSON disclosure used to express; no manual reveal needed. The
+   <details class="source-advanced"> element stays in the DOM solely
+   so applySource() can re-populate per_user / per_pattern from an
+   imported v0.14.0–v0.14.4 config — round-trip preserved without
+   exposing the concept to fresh-form operators. */
 
 /* New v0.14.3 UX affordances on top of the source/sink disclosures. */
 .input-with-action {

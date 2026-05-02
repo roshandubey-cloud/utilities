@@ -151,14 +151,10 @@ function wireSourceDisclosure(root) {
     if (probeEl) probeEl.hidden = kind === 'synthetic';
     // Trailing real-file hint only applies to disk-backed sources.
     if (realfileHint) realfileHint.hidden = kind === 'synthetic';
-    // Advanced-JSON escape hatch: only useful when there's a real
-    // source. Synthetic has nothing to override per-user.
-    if (advToggleBtn) {
-      const advHasContent = (advText?.value || '').trim().length > 0;
-      advToggleBtn.hidden = kind === 'synthetic' && !advHasContent;
-    }
     // If the operator flips to synthetic AND advanced JSON is empty,
-    // collapse the disclosure too — no override semantics apply.
+    // hide the disclosure too — no override semantics apply when
+    // there's no source to override. Imported configs with content
+    // keep the disclosure visible.
     if (advDisclosure && kind === 'synthetic') {
       const advHasContent = (advText?.value || '').trim().length > 0;
       if (!advHasContent) {
@@ -273,20 +269,13 @@ function wireSourceDisclosure(root) {
   advText?.addEventListener('input', refreshAdvError);
   refreshAdvError();
 
-  // Advanced-JSON escape hatch. The disclosure is hidden by default —
-  // 95% of operators reach the same outcome via the layout picker
-  // (by-user / by-pattern). Power users get the disclosure via this
-  // small toggle, OR it auto-reveals when an imported config carries
-  // per_user / per_pattern.
-  if (advToggleBtn && advDisclosure) {
-    advToggleBtn.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      advDisclosure.hidden = false;
-      advDisclosure.open = true;
-      advToggleBtn.hidden = true; // one-shot — disclosure is now in charge
-      advText?.focus();
-    });
-  }
+  // The advanced-JSON disclosure has no manual reveal anymore (v0.14.17).
+  // The layout picker (by-user / by-pattern / by-user-pattern) covers
+  // every routing case the JSON used to express. The disclosure stays
+  // in the DOM only so applySource() can re-populate it from an
+  // imported v0.14.0–v0.14.4 config that carried per_user /
+  // per_pattern keys — round-trip through Export/Import preserved
+  // even though there's no UI to author such a config from scratch.
 
   // ---- Probe button. For non-flat layouts the backend wants a list of
   // sample users so it can resolve <root>/<username>/<glob> per row.
@@ -693,7 +682,6 @@ export function applySource(kind, src) {
       const hasOverrides = Object.keys(merged).length > 0;
       advDisclosure.hidden = !hasOverrides;
       if (hasOverrides) advDisclosure.open = true;
-      if (advToggleBtn) advToggleBtn.hidden = hasOverrides; // hide if disclosure is now visible
     }
   }
   // Open the disclosure so the operator sees the populated state instead

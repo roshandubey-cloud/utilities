@@ -558,6 +558,47 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.17] — 2026-05-02
+### Drop the manual Advanced JSON reveal — layout picker covers it
+
+Operator: *"what is the purpose of [the per-user JSON disclosure]?"
+… I thought we wired everything in the backend based on user input
+and selection automatically."*
+
+The disclosure was vestigial. v0.14.0 shipped per-user / per-pattern
+JSON because that was the only routing knob. v0.14.4's layout picker
+(`by-user` / `by-pattern` / `by-user-pattern`) covered every real
+case — but the JSON disclosure stayed as a 0.1%-edge-case escape
+hatch (different source *kinds* per user). Two operator messages
+in a row asking what it's for is the signal: gone.
+
+- **`.src-advanced-toggle` button removed** from both Normal and
+  Large source disclosures. There's no manual way to reveal the
+  per-user JSON disclosure anymore.
+- **`.source-advanced` `<details>` stays in the DOM**, hidden, so
+  `applySource()` can still re-populate `per_user` / `per_pattern`
+  from an imported v0.14.0–v0.14.4 config. Round-trip through
+  Export → Import preserved; the field just doesn't surface for
+  fresh-form authoring.
+- **Dead JS branches cleaned up** — `applyKind` no longer toggles
+  `advToggleBtn.hidden`; the manual click handler block is gone.
+- **`.src-advanced-toggle` CSS removed**; replaced with a comment
+  explaining the deliberate vestigial-DOM choice.
+
+### Net result
+The source disclosure body is just: kind picker → dir input →
+layout picker → mode picker → probe button. No "Advanced JSON…"
+escape hatch tempting operators into a path they don't need.
+
+### Internal
+- `internal/web/static/index.html` — both
+  `<button data-role="src-advanced-toggle">` removed.
+- `internal/web/static/js/sources-sinks.js` — manual reveal handler
+  + applyKind toggle logic deleted.
+- `internal/web/static/styles/components.css` —
+  `.src-advanced-toggle` rule removed.
+- `main.go` `platformVersion` → `0.14.17`; `wails.json` synced.
+
 ## [v0.14.16] — 2026-05-02
 ### Belt-and-suspenders strip — kill ALL stray dividers in workload cards
 
