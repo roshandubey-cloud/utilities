@@ -731,6 +731,13 @@ function buildRequestBody() {
     tls_server_name: protocol === 'ftps' ? tlsServerName : '',
     tls_insecure_skip_verify: protocol === 'ftps' ? tlsSkipVerify : false,
     tls_trust_on_first_use: protocol === 'ftps' ? tofuChecked : false,
+    // v0.14 source/sink fields. readSource / readSink return null when
+    // the operator left the picker on the default (synthetic / discard)
+    // — the backend then uses the v0.13.x defaults exactly. Only one
+    // import to keep the legacy serializer's DOM-coupled style.
+    normal_source: $('normal_enabled').checked && window.__srcSink ? window.__srcSink.readSource('normal') : null,
+    large_source:  $('large_enabled').checked  && window.__srcSink ? window.__srcSink.readSource('large')  : null,
+    download_sink: $('download_enabled').checked && window.__srcSink ? window.__srcSink.readSink() : null,
     upload_folder: $('folder').value.trim(),
     parallel_streams: parseInt($('parallel').value) || 1,
     duration_hours: parseFloat($('duration').value) || 1,
@@ -903,6 +910,14 @@ function importConfigPayload(cfg) {
   if (cfg.private_key_passphrase !== undefined) {
     const pkPassEl = document.getElementById('conn-private-key-passphrase');
     if (pkPassEl) pkPassEl.value = String(cfg.private_key_passphrase || '');
+  }
+  // v0.14 source/sink disclosures. window.__srcSink is wired by
+  // sources-sinks.js after mount; guard so configs imported before the
+  // module mounts don't blow up the rest of the restore.
+  if (typeof window !== 'undefined' && window.__srcSink) {
+    if (cfg.normal_source !== undefined) window.__srcSink.applySource('normal', cfg.normal_source);
+    if (cfg.large_source  !== undefined) window.__srcSink.applySource('large',  cfg.large_source);
+    if (cfg.download_sink !== undefined) window.__srcSink.applySink(cfg.download_sink);
   }
   saveConfig();
 }

@@ -16,6 +16,7 @@ import { mountHostBar } from './host.js';
 import { mountRunHeader } from './run-header.js';
 import { mountHeroRun } from './runs.js';
 import { mountConnectionCard } from './connection.js';
+import { mountSourcesAndSinks } from './sources-sinks.js';
 import { mountRecords } from './records.js';
 import { mountRunsHistory } from './runs-history.js';
 import { mountTrustedHosts } from './trusted-hosts.js';
@@ -40,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
   mountHostBar('[data-component="host-bar"]');
   mountHeroRun('[data-component="hero-run"]');
   mountConnectionCard('[data-component="connection"]');
+  mountSourcesAndSinks();
   mountRecords('[data-component="records"]');
   // Real-time charts mount inside the records panel — must come AFTER
   // mountRecords so the panel exists.
