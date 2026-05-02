@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/jlaffaye/ftp v0.2.0
-	github.com/pkg/sftp v1.13.7
+	github.com/pkg/sftp v1.13.10
 	github.com/wailsapp/wails/v2 v2.12.0
 	golang.org/x/crypto v0.50.0
 	golang.org/x/sys v0.43.0
