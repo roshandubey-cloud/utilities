@@ -36,19 +36,32 @@ export function mountMasthead(rootSelector) {
     pollHealth(dot, text);
   }
 
-  // Surface the platform version next to the wordmark. /api/version is
-  // unauthenticated + Cache-Control:no-store, so an upgraded binary
-  // shows its real version on the very next page load — no stale
-  // WebKit cache, no auth probe.
+  // Surface the platform version next to the wordmark AND in the
+  // bottom status-bar cell. /api/version is unauthenticated +
+  // Cache-Control:no-store, so an upgraded binary shows its real
+  // version on the very next page load — no stale WebKit cache,
+  // no auth probe. One fetch updates both pills.
   const ver = root.querySelector('[data-role="brand-version"]');
-  if (ver) {
+  // Status-bar cell lives outside the masthead root, so query the
+  // document. Hidden until the response arrives so we never flash
+  // a placeholder.
+  const statusVer = document.querySelector('[data-role="status-version"]');
+  if (ver || statusVer) {
     apiFetch('/api/version', { cache: 'no-store' })
       .then((r) => r.ok ? r.json() : null)
       .then((j) => {
-        if (j && j.version) {
-          ver.textContent = 'v' + j.version;
+        if (!j || !j.version) return;
+        const label = 'v' + j.version;
+        const tooltip = `Platform v${j.version} — started ${j.started_at || ''}`;
+        if (ver) {
+          ver.textContent = label;
           ver.hidden = false;
-          ver.title = `Platform v${j.version} — started ${j.started_at || ''}`;
+          ver.title = tooltip;
+        }
+        if (statusVer) {
+          statusVer.textContent = label;
+          statusVer.hidden = false;
+          statusVer.title = tooltip;
         }
       })
       .catch(() => {});

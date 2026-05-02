@@ -419,11 +419,18 @@
 }
 .segmented button:hover { color: var(--text-primary); }
 .segmented button[aria-pressed="true"] {
-  /* Gloss: gradient + top-edge sheen produce the macOS segmented-control
-     "lifted pill" look. Cross-platform — no os-specific gating. */
-  background: var(--gloss-button-bg), var(--surface);
-  color: var(--text-primary);
-  box-shadow: var(--gloss-top-edge), var(--shadow-1);
+  /* Visual harmony with the sidebar's selected-row treatment: same
+     accent tint (--sidebar-active-bg), same accent foreground
+     (--sidebar-active-fg), same gloss halo. Operators now read both
+     "this is the current view" (sidebar) and "this is the active
+     option" (segmented) with one visual vocabulary. The gloss
+     gradient + top-edge sheen layer on top of the accent tint to
+     keep the macOS "lifted pill" depth. */
+  background-color: var(--sidebar-active-bg);
+  background-image: var(--gloss-button-bg);
+  color: var(--sidebar-active-fg);
+  font-weight: var(--fw-semibold);
+  box-shadow: var(--gloss-top-edge), var(--shadow-1), var(--gloss-halo-accent);
 }
 
 

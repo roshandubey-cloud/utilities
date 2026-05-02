@@ -558,6 +558,45 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.8] — 2026-05-02
+### Two visual-polish fixes from operator feedback
+
+- **Bottom status-bar version is dynamic.** The `v0.9.4` you see in
+  the bottom-right cell was a hardcoded literal in `shell.js` from
+  the v0.9.4 redesign — it never got wired to `/api/version` when
+  that endpoint shipped in v0.14.5. Now `masthead.js` updates BOTH
+  the masthead pill AND the status-bar cell from one fetch. Hidden
+  until the response arrives so we never flash a placeholder. Same
+  `Cache-Control: no-store` chain so an upgraded binary's real
+  version shows up on the very next page load.
+
+- **Segmented `[aria-pressed="true"]` now matches the sidebar's
+  selected-row treatment.** Previously the chosen Protocol /
+  TLS mode / Source kind / Layout / Pick mode / Sink kind /
+  Theme button used a neutral grey-on-grey gradient while the
+  sidebar's "Configure / Records / Runs" picked row used the
+  accent tint + accent foreground + soft halo. Two visual
+  vocabularies for the same semantic. Unified via:
+
+  ```css
+  .segmented button[aria-pressed="true"] {
+    background-color: var(--sidebar-active-bg);   /* accent tint */
+    background-image: var(--gloss-button-bg);     /* keep lifted-pill gloss */
+    color: var(--sidebar-active-fg);              /* accent foreground */
+    font-weight: var(--fw-semibold);
+    box-shadow: var(--gloss-top-edge), var(--shadow-1), var(--gloss-halo-accent);
+  }
+  ```
+
+  Operators now read both *"this is the current view"* (sidebar)
+  and *"this is the active option"* (segmented) with one accent
+  vocabulary. Applies uniformly across every segmented control in
+  the app — protocol picker, TLS mode, source/sink kind, layout
+  picker, mode picker, theme switcher, etc.
+
+### Internal
+- `main.go` `platformVersion` → `0.14.8`; `wails.json` synced.
+
 ## [v0.14.7] — 2026-05-02
 ### UX — drop context-mismatched Download CSV from hero actions
 
