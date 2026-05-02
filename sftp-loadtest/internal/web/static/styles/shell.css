@@ -91,6 +91,10 @@
   padding: 0 var(--sp-3);
   height: var(--shell-topbar-h);
   background: var(--surface);
+  /* Gloss: bright top-edge highlight + dim bottom-edge inset gives the
+     macOS unified-titlebar "frosted glass" cue. Cross-platform — fires
+     in the web UI, the Mac .app, the Win .exe, and the Linux AppImage. */
+  box-shadow: var(--gloss-top-edge), var(--gloss-bottom-edge);
   border-bottom: var(--bw-1) solid var(--border-weak);
   font-size: var(--fs-13);
   --wails-draggable: drag;
@@ -300,6 +304,10 @@ body.wails-linux {
   height: calc(100vh - var(--shell-topbar-h) - var(--shell-statusbar-h));
   background: var(--sidebar-bg);
   border-right: var(--bw-1) solid var(--border-weak);
+  /* Gloss: subtle inner-right highlight pulls the eye toward the panel
+     boundary, mirroring macOS Finder / Music sidebar depth. Same trick
+     fires on every platform. */
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
   overflow-y: auto;
   overflow-x: hidden;
   padding: var(--sp-2) 0;
@@ -401,6 +409,10 @@ body.wails-linux {
   background: var(--sidebar-active-bg);
   color: var(--sidebar-active-fg);
   font-weight: var(--fw-semibold);
+  /* Gloss: a soft accent halo around the active row gives the macOS
+     Music / TV "this is the current tab" depth. The halo reads
+     identically on every platform because it's pure CSS. */
+  box-shadow: var(--gloss-halo-accent);
 }
 .shell-sidebar-row[aria-selected="true"] .row-icon { color: var(--sidebar-active-fg); }
 

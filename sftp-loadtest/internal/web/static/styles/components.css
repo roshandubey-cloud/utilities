@@ -48,22 +48,28 @@
 
 /* variants — primary = filled accent */
 .btn-primary {
-  background: var(--accent);
+  /* Gloss: linear-gradient overlay + accent base gives the macOS
+     "filled tinted button" look without resorting to bitmap textures.
+     Halo on hover provides clear interactivity feedback consistent
+     with the run-status pill. Cross-platform — same on web + Wails. */
+  background: var(--gloss-button-bg), var(--accent);
   color: var(--accent-fg);
   border-color: var(--accent);
+  box-shadow: var(--gloss-top-edge);
 }
-.btn-primary:hover    { background: var(--accent-hover); border-color: var(--accent-hover); }
-.btn-primary:active   { background: var(--accent-active); border-color: var(--accent-active); }
+.btn-primary:hover    { background: var(--gloss-button-bg), var(--accent-hover); border-color: var(--accent-hover); box-shadow: var(--gloss-top-edge), var(--gloss-halo-accent); }
+.btn-primary:active   { background: var(--accent-active); border-color: var(--accent-active); box-shadow: inset 0 1px 2px rgba(0,0,0,0.25); }
 .btn-primary:focus-visible { box-shadow: var(--focus-ring); }
 
-/* secondary = bordered, neutral surface */
+/* secondary = bordered, neutral surface (gloss applied for parity) */
 .btn-secondary {
-  background: var(--surface);
+  background: var(--gloss-button-bg), var(--surface);
   color: var(--text-primary);
   border-color: var(--border-medium);
+  box-shadow: var(--gloss-top-edge);
 }
-.btn-secondary:hover  { background: var(--surface-2); border-color: var(--border-strong); }
-.btn-secondary:active { background: var(--surface-3); }
+.btn-secondary:hover  { background: var(--gloss-button-bg), var(--surface-2); border-color: var(--border-strong); }
+.btn-secondary:active { background: var(--surface-3); box-shadow: inset 0 1px 2px rgba(0,0,0,0.18); }
 .btn-secondary:focus-visible { box-shadow: var(--focus-ring); }
 
 /* ghost = no chrome until hover */
@@ -202,23 +208,40 @@
    ============================================================================ */
 
 .panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   background: var(--surface);
   border: var(--bw-1) solid var(--border-weak);
   border-radius: var(--r-3);
   overflow: hidden;
+  /* Gloss: layered shadow gives the panel measurable depth on every
+     platform; the ::before sheen overlay paints a faint top-edge
+     highlight that reads as macOS Aqua / Big Sur "soft glass" depth
+     identically in Wails Mac / Wails Win / Wails Linux / web UI. */
+  box-shadow: var(--shadow-panel);
 }
+.panel::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 24px;
+  background: var(--gloss-panel-sheen);
+  pointer-events: none;
+  z-index: 1;
+}
+.panel > * { position: relative; z-index: 2; }
+
 /* Light theme panels lift via shadow (the dark surface-step trick doesn't work
    on white-on-white). Dark theme panels rely on surface-step + border-weak. */
 [data-theme="light"] .panel,
 [data-theme="light"] .card {
-  box-shadow: var(--shadow-1);
+  box-shadow: var(--shadow-panel);
   border-color: transparent;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) .panel,
-  :root:not([data-theme]) .card { box-shadow: var(--shadow-1); border-color: transparent; }
+  :root:not([data-theme]) .card { box-shadow: var(--shadow-panel); border-color: transparent; }
 }
 
 .panel-header {
@@ -396,9 +419,11 @@
 }
 .segmented button:hover { color: var(--text-primary); }
 .segmented button[aria-pressed="true"] {
-  background: var(--surface);
+  /* Gloss: gradient + top-edge sheen produce the macOS segmented-control
+     "lifted pill" look. Cross-platform — no os-specific gating. */
+  background: var(--gloss-button-bg), var(--surface);
   color: var(--text-primary);
-  box-shadow: var(--shadow-1);
+  box-shadow: var(--gloss-top-edge), var(--shadow-1);
 }
 
 

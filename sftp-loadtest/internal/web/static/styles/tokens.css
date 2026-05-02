@@ -195,6 +195,24 @@
   --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.55);
   --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.65);
 
+  /* ---------- gloss / depth (cross-platform Mac-feel) ----------
+     macOS Aqua-derived "soft glass" cues that read identically in the
+     web UI, the Wails Mac .app, the Wails Windows .exe, and the Wails
+     Linux AppImage — no platform gating. Token names map to the four
+     surfaces that need depth: top-edge sheen, panel sheen overlay,
+     primary-button gloss, and a coloured halo for the active sidebar
+     row + run-status pill. Light-theme variants are tuned in the
+     light-theme block, NOT inherited.
+     ---------------------------------------------------------------- */
+  --gloss-top-edge:     inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --gloss-bottom-edge:  inset 0 -1px 0 rgba(0, 0, 0, 0.40);
+  --gloss-panel-sheen:  linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 14%);
+  --gloss-button-bg:    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(0, 0, 0, 0.05) 100%);
+  --gloss-halo-accent:  0 0 24px rgba(255, 120, 10, 0.18);
+  --gloss-halo-success: 0 0 18px rgba(26, 127, 55, 0.22);
+  --gloss-halo-danger:  0 0 18px rgba(224, 47, 68, 0.22);
+  --shadow-panel:       0 1px 0 rgba(255, 255, 255, 0.03), 0 8px 24px rgba(0, 0, 0, 0.40);
+
   /* Focus ring uses accent at full saturation in dark. */
   --focus-ring:        0 0 0 var(--focus-ring-offset) var(--canvas), 0 0 0 calc(var(--focus-ring-offset) + var(--focus-ring-width)) var(--accent);
   --focus-ring-strong: 0 0 0 var(--focus-ring-width) var(--accent);
@@ -249,6 +267,17 @@
   --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06), 0 0 0 1px rgba(15, 23, 42, 0.04);
   --shadow-2: 0 4px 12px rgba(15, 23, 42, 0.10), 0 0 0 1px rgba(15, 23, 42, 0.04);
   --shadow-3: 0 12px 28px rgba(15, 23, 42, 0.16);
+
+  /* Light-theme gloss — softer, higher-contrast white sheen on top edges
+     so panels still feel "lifted" against the cool gray canvas. */
+  --gloss-top-edge:     inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --gloss-bottom-edge:  inset 0 -1px 0 rgba(15, 23, 42, 0.05);
+  --gloss-panel-sheen:  linear-gradient(180deg, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 14%);
+  --gloss-button-bg:    linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(15, 23, 42, 0.04) 100%);
+  --gloss-halo-accent:  0 0 18px rgba(238, 91, 33, 0.20);
+  --gloss-halo-success: 0 0 14px rgba(26, 127, 55, 0.22);
+  --gloss-halo-danger:  0 0 14px rgba(224, 47, 68, 0.22);
+  --shadow-panel:       0 1px 0 rgba(255, 255, 255, 0.85), 0 8px 20px rgba(15, 23, 42, 0.10);
 
   --focus-ring:        0 0 0 var(--focus-ring-offset) var(--canvas), 0 0 0 calc(var(--focus-ring-offset) + var(--focus-ring-width)) var(--accent);
   --focus-ring-strong: 0 0 0 var(--focus-ring-width) var(--accent);

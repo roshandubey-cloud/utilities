@@ -85,9 +85,26 @@ Three follow-ups from the v0.13.7 validation pass.
   3-attempt retry with linear backoff. Same fix applied to the linux
   amd64 job for symmetry. Also bumped Go to 1.25.
 
+## [v0.13.10] — 2026-05-01
+### Changed
+- **UI: cross-platform Mac-glossy finish.** The Wails Windows desktop
+  was reading "flat" against the Wails Mac desktop because the previous
+  matte-only design tokens left platform-native depth (Aqua / Mica) as
+  the only source of polish. Added six gloss tokens — `--gloss-top-edge`,
+  `--gloss-bottom-edge`, `--gloss-panel-sheen`, `--gloss-button-bg`,
+  `--gloss-halo-{accent,success,danger}`, `--shadow-panel` — and
+  applied them to the topbar (frosted-glass top edge), sidebar (inner
+  right highlight), `.panel`/`.card` (top-edge sheen overlay + layered
+  shadow), `.btn-primary` + `.btn-secondary` (gradient + halo on hover),
+  `.segmented` (lifted pill), and the active sidebar row (accent halo).
+  All tokens are platform-agnostic — same depth in the web UI, the Mac
+  .app, the Windows .exe, the Linux AppImage. Light theme has its own
+  hand-tuned variants (white sheen on top edges, soft shadow underneath).
+  Closes the user's "Windows looks flat next to Mac" finding.
+
 ## [Unreleased]
 
-(no changes since v0.13.9)
+(no changes since v0.13.10)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -206,7 +223,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.9...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.10...HEAD
+[v0.13.10]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.10
 [v0.13.9]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.9
 [v0.13.8]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.8
 [v0.13.7]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.7
