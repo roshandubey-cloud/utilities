@@ -20,7 +20,7 @@
 class SftpLoadtest < Formula
   desc "Multi-protocol load testing tool for SFTP, FTP, and FTPS servers"
   homepage "https://github.com/roshandubey-cloud/utilities"
-  version "0.14.3"
+  version "0.14.4"
   license "MIT"
 
   on_macos do
@@ -29,22 +29,22 @@ class SftpLoadtest < Formula
       # SHA256 is updated by the release workflow on every tag. Until the
       # first run lands a real value, use the placeholder — `brew install`
       # will refuse to install (as it should) and surface the mismatch.
-      sha256 "7439498a5a1697f0b5e27144ed4da23a79140c0ad05ffeaebd113c5ed0129f48"
+      sha256 "1078e0b818113089d876e73fe3a458ba0b2f28ca61f2e88f7b59c261e7651f1e"
     end
     on_intel do
       url "https://github.com/roshandubey-cloud/utilities/releases/download/v#{version}/sftp-loadtest-webui-v#{version}-mac-intel.zip"
-      sha256 "81b188cb3f20112665766981d45fcaf0235f01946b6659d01b36308a8ddb1c26"
+      sha256 "1e86c26dadf9d359df92fd11ef79536e2c64510e56c0bb58061a20777ab76c44"
     end
   end
 
   on_linux do
     on_arm do
       url "https://github.com/roshandubey-cloud/utilities/releases/download/v#{version}/sftp-loadtest-webui-v#{version}-linux-arm64.zip"
-      sha256 "5c5844474c5cf0aef82e3202078fa79f7f91c175b356b91d3ca384f911b848d7"
+      sha256 "3e487f0ccdfc932a2e61b438a0be17d96d63cdd8422f49befde54ab0f60eeb5e"
     end
     on_intel do
       url "https://github.com/roshandubey-cloud/utilities/releases/download/v#{version}/sftp-loadtest-webui-v#{version}-linux-amd64.zip"
-      sha256 "21b6ffc8e767887609ee339b7ee9b45466d9aa799088e4aae23571bdfad032b5"
+      sha256 "ed7fe83d5327ccb014887e9a42438c0e39997915b8c5fb8110d84846f95b7dba"
     end
   end
 
