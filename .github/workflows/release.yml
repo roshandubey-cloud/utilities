@@ -84,6 +84,19 @@ jobs:
           done
           $(go env GOPATH)/bin/wails version
 
+      # Inject the release tag into info.productVersion before wails build.
+      # Without this, the .app's CFBundleVersion / CFBundleShortVersionString
+      # stay at the hardcoded "0.4.0-dev" placeholder forever — Gatekeeper
+      # and macOS About panes show stale versions, and a tester pulling
+      # the .app can't tell which release they have.
+      - name: stamp wails.json with release version
+        working-directory: sftp-loadtest/cmd/desktop
+        run: |
+          VER="${VERSION#v}"
+          jq --arg v "$VER" '.info.productVersion = $v' wails.json > wails.json.new
+          mv wails.json.new wails.json
+          jq '.info' wails.json
+
       - name: build desktop-app arm64
         working-directory: sftp-loadtest/cmd/desktop
         run: $(go env GOPATH)/bin/wails build -platform darwin/arm64 -clean
@@ -173,6 +186,14 @@ jobs:
           done
           $(go env GOPATH)/bin/wails version
 
+      - name: stamp wails.json with release version
+        working-directory: sftp-loadtest/cmd/desktop
+        run: |
+          VER="${VERSION#v}"
+          jq --arg v "$VER" '.info.productVersion = $v' wails.json > wails.json.new
+          mv wails.json.new wails.json
+          jq '.info' wails.json
+
       - name: build desktop-app linux amd64
         working-directory: sftp-loadtest/cmd/desktop
         run: $(go env GOPATH)/bin/wails build -platform linux/amd64 -clean
@@ -193,6 +214,93 @@ jobs:
             sftp-loadtest-desktop-app-${{ github.ref_name }}-linux-amd64.zip
             sftp-loadtest-desktop-app-linux-amd64.zip
           fail_on_unmatched_files: true
+
+  # ------------------------------------------------------------- Homebrew
+  # Updates Formula/sftp-loadtest.rb with the freshly built webui zip
+  # SHA256s and the release version, then commits the change directly to
+  # main. Users who tap `roshandubey-cloud/utilities` get the new version
+  # the moment the previous build-mac/linux jobs publish their assets.
+  #
+  # Runs after build-mac + build-linux finish so the release assets are
+  # downloadable from `releases/download/<tag>/...` URLs that the formula
+  # references.
+  update-homebrew-formula:
+    name: update Homebrew formula
+    needs: [build-mac, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: download webui zips + compute SHA256s
+        run: |
+          VER="${VERSION#v}"
+          mkdir -p _hb && cd _hb
+          for asset in mac-apple-silicon mac-intel linux-amd64 linux-arm64; do
+            url="https://github.com/${{ github.repository }}/releases/download/${VERSION}/sftp-loadtest-webui-${VERSION}-${asset}.zip"
+            echo "fetching $url"
+            curl -fsSL --retry 3 -o "${asset}.zip" "$url"
+            sha=$(sha256sum "${asset}.zip" | awk '{print $1}')
+            echo "${asset}: ${sha}"
+            echo "SHA_${asset//-/_}=${sha}" >> $GITHUB_ENV
+          done
+          echo "VER=${VER}" >> $GITHUB_ENV
+      - name: rewrite Formula/sftp-loadtest.rb
+        run: |
+          sed -i \
+            -e "s|^  version \".*\"|  version \"${VER}\"|" \
+            -e "0,/REPLACE_AT_RELEASE_TIME_MAC_APPLE_SILICON\|sha256 \"[a-f0-9]\{64\}\"$/{s|sha256 \"[A-Za-z0-9_]*\"|sha256 \"${SHA_mac_apple_silicon}\"|}" \
+            Formula/sftp-loadtest.rb
+          # The 0,/.../{} sed range only fires once; do remaining 3 by line
+          # marker via python for reliability (BSD/GNU sed differ on ranges).
+          python3 - <<'PY'
+          import os, re, pathlib
+          p = pathlib.Path("Formula/sftp-loadtest.rb")
+          src = p.read_text()
+          mapping = {
+              "REPLACE_AT_RELEASE_TIME_MAC_APPLE_SILICON": os.environ["SHA_mac_apple_silicon"],
+              "REPLACE_AT_RELEASE_TIME_MAC_INTEL":         os.environ["SHA_mac_intel"],
+              "REPLACE_AT_RELEASE_TIME_LINUX_ARM64":       os.environ["SHA_linux_arm64"],
+              "REPLACE_AT_RELEASE_TIME_LINUX_AMD64":       os.environ["SHA_linux_amd64"],
+          }
+          # On subsequent releases the placeholders are gone — the previous
+          # tag's hashes sit there. Rewrite by URL-block context instead.
+          for asset, env_key in [
+              ("mac-apple-silicon", "SHA_mac_apple_silicon"),
+              ("mac-intel",         "SHA_mac_intel"),
+              ("linux-arm64",       "SHA_linux_arm64"),
+              ("linux-amd64",       "SHA_linux_amd64"),
+          ]:
+              pat = re.compile(
+                  r'(url "https://github\.com/[^"]*-' + re.escape(asset) +
+                  r'\.zip"\s*\n\s*(?:#[^\n]*\n\s*)*sha256 ")[^"]*(")',
+                  re.MULTILINE,
+              )
+              new_sha = os.environ[env_key]
+              src, n = pat.subn(r'\g<1>' + new_sha + r'\g<2>', src)
+              if n != 1:
+                  raise SystemExit(f"failed to update sha for {asset}: {n} matches")
+          p.write_text(src)
+          print("formula updated:", os.environ["VER"])
+          PY
+          echo "---DIFF---"
+          git diff Formula/sftp-loadtest.rb | head -40
+      - name: commit + push formula bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/sftp-loadtest.rb
+          if git diff --staged --quiet; then
+            echo "no formula changes to commit"
+            exit 0
+          fi
+          git commit -m "chore(homebrew): bump formula to ${VERSION}"
+          git push origin main
 
   # ------------------------------------------------------------------ SBOM
   # CycloneDX SBOM uploaded as a release asset on every tag — required by
@@ -300,6 +408,14 @@ jobs:
           done
           $(go env GOPATH)/bin/wails version
 
+      - name: stamp wails.json with release version
+        working-directory: sftp-loadtest/cmd/desktop
+        run: |
+          VER="${VERSION#v}"
+          jq --arg v "$VER" '.info.productVersion = $v' wails.json > wails.json.new
+          mv wails.json.new wails.json
+          jq '.info' wails.json
+
       - name: build desktop-app linux arm64
         working-directory: sftp-loadtest/cmd/desktop
         run: $(go env GOPATH)/bin/wails build -platform linux/arm64 -clean
@@ -367,6 +483,14 @@ jobs:
           }
           if (-not $ok) { exit 1 }
           & (Join-Path (go env GOPATH) 'bin\wails.exe') version
+
+      - name: stamp wails.json with release version
+        working-directory: sftp-loadtest/cmd/desktop
+        shell: pwsh
+        run: |
+          $ver = $env:VERSION -replace '^v',''
+          jq --arg v $ver '.info.productVersion = $v' wails.json | Set-Content wails.json
+          jq '.info' wails.json
 
       - name: build desktop-app exe
         working-directory: sftp-loadtest/cmd/desktop
