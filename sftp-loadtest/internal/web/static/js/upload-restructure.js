@@ -44,14 +44,13 @@ export function mountUploadRestructure() {
     const folderRow = document.createElement('div');
     folderRow.className = 'upload-folder-row';
     folderRow.innerHTML = `
-      <label for="upload-folder" class="label">Folder (remote)</label>
+      <label for="upload-folder" class="label" title="Where each upload user drops files. Server-side this is the path the SFTP user has write access to.">Folder (remote)</label>
       <input class="input" id="upload-folder" type="text" placeholder="inbox" autocomplete="off" />
-      <div class="row-tight" style="margin-top:var(--sp-1)">
+      <div class="row-tight folder-presets" style="margin-top:var(--sp-1)">
         <button type="button" class="btn btn-sm btn-ghost" data-folder-preset="inbox">inbox</button>
         <button type="button" class="btn btn-sm btn-ghost" data-folder-preset="incoming">incoming</button>
         <button type="button" class="btn btn-sm btn-ghost" data-folder-preset="upload">upload</button>
       </div>
-      <div class="help">Where each upload user drops files. Server-side this is the path the SFTP user has write access to.</div>
     `;
     body.insertBefore(folderRow, body.firstChild);
 

@@ -558,6 +558,71 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.14] — 2026-05-02
+### Workload section — hide what isn't relevant, tooltipify the rest
+
+A subagent audit found ~400-500px of vertical waste on a fresh form
+even with empty inputs: always-visible status messages, multi-line
+helper paragraphs, chip suggestions, etc. This pass cuts the four
+loudest culprits without removing any capability.
+
+- **Distribute-load row hidden when no workers exist.** Was
+  permanently visible with a "no workers enabled — add one in the
+  sidebar" warning even when the operator hadn't touched cluster
+  mode. Now: hidden until the operator adds at least one worker
+  in the sidebar; reappears with the toggle + status the moment a
+  worker exists.
+
+- **Folder preset chips reveal on focus.** The `[inbox] [incoming]
+  [upload]` chips below the upload folder field used to take a
+  permanent ~36px row. Now collapsed (max-height: 0, opacity: 0)
+  with a CSS slide-in on `:focus-within` — chips appear when the
+  operator clicks/tabs into the folder field, disappear when they
+  click away. Also moved the "Where each upload user drops files…"
+  helper paragraph into a tooltip on the label.
+
+- **Filename-pattern paragraph → label tooltip.** The "Filenames:
+  the trailing * is replaced with `<nanos>_<rnd>`…" paragraph below
+  the Normal users CSV (~48px) is now a `title="…"` on the Users
+  (CSV) label. Same information, zero pixels.
+
+- **Download-card hints compacted.** Three stacked `.hint`
+  paragraphs explaining "click a suggestion / how it works / server
+  requirements" became:
+  - "Leave blank to reuse the upload folder" → tooltip on the label
+  - "Server requirements for tracking modes" → tooltip on the
+    Round-trip tracking mode label, plus per-radio tooltips
+  - "How download verification works" → new collapsed
+    `<details class="hint-disclosure">` with a small chevron
+    summary. Operators who care expand it; everyone else gets
+    one quiet line instead of a paragraph.
+
+- **New `.hint-disclosure` style.** Quiet one-line disclosure with
+  chevron summary; opens to reveal the paragraph inline. Used
+  wherever a multi-line `.hint` was burning rows on a fresh form.
+
+### Net result
+The Upload card alone shrinks by ~120px on first load (no chips, no
+filename paragraph, no distribute-status row). The Download card
+shrinks by ~180px (three hint paragraphs collapsed into tooltips +
+one disclosure). Total visible vertical loss: ~300px, with no
+information removed — every detail still reachable via tooltip
+hover or the small disclosure.
+
+### Internal
+- `internal/web/static/index.html` — Normal users CSV label gets
+  `title=`; download-card hint blocks restructured into
+  tooltip+disclosure pattern.
+- `internal/web/static/js/cluster-ui.js` — `mountDistributeToggle`
+  hides the row when `readAll().length === 0`.
+- `internal/web/static/js/upload-restructure.js` — folder-presets
+  div tagged with `.folder-presets`; helper paragraph dropped
+  (moved to label `title`).
+- `internal/web/static/styles/components.css` — new
+  `.upload-folder-row .folder-presets` reveal-on-focus animation
+  and new `.hint-disclosure` style.
+- `main.go` `platformVersion` → `0.14.14`; `wails.json` synced.
+
 ## [v0.14.13] — 2026-05-02
 ### Source body fully dynamic — only what applies, only when it applies
 

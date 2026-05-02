@@ -842,9 +842,9 @@
               </select>
             </div>
           </div>
-          <label for="normal_users" style="margin-top:10px">Users (CSV) <span class="muted">— username,password,pattern1*,pattern2*,…</span></label>
+          <label for="normal_users" style="margin-top:10px"
+                 title="Trailing * in a pattern is replaced with <nanos>_<rnd>. The original extension is preserved — invoice* → invoice<nanos>_<rnd>.txt; report*.csv → report<nanos>_<rnd>.csv. Passwords auto-reveal while you're editing and re-mask on blur.">Users (CSV) <span class="muted">— username,password,pattern1*,pattern2*,…</span></label>
           <textarea class="csv-users" id="normal_users" placeholder="user1,pass1,invoice*,order*&#10;user2,pass2,report*.csv"></textarea>
-          <div class="hint">Filenames: the trailing <code>*</code> in a pattern is replaced with <code>&lt;nanos&gt;_&lt;rnd&gt;</code>. The original extension is preserved — <code>invoice*</code> → <code>invoice&lt;nanos&gt;_&lt;rnd&gt;.txt</code>; <code>report*.csv</code> → <code>report&lt;nanos&gt;_&lt;rnd&gt;.csv</code>. Passwords auto-reveal while you're editing the field and re-mask as soon as you click away.</div>
 
           <!-- v0.14 source picker — opt-in. Default kind=synthetic preserves
                the v0.13 behaviour. Real-file sources let the operator push
@@ -1026,7 +1026,7 @@
         <div class="body">
           <div class="row">
             <div>
-              <label for="dfolder">Download folder (remote)</label>
+              <label for="dfolder" title="Where each download user polls. Leave blank to reuse the upload folder.">Download folder (remote)</label>
               <input id="dfolder" type="text" placeholder="outbox">
               <div class="chips">
                 <button type="button" class="chip-btn" data-fill="dfolder" data-value="outbox">outbox</button>
@@ -1034,32 +1034,24 @@
             </div>
             <div><label for="dparallel">Parallel streams / user</label><input id="dparallel" type="number" value="2" min="1"></div>
           </div>
-          <div class="hint">
-            Click a suggestion or type your own. Leave blank to reuse the upload folder.
-          </div>
-          <div class="hint">
-            <b>How it works:</b> each download user lists its own <code>folder</code> on every poll tick and pulls <i>every</i> filename it sees that matches the chosen tracking mode. Each download is attributed back to the originating upload row — no pre-configured upload→download mapping is required on the tool side.
-          </div>
-          <label style="margin-top:10px">Round-trip tracking mode</label>
+          <label style="margin-top:10px"
+                 title="In track-id mode the server must add #<id> to processed files. In filename mode the server must preserve the _slt_<12-char>_ marker the tool injects. Without that routing this card records zero downloads.">Round-trip tracking mode</label>
           <div class="row" style="gap:14px; align-items:flex-start">
-            <label style="flex:1; display:flex; gap:var(--sp-2); align-items:flex-start; cursor:pointer">
+            <label style="flex:1; display:flex; gap:var(--sp-2); align-items:flex-start; cursor:pointer"
+                   title="Server appends #<trackid> to each processed file. Required for OFTP/EDI gateways that already do this.">
               <input type="radio" name="download_match_mode" value="trackid" id="dmm_trackid" checked>
-              <span>
-                <b>Track-id suffix</b> <span class="hint" style="display:inline">(default)</span>
-                <div class="hint" style="margin-top:2px">Server appends <code>#&lt;trackid&gt;</code> to each processed file and places it in the download user's outbox. Required for OFTP/EDI gateways that already do this.</div>
-              </span>
+              <span><b>Track-id suffix</b> <span class="hint" style="display:inline">(default)</span></span>
             </label>
-            <label style="flex:1; display:flex; gap:var(--sp-2); align-items:flex-start; cursor:pointer">
+            <label style="flex:1; display:flex; gap:var(--sp-2); align-items:flex-start; cursor:pointer"
+                   title="Tool injects _slt_<12-char>_ into each upload filename. Works against servers that prepend/append their own bytes but preserve the marker substring.">
               <input type="radio" name="download_match_mode" value="filename" id="dmm_filename">
-              <span>
-                <b>Filename pattern</b> <span class="hint" style="display:inline">(no track-id needed)</span>
-                <div class="hint" style="margin-top:2px">Tool injects <code>_slt_&lt;12-char&gt;_</code> into each upload filename and finds the file in the outbox by that marker — works against servers that prepend or append their own bytes but preserve the marker substring.</div>
-              </span>
+              <span><b>Filename pattern</b> <span class="hint" style="display:inline">(no track-id needed)</span></span>
             </label>
           </div>
-          <div class="hint">
-            <b>Server requirements:</b> in <i>track-id</i> mode the server must add the <code>#&lt;id&gt;</code> suffix; in <i>filename</i> mode the server must place the file (with our marker preserved) in the download user's <code>folder</code>. Without that routing this card records zero downloads.
-          </div>
+          <details class="hint-disclosure">
+            <summary>How download verification works</summary>
+            <div class="hint">Each download user lists its <code>folder</code> on every poll tick and pulls every filename matching the chosen mode. Each download is attributed back to the originating upload row — no pre-configured mapping required on the tool side.</div>
+          </details>
           <label for="download_users" style="margin-top:10px">Download users (CSV)</label>
           <textarea class="csv-users" id="download_users" placeholder="dl1,pwd1,*&#10;dl2,pwd2,*"></textarea>
 
