@@ -685,6 +685,13 @@ function buildRequestBody() {
   const tlsMode = (document.getElementById('tls_mode')?.value || '').toLowerCase();
   const tlsServerName = (document.getElementById('tls_server_name')?.value || '').trim();
   const tlsSkipVerify = !!document.getElementById('tls_skip_verify')?.checked;
+  // The single TOFU toggle above the FTPS section drives both the SSH
+  // host-key TOFU (used by /api/probe for SFTP) AND the FTPS leaf-cert
+  // TOFU (used by /api/start when protocol=ftps). Default on so a first
+  // run against a new FTPS server with a self-signed cert just works —
+  // the leaf gets pinned, subsequent runs verify strictly. Operators
+  // with a strict-CA-only posture can untick the box.
+  const tofuChecked = !!document.querySelector('[data-role="tofu"]')?.checked;
   return {
     host: $('host').value.trim(),
     port: parseInt($('port').value) || 22,
@@ -692,6 +699,7 @@ function buildRequestBody() {
     tls_mode: protocol === 'ftps' ? tlsMode : '',
     tls_server_name: protocol === 'ftps' ? tlsServerName : '',
     tls_insecure_skip_verify: protocol === 'ftps' ? tlsSkipVerify : false,
+    tls_trust_on_first_use: protocol === 'ftps' ? tofuChecked : false,
     upload_folder: $('folder').value.trim(),
     parallel_streams: parseInt($('parallel').value) || 1,
     duration_hours: parseFloat($('duration').value) || 1,
@@ -790,6 +798,11 @@ function importConfigPayload(cfg) {
   }
   const tlsSkip = document.getElementById('tls_skip_verify');
   if (tlsSkip) tlsSkip.checked = !!cfg.tls_insecure_skip_verify;
+  // Restore TOFU on the unified toggle. Configs saved before v0.13.12
+  // didn't have tls_trust_on_first_use; default the toggle ON so a
+  // load-then-run against a new FTPS server still pins the cert.
+  const tofuToggle = document.querySelector('[data-role="tofu"]');
+  if (tofuToggle) tofuToggle.checked = cfg.tls_trust_on_first_use !== false;
   const tlsServer = document.getElementById('tls_server_name');
   if (tlsServer) tlsServer.value = cfg.tls_server_name || '';
   strSet('host', cfg.host);

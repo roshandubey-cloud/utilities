@@ -133,9 +133,32 @@ Three follow-ups from the v0.13.7 validation pass.
   with TOFU pins the cert and returns `stage: complete`; second probe
   without TOFU verifies cleanly against the stored fingerprint.
 
+## [v0.13.13] — 2026-05-01
+### Fixed
+- **Run button now auto-TOFUs the FTPS cert.** v0.13.8 added the
+  runner-side auto-TOFU plumbing and v0.13.12 fixed the probe path,
+  but the run form's serializer in `js/legacy.js` never read any TOFU
+  control — so hitting Run always sent `tls_trust_on_first_use:false`
+  even though the runner was wired to honor it. The unified
+  `data-role="tofu"` toggle (existing) now drives BOTH the SFTP
+  host-key TOFU on `/api/probe` AND the FTPS leaf-cert TOFU on
+  `/api/start`. Toggle defaults checked, so a first run against a
+  new FTPS server with a self-signed cert just works — the leaf is
+  pinned to the trust store, subsequent runs verify strictly,
+  changed certs still refuse (MITM signal).
+- Toggle label updated from "Auto-add server key on first connect (TOFU)"
+  to "Trust on first connect (TOFU) — pins SSH host key for SFTP, leaf
+  certificate for FTPS" so its scope is clear.
+
+### Verified
+- Empty `tls-hosts.json` → POST `/api/start` with `tls_trust_on_first_use:true`
+  → cert pinned to disk inside ~3 s of run start (fingerprint, subject,
+  not_after, added_at all populated). Subsequent run with the toggle
+  off still verifies cleanly against the stored fingerprint.
+
 ## [Unreleased]
 
-(no changes since v0.13.12)
+(no changes since v0.13.13)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -254,7 +277,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.12...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.13...HEAD
+[v0.13.13]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.13
 [v0.13.12]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.12
 [v0.13.11]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.11
 [v0.13.10]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.10
