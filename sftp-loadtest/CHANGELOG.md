@@ -39,9 +39,45 @@ self-update.
 - Replaced deprecated `io/ioutil` import in `tunnel_test.go` with
   `os` / `io` (staticcheck SA1019).
 
+## [v0.13.8] — 2026-05-01
+Three follow-ups from the v0.13.7 validation pass.
+
+### Added
+- **FTPS auto-TOFU on first contact.** New `tls_trust_on_first_use`
+  field on `/api/start` (and `RunConfig.TLSTrustOnFirstUse`). When set,
+  the runner records an unknown FTPS server's leaf certificate to the
+  trust store on first contact instead of failing the run with "unknown
+  host" — same semantics as SFTP host-key TOFU. The web Server's
+  TLSStore is now plumbed through `runner.StartWithPersistAndTLS` to
+  the protocol layer; subsequent runs against the same (host, port)
+  verify strictly, and a *changed* cert still refuses (operator must
+  consent through the probe + TLS-renewal modal). Pinned by
+  `TestFTPS_TLSStore_TrustOnFirstUse` (3-stage: TOFU dial → strict
+  verify → fresh-store refuse).
+- **Wails desktop-app bundle stamps the release version.** New
+  `stamp wails.json with release version` step before each `wails build`
+  in all four desktop-app jobs (mac arm64+intel, linux arm64, windows).
+  Replaces the hardcoded `0.4.0-dev` with `${VERSION#v}` so
+  `CFBundleVersion` / `CFBundleShortVersionString` track the release tag
+  on every build. Closes the v0.13.5 validation finding.
+- **Homebrew formula + auto-bump on release.** `Formula/sftp-loadtest.rb`
+  installs the webui SKU on macOS / Linux (arm64 + intel). New
+  `update-homebrew-formula` job in `release.yml` rewrites version + all
+  four SHA256s and commits to main after build-mac + build-linux finish,
+  so `brew tap roshandubey-cloud/utilities && brew install sftp-loadtest`
+  always points at the latest tag.
+
+### Changed
+- `protocol.Dial` now sets `tls.Config.InsecureSkipVerify=true` whenever
+  `TLSStore != nil`, so the store-backed `VerifyConnection` callback
+  owns trust decisions end-to-end. Without this, Go's chain verifier
+  rejected self-signed certs before TOFU could fire. Strictly safer
+  than `InsecureSkipVerify` alone — unknown certs without TOFU still
+  refuse.
+
 ## [Unreleased]
 
-(no changes since v0.13.7)
+(no changes since v0.13.8)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -160,7 +196,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.7...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.8...HEAD
+[v0.13.8]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.8
 [v0.13.7]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.7
 [v0.13.6]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.6
 [v0.13.5]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.5
