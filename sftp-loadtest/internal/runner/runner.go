@@ -18,6 +18,7 @@ import (
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/analyze"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/config"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/generator"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/hostkeys"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/latency"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/metrics"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/persist"
@@ -605,6 +606,13 @@ type Run struct {
 	// fallback is in effect. Read by code paths that dial outside the
 	// pre-built pools (download list-client, future ad-hoc dials).
 	sharedAuth []ssh.AuthMethod
+
+	// tlsStore is the FTPS leaf-cert TOFU store passed in by the web
+	// layer (Server.tlsStore). Nil means cert verification falls back to
+	// system CA / InsecureSkipVerify only. When non-nil and the cfg
+	// has TLSTrustOnFirstUse=true, an unknown cert on first contact is
+	// auto-added to the store; subsequent dials verify strictly.
+	tlsStore *hostkeys.TLSStore
 }
 
 // ReportStreamPath returns the on-disk CSV being streamed (empty if not
@@ -637,6 +645,8 @@ type poolSlot struct {
 	tlsMode            protocol.TLSMode
 	tlsInsecureSkip    bool
 	tlsServerName      string
+	tlsStore           *hostkeys.TLSStore // shared across slots; nil disables store-backed verify
+	tlsTrustOnFirstUse bool               // auto-add unknown certs to tlsStore on first contact
 
 	mu     sync.Mutex
 	client protocol.Conn
@@ -653,6 +663,8 @@ func (s *poolSlot) dialOpts() protocol.DialOpts {
 		TLSMode:            s.tlsMode,
 		InsecureSkipVerify: s.tlsInsecureSkip,
 		TLSServerName:      s.tlsServerName,
+		TLSStore:           s.tlsStore,
+		TLSTrustOnFirstUse: s.tlsTrustOnFirstUse,
 	}
 }
 
@@ -737,14 +749,23 @@ func (p *clientPool) closeAll() {
 
 // Start is kept for callers that don't need persistence.
 func Start(parent context.Context, cfg *config.RunConfig) (*Run, error) {
-	return StartWithPersist(parent, cfg, "")
+	return StartWithPersistAndTLS(parent, cfg, "", nil)
 }
 
-// StartWithPersist launches a run and, when the run completes, flushes the
-// final CSV report + a metadata JSON to reportsDir (empty string disables
-// persistence). The files are written atomically so a partial write never
-// shows up in history.
+// StartWithPersist is the back-compat helper for callers that don't have
+// a TLS trust store wired in yet. Equivalent to StartWithPersistAndTLS
+// with tlsStore=nil — no FTPS TOFU verification will run.
 func StartWithPersist(parent context.Context, cfg *config.RunConfig, reportsDir string) (*Run, error) {
+	return StartWithPersistAndTLS(parent, cfg, reportsDir, nil)
+}
+
+// StartWithPersistAndTLS launches a run with optional FTPS leaf-cert
+// trust store. When tlsStore is non-nil and cfg.TLSTrustOnFirstUse is
+// true, the runner auto-TOFUs unknown certs on first contact; otherwise
+// unknown certs refuse the run (matches the SFTP host-key behaviour).
+// reportsDir is the directory where the run's CSV + meta JSON are
+// flushed atomically on completion (empty string disables persistence).
+func StartWithPersistAndTLS(parent context.Context, cfg *config.RunConfig, reportsDir string, tlsStore *hostkeys.TLSStore) (*Run, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -764,6 +785,7 @@ func StartWithPersist(parent context.Context, cfg *config.RunConfig, reportsDir 
 		doneCh:         make(chan struct{}),
 		pools:          map[string]*clientPool{},
 		downloadPools:  map[string]*clientPool{},
+		tlsStore:       tlsStore,
 	}
 	if cfg.MaxConsecutiveFailures > 0 {
 		r.disable = newDisablePolicy(cfg.MaxConsecutiveFailures, cfg.NormalUsers, cfg.LargeFileUsers, cfg.DownloadUsers)
@@ -814,6 +836,8 @@ func StartWithPersist(parent context.Context, cfg *config.RunConfig, reportsDir 
 			TLSMode:            tlsMode,
 			InsecureSkipVerify: cfg.TLSInsecureSkipVerify,
 			TLSServerName:      cfg.TLSServerName,
+			TLSStore:           tlsStore,
+			TLSTrustOnFirstUse: cfg.TLSTrustOnFirstUse,
 		})
 	}
 	r.Watcher = trackid.New(cfg.UploadFolder, cfg.PollInterval, cfg.TrackIDTimeout, opener)
@@ -821,7 +845,7 @@ func StartWithPersist(parent context.Context, cfg *config.RunConfig, reportsDir 
 	// Build per-user client pools (union of normal + large users).
 	users := mergeUsers(cfg.NormalUsers, cfg.LargeFileUsers)
 	for _, u := range users {
-		pool, err := buildPool(cfg, u, cfg.ParallelStreams, sharedAuth)
+		pool, err := buildPool(cfg, u, cfg.ParallelStreams, sharedAuth, tlsStore)
 		if err != nil {
 			r.teardown()
 			cancel()
@@ -833,7 +857,7 @@ func StartWithPersist(parent context.Context, cfg *config.RunConfig, reportsDir 
 	// Build download user pools if the download test is enabled.
 	if cfg.Download != nil {
 		for _, u := range cfg.DownloadUsers {
-			pool, err := buildPool(cfg, u, cfg.Download.ParallelStreams, sharedAuth)
+			pool, err := buildPool(cfg, u, cfg.Download.ParallelStreams, sharedAuth, tlsStore)
 			if err != nil {
 				r.teardown()
 				cancel()
@@ -1092,6 +1116,8 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 			TLSMode:            tlsMode,
 			InsecureSkipVerify: r.Cfg.TLSInsecureSkipVerify,
 			TLSServerName:      r.Cfg.TLSServerName,
+			TLSStore:           r.tlsStore,
+			TLSTrustOnFirstUse: r.Cfg.TLSTrustOnFirstUse,
 		})
 		if derr != nil {
 			return nil, derr
@@ -1587,7 +1613,7 @@ func (r *Run) teardown() {
 // auth is propagated to each slot so subsequent redials use the same auth
 // method (key when the run is configured with a shared PEM, password
 // fallback otherwise).
-func buildPool(cfg *config.RunConfig, u config.UserCreds, size int, auth []ssh.AuthMethod) (*clientPool, error) {
+func buildPool(cfg *config.RunConfig, u config.UserCreds, size int, auth []ssh.AuthMethod, tlsStore *hostkeys.TLSStore) (*clientPool, error) {
 	if size < 1 {
 		size = 1
 	}
@@ -1596,15 +1622,17 @@ func buildPool(cfg *config.RunConfig, u config.UserCreds, size int, auth []ssh.A
 	p := &clientPool{}
 	for i := 0; i < size; i++ {
 		slot := &poolSlot{
-			user:            u.Username,
-			pass:            u.Password,
-			host:            cfg.Host,
-			port:            cfg.Port,
-			proto:           proto,
-			auth:            auth,
-			tlsMode:         tlsMode,
-			tlsInsecureSkip: cfg.TLSInsecureSkipVerify,
-			tlsServerName:   cfg.TLSServerName,
+			user:               u.Username,
+			pass:               u.Password,
+			host:               cfg.Host,
+			port:               cfg.Port,
+			proto:              proto,
+			auth:               auth,
+			tlsMode:            tlsMode,
+			tlsInsecureSkip:    cfg.TLSInsecureSkipVerify,
+			tlsServerName:      cfg.TLSServerName,
+			tlsStore:           tlsStore,
+			tlsTrustOnFirstUse: cfg.TLSTrustOnFirstUse,
 		}
 		c, err := protocol.Dial(context.Background(), proto, slot.dialOpts())
 		if err != nil {

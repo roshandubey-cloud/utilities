@@ -62,6 +62,17 @@ type RunConfig struct {
 	// TLSServerName is the SNI value sent during the FTPS handshake.
 	// Defaults to Host when empty.
 	TLSServerName string `json:"tls_server_name,omitempty"`
+
+	// TLSTrustOnFirstUse, when true, instructs the runner to add the
+	// FTPS server's leaf certificate to the operator's trust store on
+	// FIRST contact instead of failing the run with "unknown host".
+	// Subsequent runs against the same (host, port) verify against the
+	// stored fingerprint exactly like SFTP host-key TOFU. False (the
+	// default) preserves the v0.13.x behaviour: unknown certs require
+	// an explicit probe-and-accept through the UI before a run can use
+	// them. The webui only sets this true when the operator has ticked
+	// the TOFU box on the run form.
+	TLSTrustOnFirstUse bool `json:"tls_trust_on_first_use,omitempty"`
 }
 
 type NormalLoad struct {

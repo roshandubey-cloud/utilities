@@ -115,6 +115,13 @@ type DialOpts struct {
 	// continuing.
 	TLSStore *hostkeys.TLSStore
 
+	// TLSTrustOnFirstUse, when true alongside a non-nil TLSStore, lets
+	// VerifyConnection auto-add the presented leaf cert on the first
+	// contact instead of returning ErrUnknownTLSHost. Subsequent dials
+	// fall back to strict Verify (mirrors SFTP host-key TOFU semantics).
+	// Has no effect when TLSStore is nil.
+	TLSTrustOnFirstUse bool
+
 	// Streams hints at per-stream parallelism. Some implementations may
 	// size internal pools off this; today only used as documentation.
 	Streams int
@@ -277,16 +284,43 @@ func dialFTP(ctx context.Context, opts DialOpts, useTLS bool) (Conn, error) {
 		if serverName == "" {
 			serverName = opts.Host
 		}
+		// When TLSStore is non-nil we authenticate the server by stored
+		// fingerprint, not by the system CA chain — so we MUST tell Go's
+		// TLS stack to skip its own chain verification, otherwise a
+		// self-signed cert (the legitimate FTPS production case for many
+		// EDI partners) is rejected before our VerifyConnection callback
+		// runs. The store-backed VerifyConnection then either matches
+		// the stored fingerprint, runs TOFU, or refuses — strictly
+		// safer than InsecureSkipVerify alone, since unknown certs
+		// without TOFU still error.
+		skipChainVerify := opts.InsecureSkipVerify || opts.TLSStore != nil
 		tlsCfg := &tls.Config{
 			ServerName:         serverName,
-			InsecureSkipVerify: opts.InsecureSkipVerify, //nolint:gosec // operator opt-in for self-signed lab servers
+			InsecureSkipVerify: skipChainVerify, //nolint:gosec // store-backed verify replaces chain verify when TLSStore set
 			VerifyConnection: func(state tls.ConnectionState) error {
 				captureCert(state)
 				if opts.TLSStore != nil {
 					if len(state.PeerCertificates) == 0 {
 						return errors.New("ftps: server presented no certificate")
 					}
-					return opts.TLSStore.Verify(opts.Host, opts.Port, state.PeerCertificates[0])
+					leaf := state.PeerCertificates[0]
+					verr := opts.TLSStore.Verify(opts.Host, opts.Port, leaf)
+					if verr == nil {
+						return nil
+					}
+					// On first-contact (unknown host) and TOFU enabled, add
+					// the cert and accept. ErrTLSCertChanged still refuses —
+					// changed certs always need explicit operator consent.
+					if opts.TLSTrustOnFirstUse {
+						var tlsErr *hostkeys.TLSVerifyError
+						if errors.As(verr, &tlsErr) && errors.Is(tlsErr.Err, hostkeys.ErrUnknownTLSHost) {
+							if aerr := opts.TLSStore.Add(opts.Host, opts.Port, leaf); aerr != nil {
+								return fmt.Errorf("ftps tofu: store add: %w", aerr)
+							}
+							return nil
+						}
+					}
+					return verr
 				}
 				return nil
 			},

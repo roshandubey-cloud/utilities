@@ -718,6 +718,13 @@ type startReq struct {
 	TLSMode               string `json:"tls_mode,omitempty"`
 	TLSInsecureSkipVerify bool   `json:"tls_insecure_skip_verify,omitempty"`
 	TLSServerName         string `json:"tls_server_name,omitempty"`
+	// TLSTrustOnFirstUse mirrors the SFTP host-key TOFU semantics for
+	// FTPS leaf certs: when true, the runner adds an unknown server's
+	// cert to the persistent trust store on first contact instead of
+	// failing the run. False = unknown certs refuse (operator must
+	// probe-and-accept first). Has no effect when TLSInsecureSkipVerify
+	// is set; that flag bypasses the store entirely.
+	TLSTrustOnFirstUse    bool   `json:"tls_trust_on_first_use,omitempty"`
 
 	NormalEnabled     bool   `json:"normal_enabled"`
 	FilesPerMinute    int    `json:"files_per_minute"`
@@ -767,6 +774,7 @@ func buildRunConfig(req startReq) (*config.RunConfig, error) {
 		TLSMode:                req.TLSMode,
 		TLSInsecureSkipVerify:  req.TLSInsecureSkipVerify,
 		TLSServerName:          req.TLSServerName,
+		TLSTrustOnFirstUse:     req.TLSTrustOnFirstUse,
 	}
 	if req.NormalEnabled {
 		cfg.Normal = &config.NormalLoad{
@@ -821,7 +829,7 @@ func (s *Server) startRun(req startReq, startedBy string) (*runner.Run, error) {
 	if err != nil {
 		return nil, err
 	}
-	run, err := runner.StartWithPersist(context.Background(), cfg, s.reportsDir)
+	run, err := runner.StartWithPersistAndTLS(context.Background(), cfg, s.reportsDir, s.getTLSStore())
 	if err != nil {
 		return nil, err
 	}

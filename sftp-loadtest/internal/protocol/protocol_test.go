@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/hostkeys"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/mockftp"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/mocksftp"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/protocol"
@@ -185,6 +187,74 @@ func TestFTPS_Implicit_RoundTrip(t *testing.T) {
 	}
 	if _, err := waitForTrackID(c, "inbox", "z.txt"); err != nil {
 		t.Fatalf("wait: %v", err)
+	}
+}
+
+// TestFTPS_TLSStore_TrustOnFirstUse pins the v0.13.7 auto-TOFU path:
+// when TLSTrustOnFirstUse=true is paired with a non-nil TLSStore, the
+// FIRST dial against an unknown server adds the leaf cert to the store
+// and proceeds; the SECOND dial verifies strictly against the stored
+// fingerprint and accepts. A different cert on the same (host,port)
+// after the first contact still refuses (cert-changed = explicit
+// consent only).
+func TestFTPS_TLSStore_TrustOnFirstUse(t *testing.T) {
+	srv, err := mockftp.Start(mockftp.Options{
+		Addr:  "127.0.0.1:0",
+		TLS:   &mockftp.TLSOptions{EnableImplicit: true, ImplicitAddr: "127.0.0.1:0"},
+		Delay: 50 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("mockftp start: %v", err)
+	}
+	defer srv.Stop()
+	host, port := splitHostPort(t, srv.ImplicitAddr().String())
+
+	tmpDir := t.TempDir()
+	store, err := hostkeys.OpenTLS(filepath.Join(tmpDir, "tls.json"))
+	if err != nil {
+		t.Fatalf("open tls store: %v", err)
+	}
+
+	dialOpts := protocol.DialOpts{
+		Host: host, Port: port, User: "u1", Pass: "p",
+		TLSMode:            protocol.TLSImplicit,
+		TLSStore:           store,
+		TLSTrustOnFirstUse: true,
+	}
+
+	// Dial #1 — store is empty. With TLSTrustOnFirstUse, the unknown
+	// cert must be auto-added and the dial succeed.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	c1, err := protocol.Dial(ctx, protocol.FTPS, dialOpts)
+	if err != nil {
+		t.Fatalf("first dial (TOFU expected): %v", err)
+	}
+	c1.Close()
+	entries := store.List()
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 trust entry after TOFU, got %d", len(entries))
+	}
+
+	// Dial #2 — store now has the fingerprint. Even WITHOUT TOFU, the
+	// dial must verify cleanly because Verify() returns nil for matching
+	// fingerprints.
+	dialOpts.TLSTrustOnFirstUse = false
+	c2, err := protocol.Dial(ctx, protocol.FTPS, dialOpts)
+	if err != nil {
+		t.Fatalf("second dial (verify expected): %v", err)
+	}
+	c2.Close()
+
+	// Negative path: a fresh store without TOFU refuses an unknown cert.
+	freshStore, err := hostkeys.OpenTLS(filepath.Join(tmpDir, "tls2.json"))
+	if err != nil {
+		t.Fatalf("open second tls store: %v", err)
+	}
+	dialOpts.TLSStore = freshStore
+	dialOpts.TLSTrustOnFirstUse = false
+	if _, err := protocol.Dial(ctx, protocol.FTPS, dialOpts); err == nil {
+		t.Fatalf("expected unknown-cert refusal without TOFU; got nil err")
 	}
 }
 
