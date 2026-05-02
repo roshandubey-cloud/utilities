@@ -303,9 +303,39 @@ Three follow-ups from the v0.13.7 validation pass.
   etc.) the desktop falls through to the legacy file-mode wiring so
   trust is still honoured.
 
+## [v0.13.21] — 2026-05-01
+### Changed
+- **Help in the command palette is now enterprise-grade.** The previous
+  Help cards were one-line tooltips ("First connect captures the server
+  fingerprint to a local store. Future runs verify against it…") —
+  surface-level, no actionable depth.
+- New right-pane detail layout (Raycast-style): list on the left, full
+  guide on the right. Each entry can carry a structured `detail`
+  block — `{ title, lede, body[], links[] }` — rendered with proper
+  headings, key/value tables, bullet lists, code blocks, and external
+  links. Selecting (or hovering) any row updates the right pane in
+  ~30 ms.
+- Eleven Help guides written from scratch, each with what / why /
+  when-to-use / when-NOT / pitfalls / commands sections:
+  - Trust on First Use (TOFU) — full reference
+  - Cluster mode — full reference
+  - files-per-minute — sizing guide
+  - Protocol picker — SFTP / FTP / FTPS
+  - Run reports — schema + retention + access
+  - Reading latency percentiles (p50 / p95 / p99 / cor)
+  - Scheduling runs — when + how it survives restarts
+  - HTTP API — every endpoint, what it does
+  - Performance tuning — fd limits, parallel streams, memory
+  - Security posture — what protects this tool
+  - Spawning workers via SSH — what each step does
+- Non-help entries also get a mini detail card (icon + label + section
+  + description + shortcut) so the right pane is never blank.
+- Palette width grown 600 → 980 px to fit the two-pane layout.
+  Collapses to a stacked list-above-detail under 760 px viewport.
+
 ## [Unreleased]
 
-(no changes since v0.13.20)
+(no changes since v0.13.21)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -424,7 +454,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.20...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.21...HEAD
+[v0.13.21]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.21
 [v0.13.20]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.20
 [v0.13.19]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.19
 [v0.13.18]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.18

@@ -715,18 +715,165 @@ body.wails-linux {
 }
 @keyframes cmdkFadeIn { from { opacity: 0 } to { opacity: 1 } }
 .cmdk-panel {
-  width: 600px; max-width: 92vw;
+  width: 980px; max-width: 95vw;
   background: var(--surface-2);
   border: var(--bw-1) solid var(--border-medium);
   border-radius: var(--r-3);
   overflow: hidden;
   display: flex; flex-direction: column;
-  max-height: 70vh;
+  max-height: 76vh;
+  box-shadow: var(--shadow-3);
 }
 .cmdk-search { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3); border-bottom: var(--bw-1) solid var(--border-weak); }
 .cmdk-search-icon { color: var(--text-tertiary); display: inline-flex; }
 .cmdk-input { flex: 1; background: transparent; border: none; outline: none; color: var(--text-primary); font-size: var(--fs-14); font-family: var(--font-sans); }
-.cmdk-results { flex: 1; overflow-y: auto; padding: var(--sp-1) 0; }
+.cmdk-results { flex: 1; overflow-y: auto; padding: var(--sp-1) 0; min-height: 0; }
+/* Two-pane layout — list on the left, detail on the right. The pane
+   widths are tuned so the list keeps a 360-px floor for readable rows
+   and the detail gets the rest (max 480 px). On narrow widths the
+   detail collapses below the list via the media query at the bottom. */
+.cmdk-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  border-top: var(--bw-1) solid var(--border-weak);
+}
+.cmdk-body > .cmdk-results {
+  flex: 1 1 360px;
+  min-width: 280px;
+  border-right: var(--bw-1) solid var(--border-weak);
+}
+.cmdk-detail {
+  flex: 1 1 420px;
+  min-width: 280px;
+  max-width: 520px;
+  overflow-y: auto;
+  background: var(--surface);
+  padding: var(--sp-4);
+  font-size: var(--fs-13);
+  color: var(--text-primary);
+}
+.cmdk-detail[data-empty="true"] { opacity: 0.5; }
+.cmdk-detail-card { display: flex; flex-direction: column; gap: var(--sp-3); }
+.cmdk-detail-card--mini { gap: var(--sp-2); }
+.cmdk-detail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-2);
+  border-bottom: var(--bw-1) solid var(--border-weak);
+}
+.cmdk-detail-icon {
+  flex: 0 0 28px;
+  height: 28px;
+  width: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-2);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-size: var(--fs-14);
+}
+.cmdk-detail-headtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cmdk-detail-title {
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-14);
+  color: var(--text-primary);
+}
+.cmdk-detail-section {
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+.cmdk-detail-lede {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: var(--lh-relaxed);
+}
+.cmdk-detail-h {
+  margin: var(--sp-2) 0 var(--sp-1);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cmdk-detail-p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: var(--lh-relaxed);
+}
+.cmdk-detail-list {
+  margin: 0;
+  padding-left: var(--sp-4);
+  color: var(--text-secondary);
+  line-height: var(--lh-relaxed);
+}
+.cmdk-detail-list li { margin-bottom: 4px; }
+.cmdk-detail-list li::marker { color: var(--text-tertiary); }
+.cmdk-detail-kv {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px var(--sp-3);
+  font-size: var(--fs-12);
+}
+.cmdk-detail-kv dt {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.cmdk-detail-kv dd {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: var(--lh-relaxed);
+}
+.cmdk-detail-code {
+  margin: 0;
+  padding: var(--sp-2);
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+  font-size: var(--fs-12);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.cmdk-detail-shortcut, .cmdk-detail-meta {
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
+}
+.cmdk-detail-shortcut kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: var(--r-1);
+  border: var(--bw-1) solid var(--border-weak);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+}
+.cmdk-detail-links {
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: var(--bw-1) solid var(--border-weak);
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
+}
+.cmdk-detail-links a {
+  color: var(--text-link);
+  text-decoration: none;
+}
+.cmdk-detail-links a:hover { text-decoration: underline; }
+
+/* Narrow viewports — collapse the detail under the list. */
+@media (max-width: 760px) {
+  .cmdk-body { flex-direction: column; }
+  .cmdk-body > .cmdk-results { border-right: none; border-bottom: var(--bw-1) solid var(--border-weak); flex: 0 0 50%; }
+  .cmdk-detail { max-width: none; flex: 1 1 50%; }
+}
 .cmdk-section { padding: var(--sp-2) var(--sp-3) var(--sp-1); font-size: var(--fs-11); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); font-weight: var(--fw-semibold); }
 .cmdk-result { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: 6px var(--sp-3); cursor: pointer; font-size: var(--fs-13); color: var(--text-primary); }
 .cmdk-result[data-active="true"] { background: var(--action-selected); color: var(--text-primary); }
