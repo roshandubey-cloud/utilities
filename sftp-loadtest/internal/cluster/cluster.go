@@ -54,11 +54,23 @@ type StartReq struct {
 type Coordinator struct {
 	mu            sync.Mutex
 	active        bool
+	clusterRunID  string // cluster-<unix-ts>, generated in Start; survives until next Start
 	startedAt     time.Time
 	stoppedAt     time.Time
 	workers       []runningWorker
 	httpc         *http.Client
 	masterVersion string // captured once at New() — never mutated
+	archiveDir    string // when set, Stop pulls each worker's CSV+meta into <archiveDir>/cluster-runs/<id>/
+}
+
+// SetArchiveDir tells the coordinator where to persist per-worker
+// reports after a cluster run ends. The web layer wires this from
+// the master's reports-dir at boot. When unset, Stop is a no-op
+// archival-wise (workers still have their own local reports).
+func (c *Coordinator) SetArchiveDir(dir string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.archiveDir = dir
 }
 
 // runningWorker tracks a worker's id from /api/start so the master can
@@ -169,6 +181,7 @@ func (c *Coordinator) Start(ctx context.Context, req StartReq) ([]string, error)
 	c.startedAt = time.Now()
 	c.stoppedAt = time.Time{}
 	c.workers = rws
+	c.clusterRunID = fmt.Sprintf("cluster-%d", c.startedAt.Unix())
 	c.mu.Unlock()
 	return ids, nil
 }

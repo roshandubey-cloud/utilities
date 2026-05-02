@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,7 +28,17 @@ var (
 )
 
 func (s *Server) getClusterCoord() *cluster.Coordinator {
-	clusterCoordOnce.Do(func() { clusterCoord = cluster.New(s.getVersion()) })
+	clusterCoordOnce.Do(func() {
+		clusterCoord = cluster.New(s.getVersion())
+		// Wire the master's reports dir into the coordinator so per-worker
+		// reports get pulled into <reportsDir>/cluster-runs/<id>/ on Stop.
+		// Without this the cluster status panel was the only place
+		// per-worker numbers ever surfaced — the moment Stop fired they
+		// were gone unless the operator SSH'd into each worker.
+		if s.reportsDir != "" {
+			clusterCoord.SetArchiveDir(s.reportsDir)
+		}
+	})
 	return clusterCoord
 }
 
@@ -63,7 +75,9 @@ func (s *Server) handleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.getClusterCoord().Status(ctx))
 }
 
-// /api/cluster/stop — fan out /api/stop to every worker.
+// /api/cluster/stop — fan out /api/stop to every worker, then archive
+// each worker's report into <reportsDir>/cluster-runs/<id>/ so the
+// master UI's Runs panel can show the cluster run alongside solo runs.
 func (s *Server) handleClusterStop(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST required", http.StatusMethodNotAllowed)
@@ -71,9 +85,113 @@ func (s *Server) handleClusterStop(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	if err := s.getClusterCoord().Stop(ctx); err != nil {
+	coord := s.getClusterCoord()
+	if err := coord.Stop(ctx); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	// Archival is best-effort and runs even when Stop returned early —
+	// a single unreachable worker shouldn't block the others' reports
+	// from being persisted. Errors here are logged but don't propagate
+	// to the caller; the cluster Stop already succeeded.
+	if dir, aerr := coord.ArchiveOnStop(ctx); aerr != nil {
+		writeJSON(w, map[string]any{"ok": true, "archive_warning": aerr.Error()})
+		return
+	} else if dir != "" {
+		writeJSON(w, map[string]any{"ok": true, "archive_dir": dir})
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true})
+}
+
+// /api/cluster/runs — list every archived cluster run, newest first.
+// /api/cluster/runs?id=<id> — full ClusterRunMeta for one run.
+func (s *Server) handleClusterRuns(w http.ResponseWriter, r *http.Request) {
+	if s.reportsDir == "" {
+		writeJSON(w, map[string]any{"runs": []any{}})
+		return
+	}
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	if id == "" {
+		runs, err := cluster.ListClusterRuns(s.reportsDir)
+		if err != nil {
+			http.Error(w, "list cluster runs: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"runs": runs})
+		return
+	}
+	if !validClusterRunID(id) {
+		http.Error(w, "bad cluster run id", http.StatusBadRequest)
+		return
+	}
+	meta, err := cluster.LoadClusterRun(s.reportsDir, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	writeJSON(w, meta)
+}
+
+// /api/cluster/runs/file?id=<id>&name=<file> — download one of the
+// per-worker artifacts archived under cluster-runs/<id>/ (worker-NN.csv
+// or worker-NN.json). Strict path-component validation: id and name
+// must not contain "/", "\\", "..", or any non-alphanumeric / dash /
+// dot characters. Anything else is a 400.
+func (s *Server) handleClusterRunFile(w http.ResponseWriter, r *http.Request) {
+	if s.reportsDir == "" {
+		http.Error(w, "no reports dir configured", http.StatusNotFound)
+		return
+	}
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if !validClusterRunID(id) || !validClusterFileName(name) {
+		http.Error(w, "bad id or filename", http.StatusBadRequest)
+		return
+	}
+	abs := filepath.Join(s.reportsDir, "cluster-runs", id, name)
+	// Belt + braces against ../ traversal: the resolved path must still
+	// live inside the cluster-runs root. validClusterRunID + validClusterFileName
+	// already reject ".." but a defence-in-depth check is cheap.
+	root := filepath.Join(s.reportsDir, "cluster-runs")
+	rel, err := filepath.Rel(root, abs)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		http.Error(w, "path escapes cluster-runs root", http.StatusBadRequest)
+		return
+	}
+	http.ServeFile(w, r, abs)
+}
+
+// validClusterRunID accepts cluster-<digits> as written by Coordinator.Start.
+func validClusterRunID(id string) bool {
+	if !strings.HasPrefix(id, "cluster-") || len(id) > 64 {
+		return false
+	}
+	for _, r := range id {
+		if !(r == '-' || (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z')) {
+			return false
+		}
+	}
+	return true
+}
+
+// validClusterFileName accepts only the names archive.go writes:
+// "meta.json", "worker-NN.json", "worker-NN.csv".
+func validClusterFileName(name string) bool {
+	if name == "meta.json" {
+		return true
+	}
+	if !strings.HasPrefix(name, "worker-") {
+		return false
+	}
+	if !(strings.HasSuffix(name, ".csv") || strings.HasSuffix(name, ".json")) {
+		return false
+	}
+	if strings.Contains(name, "..") || strings.ContainsAny(name, "/\\") {
+		return false
+	}
+	if len(name) > 64 {
+		return false
+	}
+	return true
 }

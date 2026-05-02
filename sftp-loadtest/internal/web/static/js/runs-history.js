@@ -30,14 +30,22 @@ export function mountRunsHistory(rootSelector) {
 
   async function refresh() {
     try {
-      const res = await apiFetch('/api/runs');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const j = await res.json();
-      const runs = (j.runs || []).filter((r) => r.total_files > 0);
-      if (counter) counter.textContent = runs.length === 0
+      // Solo runs (one row per /api/start on this master) AND cluster
+      // runs (one row per /api/cluster/start, archived by ArchiveOnStop)
+      // are fetched in parallel and merged into a single timeline so the
+      // operator sees a unified history. Cluster runs gain a "cluster"
+      // badge + an expand button that lazy-loads per-worker breakdowns.
+      const [soloRes, clusterRes] = await Promise.all([
+        apiFetch('/api/runs').catch(() => null),
+        apiFetch('/api/cluster/runs').catch(() => null),
+      ]);
+      const solo = soloRes && soloRes.ok ? ((await soloRes.json()).runs || []).filter((r) => r.total_files > 0) : [];
+      const cluster = clusterRes && clusterRes.ok ? ((await clusterRes.json()).runs || []) : [];
+      const merged = mergeRuns(solo, cluster);
+      if (counter) counter.textContent = merged.length === 0
         ? 'no completed runs yet'
-        : (runs.length === 1 ? '1 completed run' : `${runs.length} completed runs`);
-      if (runs.length === 0) {
+        : (merged.length === 1 ? '1 completed run' : `${merged.length} completed runs`);
+      if (merged.length === 0) {
         slot.innerHTML = `
           <div class="runs-history-empty">
             <div class="hero-empty-icon" aria-hidden="true">
@@ -46,24 +54,32 @@ export function mountRunsHistory(rootSelector) {
                 <path d="M10 22h44"/>
               </svg>
             </div>
-            <div class="body-secondary">Finished runs will be listed here.</div>
+            <div class="body-secondary">Finished runs will be listed here. Cluster runs are archived automatically when you press Stop.</div>
           </div>`;
         return;
       }
-      slot.innerHTML = runs.slice(0, 10).map(rowMarkup).join('');
+      slot.innerHTML = merged.slice(0, 10).map(rowMarkup).join('');
       slot.querySelectorAll('[data-action="view"]').forEach((btn) => {
         btn.addEventListener('click', (ev) => {
           ev.preventDefault();
-          // Reuse the legacy [data-view] click hook so records.js (which
-          // listens on document) swaps to this run.
           const proxy = document.createElement('button');
           proxy.dataset.view = btn.dataset.runId;
           document.body.appendChild(proxy);
           proxy.click();
           proxy.remove();
-          // Scroll to live activity so the user sees the records they asked for.
           const tbl = document.querySelector('[data-component="records"]');
           if (tbl) tbl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      });
+      slot.querySelectorAll('[data-action="toggle-cluster"]').forEach((btn) => {
+        btn.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          const card = btn.closest('.runs-history-card');
+          const drawer = card?.querySelector('[data-role="cluster-drawer"]');
+          if (!drawer) return;
+          const open = drawer.dataset.open === 'true';
+          drawer.dataset.open = open ? 'false' : 'true';
+          btn.textContent = open ? 'Show workers' : 'Hide workers';
         });
       });
     } catch {
@@ -75,7 +91,91 @@ export function mountRunsHistory(rootSelector) {
   refresh();
 }
 
-function rowMarkup(r) {
+// mergeRuns sorts solo + cluster runs by started_at descending into one
+// timeline. Each entry is tagged with a "kind" so rowMarkup can branch.
+// Cluster runs are normalized into the same field-name shape solo runs
+// use so most of rowMarkup keeps working without per-kind plumbing.
+function mergeRuns(solo, cluster) {
+  const out = [];
+  for (const r of solo) {
+    out.push({
+      kind: 'solo',
+      id: r.id,
+      started_at: r.started_at,
+      stopped_at: r.stopped_at,
+      total_files: Number(r.total_files || 0),
+      total_bytes: Number(r.total_bytes || 0),
+      failed_files: Number(r.failed_files || 0),
+      overall_mbps: Number(r.overall_mbps || 0),
+      raw: r,
+    });
+  }
+  for (const r of cluster) {
+    out.push({
+      kind: 'cluster',
+      id: r.id,
+      started_at: r.started_at,
+      stopped_at: r.stopped_at,
+      total_files: Number(r.total_files || 0),
+      total_bytes: Number(r.total_bytes || 0),
+      failed_files: Number(r.failed_files || 0),
+      overall_mbps: Number(r.overall_mbps || 0),
+      master_version: r.master_version,
+      workers: r.workers || [],
+      raw: r,
+    });
+  }
+  out.sort((a, b) => {
+    const ta = a.started_at ? new Date(a.started_at).getTime() : 0;
+    const tb = b.started_at ? new Date(b.started_at).getTime() : 0;
+    return tb - ta;
+  });
+  return out;
+}
+
+function clusterDrawerMarkup(r) {
+  if (!r.workers || r.workers.length === 0) return '';
+  const rows = r.workers.map((w, i) => {
+    const idx = String(i + 1).padStart(2, '0');
+    const csvHref = w.file_csv ? `/api/cluster/runs/file?id=${encodeURIComponent(r.id)}&name=${encodeURIComponent(w.file_csv)}` : '';
+    const metaHref = w.file_meta ? `/api/cluster/runs/file?id=${encodeURIComponent(r.id)}&name=${encodeURIComponent(w.file_meta)}` : '';
+    const reach = w.reachable
+      ? `<span class="badge badge-success"><span class="dot"></span>reachable</span>`
+      : `<span class="badge badge-warning"><span class="dot"></span>${escapeHTML(w.err || 'unreachable')}</span>`;
+    const skewBadge = w.version_mismatch
+      ? `<span class="badge badge-warning" title="Worker reports version ${escapeHTML(w.version || '?')} which differs from master."><span class="dot"></span>version skew</span>`
+      : '';
+    const fetchWarn = (w.csv_fetch_err || w.meta_fetch_err)
+      ? `<span class="badge badge-warning" title="${escapeHTML(w.csv_fetch_err || w.meta_fetch_err)}"><span class="dot"></span>partial archive</span>`
+      : '';
+    return `
+      <li class="runs-history-cluster-worker">
+        <div class="runs-history-cluster-worker-head">
+          <div class="mono">worker-${idx} <span class="muted">·</span> ${escapeHTML(w.url)}</div>
+          <div class="runs-history-cluster-worker-badges">${reach}${skewBadge}${fetchWarn}</div>
+        </div>
+        <div class="body-small" style="color:var(--text-secondary)">
+          ${Number(w.total_files || 0).toLocaleString()} files · ${formatBytes(w.total_bytes)} · ${formatRate(w.overall_mbps)} MB/s${Number(w.failed_files || 0) > 0 ? ` · <span style="color:var(--danger-fg-soft)">${w.failed_files} failed</span>` : ''}
+        </div>
+        <div class="runs-history-cluster-worker-actions">
+          ${csvHref ? `<a class="btn btn-sm btn-ghost" href="${csvHref}" download data-external="1">CSV</a>` : ''}
+          ${metaHref ? `<a class="btn btn-sm btn-ghost" href="${metaHref}" download data-external="1">meta JSON</a>` : ''}
+        </div>
+      </li>`;
+  }).join('');
+  return `
+    <div class="runs-history-cluster-drawer" data-role="cluster-drawer" data-open="false">
+      <ul class="runs-history-cluster-list">${rows}</ul>
+    </div>`;
+}
+
+function rowMarkup(entry) {
+  // entry came from mergeRuns and carries either kind=solo or kind=cluster.
+  // Solo rows route to the rich raw-data path (skips, interrupted, latency,
+  // analysis). Cluster rows render the aggregated headline + a drawer of
+  // per-worker breakdowns.
+  if (entry.kind === 'cluster') return clusterRowMarkup(entry);
+  const r = entry.raw;
   const total = Number(r.total_files || 0);
   const failed = Number(r.failed_files || 0);
   const succeeded = total - failed;
@@ -130,6 +230,63 @@ function rowMarkup(r) {
       </div>
       ${latencyMarkup(r)}
       ${analysisMarkup(r)}
+    </article>`;
+}
+
+// clusterRowMarkup renders one cluster run. The headline mirrors the
+// solo card's stats grid (success rate, files, throughput) but pulls
+// from cluster-aggregated counters; below it sits an expand button
+// that toggles a drawer of per-worker rows with download links.
+function clusterRowMarkup(entry) {
+  const total = Number(entry.total_files || 0);
+  const failed = Number(entry.failed_files || 0);
+  const succeeded = total - failed;
+  const successPct = total > 0 ? (succeeded / total) * 100 : 0;
+  const successCls = successPct >= 99 ? 'ok' : successPct >= 85 ? 'warn' : 'bad';
+  const workers = entry.workers || [];
+  const reachable = workers.filter((w) => w.reachable).length;
+  const totalW = workers.length;
+  const skewCount = workers.filter((w) => w.version_mismatch).length;
+  const masterMetaHref = `/api/cluster/runs/file?id=${encodeURIComponent(entry.id)}&name=meta.json`;
+  return `
+    <article class="runs-history-card runs-history-card--cluster">
+      <header class="runs-history-card-head">
+        <div class="runs-history-id">
+          <div class="mono">
+            ${escapeHTML(entry.id)}
+            <span class="badge badge-info" title="Cluster run — fan-out across ${totalW} worker${totalW === 1 ? '' : 's'} archived by the master."><span class="dot"></span>cluster · ${totalW} worker${totalW === 1 ? '' : 's'}</span>
+            ${skewCount > 0 ? `<span class="badge badge-warning" title="${skewCount} worker(s) reported a different platform version than the master."><span class="dot"></span>${skewCount} version-skew</span>` : ''}
+          </div>
+          <div class="body-small" style="color:var(--text-tertiary)">${formatStarted(entry.started_at)}${entry.stopped_at ? ' · ' + formatDuration(entry.started_at, entry.stopped_at) : ''}${entry.master_version ? ' · master ' + escapeHTML(entry.master_version) : ''}</div>
+        </div>
+        <div class="runs-history-actions">
+          <a class="btn btn-sm btn-ghost" href="${masterMetaHref}" download data-external="1">aggregated JSON</a>
+          <button class="btn btn-sm btn-secondary" type="button" data-action="toggle-cluster">Show workers</button>
+        </div>
+      </header>
+      <div class="runs-history-stats">
+        <div class="runs-history-stat">
+          <div class="eyebrow">Success rate</div>
+          <div class="metric-default tabular runs-history-success-${successCls}">${total > 0 ? successPct.toFixed(1) : '—'}<span class="runs-history-pct">${total > 0 ? '%' : ''}</span></div>
+          <div class="body-small">${total > 0 ? `${succeeded.toLocaleString()} ok · ${failed.toLocaleString()} failed` : 'no records'}</div>
+        </div>
+        <div class="runs-history-stat">
+          <div class="eyebrow">Files</div>
+          <div class="metric-default tabular">${total.toLocaleString()}</div>
+          <div class="body-small">${formatBytes(entry.total_bytes)} · ${formatRate(entry.overall_mbps)} Mbps cluster-wide</div>
+        </div>
+        <div class="runs-history-stat">
+          <div class="eyebrow">Reachable workers</div>
+          <div class="metric-default tabular">${reachable}<span class="runs-history-pct"> / ${totalW}</span></div>
+          <div class="body-small">${totalW - reachable === 0 ? 'every worker archived cleanly' : `${totalW - reachable} unreachable at archive time`}</div>
+        </div>
+        <div class="runs-history-stat">
+          <div class="eyebrow">Origin</div>
+          <div class="metric-default" style="color:var(--text-secondary)">cluster fan-out</div>
+          <div class="body-small">expand below for per-worker CSV + meta</div>
+        </div>
+      </div>
+      ${clusterDrawerMarkup(entry)}
     </article>`;
 }
 

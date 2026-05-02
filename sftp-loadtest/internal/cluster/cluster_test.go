@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -26,10 +28,23 @@ type fakeWorker struct {
 	startResp      string
 	statusResp     string
 	healthzVersion string // when "", /healthz returns 404
+	fakeRunID      string // returned in /api/runs so the archive code can match by id
+	runsResp       string // when set, replaces the default /api/runs body
 	requireXReqWith bool
 }
 
 func newFakeWorker(startResp, statusResp string) *fakeWorker {
+	// Parse the run id out of startResp so /api/runs echoes the same id.
+	// We use a quick substring grab — startResp is always the form
+	// `{"run_id":"<id>"}` in tests, so this is good enough for the test
+	// fake without dragging in a JSON parse.
+	id := ""
+	if i := indexOf(startResp, `"run_id":"`); i >= 0 {
+		rest := startResp[i+len(`"run_id":"`):]
+		if j := indexOf(rest, `"`); j >= 0 {
+			id = rest[:j]
+		}
+	}
 	return &fakeWorker{
 		mu:             new(atomic.Int32),
 		startCalls:     new(atomic.Int32),
@@ -37,8 +52,18 @@ func newFakeWorker(startResp, statusResp string) *fakeWorker {
 		statusCalls:    new(atomic.Int32),
 		startResp:      startResp,
 		statusResp:     statusResp,
+		fakeRunID:      id,
 		requireXReqWith: true,
 	}
+}
+
+func indexOf(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
 }
 
 // healthzVersion, when non-empty, is what the fake worker reports under
@@ -83,6 +108,22 @@ func (f *fakeWorker) handler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, f.statusResp)
 	})
+	mux.HandleFunc("/api/runs", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Echo back a fake history that contains the run id we returned
+		// from /api/start. Tests can override the body via runsResp;
+		// otherwise we fall back to a placeholder that matches no real
+		// counters (the archive code then keeps the live-status numbers).
+		body := f.runsResp
+		if body == "" {
+			body = `{"runs":[{"id":"` + f.fakeRunID + `"}]}`
+		}
+		_, _ = io.WriteString(w, body)
+	})
+	mux.HandleFunc("/api/report.csv", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/csv")
+		_, _ = io.WriteString(w, "track_id,user,size_bytes\nfake-1,u1,1024\n")
+	})
 	return mux
 }
 
@@ -126,6 +167,101 @@ func TestCoordinator_StartFansOutAndDividesFPM(t *testing.T) {
 		if got, _ := m["host"].(string); got != "x" {
 			t.Errorf("worker %d lost non-fpm fields: %+v", i+1, m)
 		}
+	}
+}
+
+// TestCoordinator_ArchiveOnStop is the runtime pin for v0.13.24's
+// master-side aggregation. After Start + Stop, ArchiveOnStop must:
+//   1. create <archiveDir>/cluster-runs/<id>/.
+//   2. fetch /api/runs from each worker, find the row whose id matches
+//      the run_id we stashed at Start, and write that row as worker-NN.json.
+//   3. fetch /api/report.csv?id=<run_id> from each worker and write
+//      the bytes verbatim to worker-NN.csv.
+//   4. write meta.json with summed counters + per-worker pointers
+//      (FileMeta / FileCSV) so the UI can render it without a re-fetch.
+// Plus: the master-side ListClusterRuns and LoadClusterRun helpers
+// must read it back exactly.
+func TestCoordinator_ArchiveOnStop(t *testing.T) {
+	w1 := newFakeWorker(`{"run_id":"r-A"}`, `{"active":false,"failed_files":0,"metrics":{"total_files":42,"total_bytes":4194304,"overall_mbps":2.5}}`)
+	w1.runsResp = `{"runs":[{"id":"r-A","total_files":42,"total_bytes":4194304,"failed_files":0,"overall_mbps":2.5}]}`
+	w2 := newFakeWorker(`{"run_id":"r-B"}`, `{"active":false,"failed_files":1,"metrics":{"total_files":24,"total_bytes":2097152,"overall_mbps":1.5}}`)
+	w2.runsResp = `{"runs":[{"id":"r-B","total_files":24,"total_bytes":2097152,"failed_files":1,"overall_mbps":1.5}]}`
+	s1 := httptest.NewServer(w1.handler())
+	defer s1.Close()
+	s2 := httptest.NewServer(w2.handler())
+	defer s2.Close()
+
+	tmpDir := t.TempDir()
+	c := New("0.13.24")
+	c.SetArchiveDir(tmpDir)
+
+	ctx := context.Background()
+	if _, err := c.Start(ctx, StartReq{
+		Workers: []Worker{{URL: s1.URL}, {URL: s2.URL}},
+		Config:  []byte(`{"files_per_minute":300}`),
+	}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	// Drive a Status poll so the master captures live counters into
+	// runningWorker.LastStat — ArchiveOnStop falls back to those when
+	// the worker /api/runs lookup misses.
+	c.Status(ctx)
+
+	if err := c.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	dir, err := c.ArchiveOnStop(ctx)
+	if err != nil {
+		t.Fatalf("ArchiveOnStop: %v", err)
+	}
+	if dir == "" {
+		t.Fatal("expected non-empty archive dir")
+	}
+
+	// File layout assertions.
+	if _, err := os.Stat(filepath.Join(dir, "meta.json")); err != nil {
+		t.Errorf("meta.json missing: %v", err)
+	}
+	for _, name := range []string{"worker-01.csv", "worker-01.json", "worker-02.csv", "worker-02.json"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("%s missing: %v", name, err)
+		}
+	}
+
+	// Round-trip the meta back through LoadClusterRun and assert
+	// per-worker pointers + summed counters match.
+	id := filepath.Base(dir)
+	loaded, err := LoadClusterRun(tmpDir, id)
+	if err != nil {
+		t.Fatalf("LoadClusterRun: %v", err)
+	}
+	if loaded.MasterVersion != "0.13.24" {
+		t.Errorf("MasterVersion=%q, want 0.13.24", loaded.MasterVersion)
+	}
+	if len(loaded.Workers) != 2 {
+		t.Fatalf("Workers=%d, want 2", len(loaded.Workers))
+	}
+	for _, wr := range loaded.Workers {
+		if wr.FileCSV == "" || wr.FileMeta == "" {
+			t.Errorf("worker %s missing FileCSV/FileMeta pointers (csv_err=%q meta_err=%q)", wr.URL, wr.CSVFetchErr, wr.MetaFetchErr)
+		}
+		if wr.RunID == "" {
+			t.Errorf("worker %s missing RunID", wr.URL)
+		}
+	}
+	// Summed counters: 42+24=66 files, 4MB+2MB=6MB, 0+1=1 fail.
+	if loaded.TotalFiles != 66 || loaded.FailedFiles != 1 {
+		t.Errorf("totals wrong: files=%d fail=%d", loaded.TotalFiles, loaded.FailedFiles)
+	}
+
+	// ListClusterRuns must surface the run too.
+	all, err := ListClusterRuns(tmpDir)
+	if err != nil {
+		t.Fatalf("ListClusterRuns: %v", err)
+	}
+	if len(all) != 1 || all[0].ID != id {
+		t.Errorf("ListClusterRuns mismatch: %+v (want id=%s)", all, id)
 	}
 }
 

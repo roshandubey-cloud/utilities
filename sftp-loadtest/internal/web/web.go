@@ -630,6 +630,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/cluster/start", s.handleClusterStart)
 	mux.HandleFunc("/api/cluster/status", s.handleClusterStatus)
 	mux.HandleFunc("/api/cluster/stop", s.handleClusterStop)
+	mux.HandleFunc("/api/cluster/runs", s.handleClusterRuns)
+	mux.HandleFunc("/api/cluster/runs/file", s.handleClusterRunFile)
 	mux.HandleFunc("/api/worker/spawn", s.handleWorkerSpawn)
 	mux.HandleFunc("/api/worker/despawn", s.handleWorkerDespawn)
 	mux.HandleFunc("/api/worker/spawned", s.handleWorkerSpawnedList)

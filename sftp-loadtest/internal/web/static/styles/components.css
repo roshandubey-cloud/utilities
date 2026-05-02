@@ -1164,6 +1164,54 @@
   border: var(--bw-1) solid var(--border-weak);
   border-radius: var(--r-3);
 }
+.runs-history-card--cluster {
+  border-left: 3px solid var(--accent);
+}
+.runs-history-cluster-drawer {
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: var(--bw-1) solid var(--border-weak);
+  display: none;
+}
+.runs-history-cluster-drawer[data-open="true"] { display: block; }
+.runs-history-cluster-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.runs-history-cluster-worker {
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.runs-history-cluster-worker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.runs-history-cluster-worker-badges {
+  display: inline-flex;
+  gap: var(--sp-1);
+  flex-wrap: wrap;
+}
+.runs-history-cluster-worker-actions {
+  display: inline-flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.runs-history-cluster-worker-actions .btn-sm {
+  font-size: var(--fs-11);
+  padding: 2px var(--sp-2);
+}
 .runs-history-card-head {
   display: flex;
   align-items: flex-start;

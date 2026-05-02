@@ -384,9 +384,51 @@ Three follow-ups from the v0.13.7 validation pass.
 - All `pushToast(...)` calls after fetches gate on `res.ok` —
   no false-success or wrong-content toast paths found.
 
+## [v0.13.24] — 2026-05-01
+### Added
+- **Master archives every cluster run's per-worker reports automatically.**
+  Until now, when an operator hit Stop on a cluster run, each worker
+  kept its CSV + meta JSON locally and the master UI showed nothing —
+  to view per-worker numbers you had to SSH into each box and copy
+  the reports yourself. The master now pulls each worker's report at
+  Stop time and persists everything under `<reportsDir>/cluster-runs/<id>/`.
+- New types in `internal/cluster/archive.go`:
+  - `ClusterRunMeta` — aggregated cluster-run record (id, master version,
+    started/stopped, summed counters, per-worker pointers).
+  - `ClusterWorkerReport` — one worker's row inside a cluster run, with
+    relative paths to its `worker-NN.csv` and `worker-NN.json` archives.
+- New endpoints:
+  - `GET /api/cluster/runs` — list every archived cluster run, newest first.
+  - `GET /api/cluster/runs?id=<id>` — full meta for one cluster run.
+  - `GET /api/cluster/runs/file?id=<id>&name=<file>` — download one
+    of the per-worker artifacts. Strict path-component validation
+    (`cluster-<digits>` ids, `worker-NN.{csv,json}` or `meta.json`
+    filenames). `..` and slashes refused.
+- `Coordinator.ArchiveOnStop(ctx)` is the single entry point. The
+  cluster-stop handler calls it after `Coordinator.Stop` succeeds.
+  Best-effort: a single unreachable worker doesn't block the others'
+  reports from being persisted; the response surfaces an
+  `archive_warning` field when archival hit a snag.
+- **Runs-history panel now shows cluster runs alongside solo runs.**
+  Cluster cards get a `cluster · N workers` badge, a left-edge accent
+  bar, and an expand button that reveals a per-worker drawer with
+  CSV + meta-JSON download links per worker. Aggregated and worker
+  totals are reconciled from each worker's `/api/runs` row before
+  the meta is written, so the headline matches the records.
+- `runs-history.js` now fetches `/api/runs` and `/api/cluster/runs`
+  in parallel and merges by `started_at` so the History timeline is
+  unified.
+
+### Verified
+- Runtime test `TestCoordinator_ArchiveOnStop` exercises the full
+  archive flow against fake worker servers: empty trust → Start →
+  Status poll → Stop → ArchiveOnStop produces meta.json + 2×
+  worker-NN.{csv,json}; ListClusterRuns reads them back; summed
+  counters match (66 files / 1 failed across the two workers).
+
 ## [Unreleased]
 
-(no changes since v0.13.23)
+(no changes since v0.13.24)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -505,7 +547,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.23...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.24...HEAD
+[v0.13.24]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.24
 [v0.13.23]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.23
 [v0.13.22]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.22
 [v0.13.21]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.21
