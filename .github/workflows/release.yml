@@ -22,7 +22,7 @@ on:
 permissions:
   contents: write  # required to upload assets to the release
 
-# softprops/action-gh-release@v2 still ships on Node.js 20, which GitHub
+# softprops/action-gh-release@v3 still ships on Node.js 20, which GitHub
 # is forcing off June 2 2026. Opting in to Node 24 now via this env var
 # keeps the release pipeline green when the cutover lands. Drop this
 # once action-gh-release publishes a Node-24 build.
@@ -104,7 +104,7 @@ jobs:
           zip -9 -r ../../../../../sftp-loadtest-desktop-app-${VERSION}-mac-intel.zip sftp-loadtest-desktop.app
           cp     ../../../../../sftp-loadtest-desktop-app-${VERSION}-mac-intel.zip ../../../../../sftp-loadtest-desktop-app-mac-intel.zip
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             sftp-loadtest-webui-${{ github.ref_name }}-mac-apple-silicon.zip
@@ -183,7 +183,7 @@ jobs:
           zip -9 ../../../../../sftp-loadtest-desktop-app-${VERSION}-linux-amd64.zip sftp-loadtest-desktop
           cp    ../../../../../sftp-loadtest-desktop-app-${VERSION}-linux-amd64.zip ../../../../../sftp-loadtest-desktop-app-linux-amd64.zip
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             sftp-loadtest-webui-${{ github.ref_name }}-linux-amd64.zip
@@ -219,7 +219,7 @@ jobs:
           output-file: sftp-loadtest-sbom-${{ github.ref_name }}.cdx.json
           upload-artifact: false
           upload-release-assets: false
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             sftp-loadtest-sbom-${{ github.ref_name }}.cdx.json
@@ -310,7 +310,7 @@ jobs:
           zip -9 ../../../../../sftp-loadtest-desktop-app-${VERSION}-linux-arm64.zip sftp-loadtest-desktop
           cp    ../../../../../sftp-loadtest-desktop-app-${VERSION}-linux-arm64.zip ../../../../../sftp-loadtest-desktop-app-linux-arm64.zip
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             sftp-loadtest-desktop-app-${{ github.ref_name }}-linux-arm64.zip
@@ -383,7 +383,7 @@ jobs:
           Compress-Archive -Path sftp-loadtest-desktop.exe -DestinationPath "../../../../../sftp-loadtest-desktop-app-$version-windows-amd64.zip" -CompressionLevel Optimal
           Copy-Item "../../../../../sftp-loadtest-desktop-app-$version-windows-amd64.zip" ../../../../../sftp-loadtest-desktop-app-windows-amd64.zip
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             sftp-loadtest-webui-${{ github.ref_name }}-windows-amd64.zip
