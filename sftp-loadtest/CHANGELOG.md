@@ -354,9 +354,39 @@ Three follow-ups from the v0.13.7 validation pass.
   becomes a flex row with title group on the left, button on the
   right.
 
+## [v0.13.23] — 2026-05-01
+### Fixed
+- **Three latent fragilities of the same class as the v0.13.22 toast bug.**
+  An audit for "row/button click handlers whose target relies on text
+  matching" surfaced three more callsites that work today but would
+  bite the next time the UI label changes:
+  1. `clickSidebarRow` matched sidebar entries by `textContent.startsWith(name)`.
+     Today the labels (Workbench / Configure / Schedule / Runs / Cluster
+     / Trust) are unique-prefix; a future "Trust this certificate…" row
+     would silently steal `clickSidebarRow('trust')`. Fixed: matcher now
+     queries `[data-view="<name>"]` directly. Sidebar rows already carry
+     this attribute (set by `shell.js`).
+  2. The "Test connection" command-palette action used a regex over
+     every button's `textContent` — it grabbed the first match in DOM
+     order. Replaced with a stable `[data-component="connection"]
+     [data-role="submit"]` selector (the Quick-Checks submit button)
+     with a fallback to any `[data-role="submit"]`.
+  3. `legacy.js` `strSet(id, v)` (the import-config form populator)
+     set `el.value` without firing `input` / `change` events. The
+     configure-redesign mirrors and saved-config dirty flag listened
+     for those events, so a freshly-imported config could leave a
+     mirror field stale until the operator clicked into it. Now
+     dispatches both events with `bubbles:true`.
+
+### Audited (no fix required)
+- All recent probe / start callsites correctly include the `protocol`
+  field (the v0.13.16 / 17 fixes held).
+- All `pushToast(...)` calls after fetches gate on `res.ok` —
+  no false-success or wrong-content toast paths found.
+
 ## [Unreleased]
 
-(no changes since v0.13.22)
+(no changes since v0.13.23)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -475,7 +505,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.22...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.23...HEAD
+[v0.13.23]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.23
 [v0.13.22]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.22
 [v0.13.21]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.21
 [v0.13.20]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.20

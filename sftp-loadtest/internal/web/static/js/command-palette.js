@@ -461,7 +461,11 @@ function collectCommands() {
     description: 'Probe the target without starting a run. Captures host key / TLS cert for trust.',
     keywords: ['probe', 'test', 'connection', 'verify', 'reach', 'check'],
     action: () => {
-      const btn = Array.from(document.querySelectorAll('button')).find((b) => /test\s*connection/i.test(b.textContent || ''));
+      // Click the Quick-Checks submit button by its stable data-role.
+      // The previous textContent regex would happily match any future
+      // button whose label contained "test … connection" — fragile.
+      const btn = document.querySelector('[data-component="connection"] [data-role="submit"]')
+        || document.querySelector('[data-role="submit"]');
       btn?.click();
     },
   });
@@ -1329,8 +1333,11 @@ function relativeTime(iso) {
 }
 
 function clickSidebarRow(name) {
-  const candidates = Array.from(document.querySelectorAll('.shell-sidebar-row'));
-  const target = candidates.find((el) => (el.textContent || '').trim().toLowerCase().startsWith(name.toLowerCase()));
+  // Match by stable data-view attribute, not textContent prefix. The
+  // textContent matcher would silently match a future row whose label
+  // happens to start with the same word ("Trust this cert…" vs the
+  // "Trust" panel) and route the click to the wrong panel.
+  const target = document.querySelector(`.shell-sidebar-row[data-view="${name.toLowerCase()}"]`);
   if (target) {
     target.click();
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });

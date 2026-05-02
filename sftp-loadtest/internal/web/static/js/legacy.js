@@ -802,7 +802,19 @@ function exportConfig() {
 // Maps a config key from the JSON payload back onto the right input+type.
 // Null-safe: missing keys leave the current value untouched.
 function importConfigPayload(cfg) {
-  const strSet = (id, v) => { const el = $(id); if (el && v !== undefined && v !== null) el.value = String(v); };
+  const strSet = (id, v) => {
+    const el = $(id);
+    if (el && v !== undefined && v !== null) {
+      el.value = String(v);
+      // Fire input + change so anything wired to this field (the
+      // configure-redesign mirrors, the saved-config dirty flag, the
+      // protocol/TLS-mode auto-port-snap) sees the update. Without
+      // these, a strSet-only assignment is invisible to listeners and
+      // a future field could silently desync from its mirror.
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  };
   const chkSet = (id, v) => {
     const el = $(id);
     if (el && v !== undefined && v !== null) {
