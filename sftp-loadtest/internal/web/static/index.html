@@ -1127,7 +1127,12 @@
       <div class="actions">
         <button class="primary" id="startBtn">Start run</button>
         <button class="ghost" id="stopBtn" disabled>Stop</button>
-        <a id="csvBtn" class="link" href="/api/report.csv">Download CSV</a>
+        <!-- Download CSV intentionally NOT here. CSV downloads are a
+             post-run consumption action and live in two contextual
+             places: the Runs history panel (per-row CSV button) and
+             the scheduled-run banner that appears during a scheduled
+             run. Putting one on the always-visible Configure pane
+             confused operators about what "the" CSV referred to. -->
       </div>
       <div id="err"></div>
 

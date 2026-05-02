@@ -558,6 +558,36 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.7] — 2026-05-02
+### UX — drop context-mismatched Download CSV from hero actions
+
+Operator feedback: a Download CSV link sat permanently in the
+configure-pane action row next to Start / Stop, even before any run
+had happened. It pointed at `/api/report.csv` (the "last completed
+run") with no indication of which run that was, and duplicated the
+per-row CSV button each runs-history entry already carries.
+
+- **Removed `<a id="csvBtn">` from the hero actions row.** CSV
+  consumption now lives in two contextual homes only: each row of
+  the runs-history panel (per-run download), and the scheduled-run
+  banner that appears when a scheduled run is in progress. No more
+  always-visible "the CSV" with ambiguous referent.
+- **`legacy.js` guarded** — the live-status loop no longer assumes
+  `#csvBtn` is in the DOM, so a stale cached HTML against the new
+  binary doesn't throw.
+
+### What I checked but kept
+
+- Sched banner CSV (`#sched_banner_csv`) — only renders when a
+  scheduled run is in progress; **contextual, kept**.
+- Per-row CSV in runs history — the right home; **kept**.
+- Stop button greyed-out next to Start — pre-run-affordance value
+  outweighs noise; the sticky run-header has its own Stop that
+  takes over once a run is active. **Kept.**
+
+### Internal
+- `main.go` `platformVersion` → `0.14.7`; `wails.json` synced.
+
 ## [v0.14.6] — 2026-05-02
 ### UI — Target section redesign
 
