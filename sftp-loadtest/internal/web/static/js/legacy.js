@@ -885,15 +885,41 @@ function setDownloadMatchMode(v) {
 // non-default path.
 function exportConfig() {
   const cfg = buildRequestBody();
+
+  // v0.14.20 — round-trip fixes for previously-silent drops:
+  //
+  // 1. Private key PEM. buildRequestBody() gates the PEM on the
+  //    disclosure being OPEN (correct for /api/start — a closed
+  //    disclosure means the operator decided not to use key auth).
+  //    For EXPORT we want the PEM round-tripped regardless of
+  //    disclosure state, so the operator can close the disclosure
+  //    for visual tidiness without losing the key on next save.
+  //    Re-read the textarea directly here.
+  const pkEl = document.getElementById('conn-private-key');
+  const pkPassEl = document.getElementById('conn-private-key-passphrase');
+  if (pkEl && pkEl.value.trim()) cfg.private_key_pem = pkEl.value;
+  if (pkPassEl && pkPassEl.value) cfg.private_key_passphrase = pkPassEl.value;
+
+  // 2. Target Test-connection credentials (conn-user / conn-pass).
+  //    Single-user creds for the Test-connection probe — distinct
+  //    from per-load CSVs. They never reach /api/start (run pulls
+  //    users from CSVs), but they ARE valuable round-trip state so
+  //    "load preset → click Test connection" works without re-typing.
+  const cu = document.getElementById('conn-user');
+  const cp = document.getElementById('conn-pass');
+  if (cu && cu.value.trim()) cfg.target_username = cu.value.trim();
+  if (cp && cp.value) cfg.target_password = cp.value;
+
   const includePwd = $('export_with_passwords') && $('export_with_passwords').checked;
   if (!includePwd) {
     cfg.normal_users_csv   = stripPasswordsFromCSV(cfg.normal_users_csv);
     cfg.large_users_csv    = stripPasswordsFromCSV(cfg.large_users_csv);
     cfg.download_users_csv = stripPasswordsFromCSV(cfg.download_users_csv);
-    // The private key is a credential. Export blanks it the same way we
-    // strip CSV passwords — it only ships when "include passwords" is on.
+    // Credentials get blanked the same way CSV passwords do — they
+    // only ship when "include passwords" is explicitly on.
     cfg.private_key_pem = '';
     cfg.private_key_passphrase = '';
+    cfg.target_password = '';
   } else if (!confirm('Export will include plaintext passwords. Continue?')) {
     return;
   }
@@ -1007,6 +1033,24 @@ function importConfigPayload(cfg) {
   if (cfg.private_key_passphrase !== undefined) {
     const pkPassEl = document.getElementById('conn-private-key-passphrase');
     if (pkPassEl) pkPassEl.value = String(cfg.private_key_passphrase || '');
+  }
+  // v0.14.20 — restore target Test-connection creds round-tripped from
+  // export. These are single-user probe creds (distinct from per-load
+  // CSVs); the run pulls users from CSVs so these never affect run
+  // behaviour, but operators expect them to survive Export → Import.
+  if (cfg.target_username !== undefined) {
+    const cu = document.getElementById('conn-user');
+    if (cu) {
+      cu.value = String(cfg.target_username || '');
+      cu.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+  if (cfg.target_password !== undefined) {
+    const cp = document.getElementById('conn-pass');
+    if (cp) {
+      cp.value = String(cfg.target_password || '');
+      cp.dispatchEvent(new Event('input', { bubbles: true }));
+    }
   }
   // v0.14 source/sink disclosures. window.__srcSink is wired by
   // sources-sinks.js after mount; guard so configs imported before the
