@@ -72,6 +72,32 @@
 .btn-secondary:active { background: var(--surface-3); box-shadow: inset 0 1px 2px rgba(0,0,0,0.18); }
 .btn-secondary:focus-visible { box-shadow: var(--focus-ring); }
 
+/* Soft-accent button — gentle minimalist accent treatment. Used by
+   "Test connection" and similar primary-but-not-the-headline actions
+   where btn-primary (filled accent) would over-claim hierarchy
+   against Start run, but btn-secondary (neutral) reads as forgettable.
+   Same visual vocabulary as the sidebar's selected row — accent tint
+   background, accent foreground, gloss halo on hover — so the button
+   reads as "clearly an action, clearly tied to the workflow." */
+.btn-accent-soft {
+  background-color: var(--sidebar-active-bg);
+  background-image: var(--gloss-button-bg);
+  color: var(--sidebar-active-fg);
+  border-color: color-mix(in oklab, var(--accent) 28%, transparent);
+  box-shadow: var(--gloss-top-edge);
+  font-weight: var(--fw-semibold);
+}
+.btn-accent-soft:hover {
+  background-color: color-mix(in oklab, var(--accent) 22%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  box-shadow: var(--gloss-top-edge), var(--gloss-halo-accent);
+}
+.btn-accent-soft:active {
+  background-color: color-mix(in oklab, var(--accent) 30%, transparent);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.18);
+}
+.btn-accent-soft:focus-visible { box-shadow: var(--focus-ring), var(--gloss-halo-accent); }
+
 /* ghost = no chrome until hover */
 .btn-ghost {
   background: transparent;
@@ -667,6 +693,20 @@
   letter-spacing: var(--tracking-tight);
   color: var(--text-primary);
 }
+/* v0.14.9 — soft accent ring that briefly pulses around a required
+   field when guideRequiredFields() catches an empty-on-click. Combined
+   with a focus jump + toast, the operator never wonders why their
+   click was a no-op. Pure CSS, no JS animation library. */
+@keyframes sftpl-field-pulse {
+  0%   { box-shadow: 0 0 0 0   color-mix(in oklab, var(--accent) 50%, transparent); }
+  60%  { box-shadow: 0 0 0 6px color-mix(in oklab, var(--accent) 0%,  transparent); }
+  100% { box-shadow: 0 0 0 0   color-mix(in oklab, var(--accent) 0%,  transparent); }
+}
+.field-pulse {
+  animation: sftpl-field-pulse 1.5s ease-out 1;
+  border-color: var(--accent) !important;
+}
+
 /* v0.14.6 Target panel — compact two-row layout. The original three
    stacked field-rows + full-width TOFU toggle + recent-connections
    empty state burned ~440px of vertical real estate even with empty

@@ -4,6 +4,9 @@
 
 import { initTheme } from './theme.js';
 import { installExternalOpener } from './external.js';
+// Side-effect import: wires window.__guide so legacy.js (non-module)
+// can call guideRequiredFields / guideCondition without an import.
+import './guidance.js';
 import { mountShell } from './shell.js';
 import { mountSidebar } from './sidebar.js';
 import { mountLiveCharts } from './charts/live.js';

@@ -7,6 +7,7 @@
 import { apiPostJSON, apiFetch } from './api.js';
 import { pushToast } from './toast.js';
 import { hostKeyConsent } from './modal.js';
+import { guideRequiredFields } from './guidance.js';
 
 const HISTORY_KEY = 'sftp-loadtest-conn-history-v1';
 const HISTORY_MAX = 8;
@@ -383,6 +384,21 @@ export function mountConnectionCard(rootSelector) {
   // forceTOFU=true is used by the consent prompt's Accept button: the user
   // has seen the fingerprint and explicitly opted in.
   async function probe(forceTOFU) {
+    // First pass: empty-field guidance. Operators were getting silent
+    // returns when host/port were blank — focus shifts but no toast,
+    // so they assumed Test connection was broken. guideRequiredFields
+    // focuses the first empty field, pulses an accent ring around
+    // every empty one, and toasts "Fill in Host and Port to test the
+    // connection." Returns false → bail before the inline-validation
+    // pass even runs.
+    if (!guideRequiredFields([
+      { el: hostEl, label: 'Host' },
+      { el: portEl, label: 'Port' },
+    ], { action: 'test the connection' })) {
+      return;
+    }
+    // Second pass: format validation (e.g. host syntax) for already-
+    // populated fields.
     const hostOK = validateField(hostEl);
     const portOK = validateField(portEl);
     if (!hostOK || !portOK) {
