@@ -1287,8 +1287,14 @@ func friendlyProbeError(stage string, err error) string {
 		return "Server presented a new host key. Verify the fingerprint and accept to continue."
 	case strings.Contains(low, "unable to authenticate"), strings.Contains(low, "authentication failed"):
 		return "Authentication failed — verify username and password."
+	// FTPS-shaped TLS errors hitting the SFTP path mean the operator
+	// pointed an SFTP probe at a TLS-fronted port. Steer them to the
+	// right protocol picker rather than the misleading "SSH handshake
+	// failed" message — the SSH layer never even started.
+	case strings.Contains(low, "tls"), strings.Contains(low, "x509"):
+		return "Server speaks TLS, not SSH — switch the protocol to FTPS (or FTP) in the connection form, or point this probe at port 22."
 	case strings.Contains(low, "ssh: handshake failed"):
-		return "SSH handshake failed — check server config, credentials, or network."
+		return "SSH handshake failed — check server config, credentials, or network. (If the target is FTPS or FTP, switch the protocol in the connection form.)"
 	case strings.Contains(low, "subsystem"):
 		return "Server accepted SSH but rejected the SFTP subsystem — verify SFTP is enabled."
 	case stage == "list":

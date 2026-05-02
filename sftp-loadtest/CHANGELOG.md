@@ -156,9 +156,24 @@ Three follow-ups from the v0.13.7 validation pass.
   not_after, added_at all populated). Subsequent run with the toggle
   off still verifies cleanly against the stored fingerprint.
 
+## [v0.13.14] — 2026-05-01
+### Fixed
+- **"SSH handshake failed" no longer fires on TLS-fronted ports.**
+  When the protocol picker is left on SFTP but the operator points
+  the probe at an FTPS port (e.g. mockftpserver on 19990), the SSH
+  handshake never starts — the underlying error is a TLS handshake
+  failure. `friendlyProbeError` previously caught the generic
+  `ssh: handshake failed` substring AFTER the TLS error already
+  bubbled up, masking the real problem. New TLS/x509 detection
+  branches steer the operator to the FTPS picker instead:
+  `Server speaks TLS, not SSH — switch the protocol to FTPS (or FTP)
+  in the connection form, or point this probe at port 22.`
+  The `ssh: handshake failed` branch also gained an FTPS-suggestion
+  hint so the message reads useful even on the genuine SSH path.
+
 ## [Unreleased]
 
-(no changes since v0.13.13)
+(no changes since v0.13.14)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -277,7 +292,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.13...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.14...HEAD
+[v0.13.14]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.14
 [v0.13.13]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.13
 [v0.13.12]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.12
 [v0.13.11]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.11
