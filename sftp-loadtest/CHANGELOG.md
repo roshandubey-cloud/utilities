@@ -471,9 +471,24 @@ Three follow-ups from the v0.13.7 validation pass.
   template so padding / alignment can never drift; they're styled
   italic + sidebar-mute with an arrow on the right.
 
+## [v0.13.27] — 2026-05-01
+### Fixed
+- **TLS-mode label "Implicit (port 990)" implied the port was fixed.**
+  990 is the canonical implicit-TLS port but any port works (the
+  local mockftpserver runs on 19990, real customer servers commonly
+  on 21021, 4990, etc.). Renamed the label to "Implicit (TLS from
+  byte 0)" so it describes the protocol semantic, not a specific
+  port. Hover title still notes "Any port works (canonical 990)" as
+  a hint. The Explicit button got a parallel title hint.
+- Port auto-snap behaviour (already correct, just clarifying):
+  switching from SFTP → FTPS implicit pre-fills the port field with
+  990 as a courtesy. The instant the operator types a custom port,
+  `userEditedPort` flips and we stop touching the field. Custom
+  ports stick across protocol-mode flips.
+
 ## [Unreleased]
 
-(no changes since v0.13.26)
+(no changes since v0.13.27)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -592,7 +607,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.26...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.27...HEAD
+[v0.13.27]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.27
 [v0.13.26]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.26
 [v0.13.25]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.25
 [v0.13.24]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.24
