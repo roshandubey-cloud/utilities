@@ -786,6 +786,33 @@
 .btn-pass-toggle:focus-visible { box-shadow: var(--focus-ring); outline: none; }
 .btn-pass-toggle.is-revealing { color: var(--accent); }
 
+/* Quiet "How X works" disclosure (v0.14.14). One-line summary by
+   default; expands to a paragraph on click. Used wherever we used to
+   render multi-line .hint paragraphs that operators rarely needed
+   to read. */
+.hint-disclosure {
+  margin-top: var(--sp-2);
+}
+.hint-disclosure > summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
+  padding: 4px 0;
+}
+.hint-disclosure > summary::-webkit-details-marker { display: none; }
+.hint-disclosure > summary::before {
+  content: '▸';
+  display: inline-block;
+  width: 12px;
+  margin-right: var(--sp-1);
+  color: var(--text-tertiary);
+  transition: transform var(--t-default) var(--ease-out);
+}
+.hint-disclosure[open] > summary::before { transform: rotate(90deg); }
+.hint-disclosure > summary:hover { color: var(--text-secondary); }
+.hint-disclosure .hint { padding-left: 18px; margin-top: 4px; }
+
 /* Compact action row — TOFU checkbox on the left, Reset/Save/Test on
    the right. Wraps gracefully on narrow widths. */
 .target-actions {
@@ -1794,6 +1821,26 @@
   padding: 0 0 var(--sp-3);
   margin-bottom: var(--sp-3);
   border-bottom: var(--bw-1) solid var(--border-weak);
+}
+/* Folder preset chips (inbox / incoming / upload) — hidden by default,
+   slide in on focus-within so they only show when the operator is
+   actively working with the folder field. v0.14.14 — was burning a
+   permanent ~36px on every page load even though most operators pick
+   one path and never change. */
+.upload-folder-row .folder-presets {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height var(--t-default) var(--ease-out),
+              opacity   var(--t-fast)    var(--ease-out),
+              margin-top var(--t-fast) var(--ease-out);
+  margin-top: 0 !important;
+}
+.upload-folder-row:focus-within .folder-presets,
+.upload-folder-row .folder-presets:hover {
+  max-height: 40px;
+  opacity: 1;
+  margin-top: var(--sp-1) !important;
 }
 
 /* Run-mechanics group inside the Upload card — surfaces parallel-streams,

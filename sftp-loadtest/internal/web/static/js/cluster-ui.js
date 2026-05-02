@@ -1340,14 +1340,21 @@ export function mountDistributeToggle() {
   const cb = row.querySelector('#cluster_distribute');
   const status = row.querySelector('[data-role="distribute-status"]');
   function syncStatus() {
-    const enabled = readAll().filter((w) => w.enabled);
+    const all = readAll();
+    const enabled = all.filter((w) => w.enabled);
+    // Hide the entire row when the operator has no workers configured
+    // at all. Show it (with status line) the moment they add one in
+    // the sidebar. v0.14.14 — was burning a row + a "no workers
+    // enabled" warning on every fresh form even though the operator
+    // doesn't know clusters exist yet.
+    if (all.length === 0) {
+      row.hidden = true;
+      return;
+    }
+    row.hidden = false;
     if (enabled.length === 0) {
-      status.textContent = 'no workers enabled — add one in the sidebar';
+      status.textContent = 'no workers enabled — toggle one in the sidebar';
       status.dataset.kind = 'warn';
-      // Disable + force-uncheck. The toggle is meaningless with no
-      // workers; previously letting the user check it produced a toast
-      // at Start time. Better UX: prevent the check in the first place
-      // and reflect the state visually.
       cb.disabled = true;
       if (cb.checked) {
         cb.checked = false;
