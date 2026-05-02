@@ -1,52 +1,59 @@
 # sftp-loadtest
 
-A lightweight, production-grade SFTP / FTP / FTPS load-testing tool with a
-built-in web UI. Designed to be the kind of tool you can hand to a client
-and trust on a 24-hour run against their production server without it lying
-to you, running away with memory, or going silently into the weeds when the
-network hiccups.
+> Production-grade SFTP / FTP / FTPS load tester. Native desktop app + CLI/server.
+> Real files, multi-worker fan-out, byte-faithful round-trip verification.
 
-> **v0.13.0 — multi-protocol.** FTP and FTPS join SFTP. The protocol picker
-> sits at the top of Configure → Target; switching to FTPS reveals a TLS-mode
-> segmented (Explicit AUTH TLS / Implicit-from-byte-0) and a self-signed-cert
-> trust toggle. All tracking, watcher, download and CSV plumbing is
-> protocol-agnostic — the same load-test you ran against SFTP runs against
-> FTP/FTPS unchanged.
+[![Latest release](https://img.shields.io/github/v/release/roshandubey-cloud/utilities?label=latest&color=ee5b21)](https://github.com/roshandubey-cloud/utilities/releases/latest)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Tutorial scripts](https://img.shields.io/badge/tutorials-6_videos-orange)](docs/tutorials/)
 
-- **~10 MB single static binary**, zero dependencies, runs on macOS / Linux / Windows.
-- **Sub-15 MB RSS at idle**, RAM stays flat over multi-hour high-FPM runs (streaming CSV writer).
-- **Honest measurements**: per-file timings substituted with minute-window rates when the per-file number isn't reliable; never blank, never fake.
-- **Self-healing**: SSH keepalives, automatic redial on dropped pool slots, watcher reconnect on idle-timeout.
-- **Per-user auto-disable** after N consecutive failures so one bad credential doesn't poison the run.
-- **Streaming CSV report** to disk during the run + atomic metadata JSON on teardown.
-- **Built-in scheduler**: queue runs for later, fires automatically, persists across restarts.
-- **Test connection** button validates TCP / SSH / SFTP / folder list before you commit to a real run.
-- **Apple-TV-class workbench UI** with sidebar nav, slim run-summary bar, Cmd+K palette, live charts, and dark / light themes.
-- **SSH host-key verification** on by default (TOFU enrollment from the UI; per-user `known_hosts` auto-managed in the desktop SKU).
-- **SSH public-key auth** in addition to passwords — paste a PEM in the connection card and every user authenticates with that key.
-- **Saved connections + saved configs** — name a host:port:user combo, recall it from the sidebar with one click; save the whole form as a preset and load it via Cmd+K.
+![Workbench — live throughput + latency percentiles + per-file activity tail](docs/screenshots/workbench-active-dark.png)
 
-## Screenshots
+<table>
+  <tr>
+    <td width="33%"><a href="docs/screenshots/configure-dark.png"><img src="docs/screenshots/configure-dark.png" alt="Configure"></a><br><sub><b>Configure</b> — Target, Workload (Upload + Large + Download), Limits.</sub></td>
+    <td width="33%"><a href="docs/screenshots/runs-dark.png"><img src="docs/screenshots/runs-dark.png" alt="Runs"></a><br><sub><b>Runs</b> — Per-run history with CSV download. Cluster runs expand to per-worker rows.</sub></td>
+    <td width="33%"><a href="docs/screenshots/cluster-with-workers-dark.png"><img src="docs/screenshots/cluster-with-workers-dark.png" alt="Cluster"></a><br><sub><b>Cluster</b> — Multi-worker fan-out via SSH. No preinstalled agent.</sub></td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/schedule-dark.png"><img src="docs/screenshots/schedule-dark.png" alt="Schedule"></a><br><sub><b>Schedule</b> — Queue runs for later, fires automatically.</sub></td>
+    <td><a href="docs/screenshots/trust-dark.png"><img src="docs/screenshots/trust-dark.png" alt="Trust"></a><br><sub><b>Trust</b> — SSH host keys + FTPS leaf certs (TOFU pinning).</sub></td>
+    <td><a href="docs/screenshots/cmdk-palette-open-dark.png"><img src="docs/screenshots/cmdk-palette-open-dark.png" alt="Command palette"></a><br><sub><b>Cmd+K</b> — Every action reachable by typing. 11 deep help guides.</sub></td>
+  </tr>
+</table>
 
-### Workbench (live run, dark theme)
-![Workbench — live throughput, latency percentiles, live metrics tile grid, slowdown events table](docs/screenshots/workbench-active-dark.png)
+<sub>All screenshots in dark theme; <a href="docs/screenshots/">light variants in `docs/screenshots/`</a>.</sub>
 
-### Configure (dark theme)
-![Configure — Quick checks card, Upload / Download workload cards, slim run-summary with live chips](docs/screenshots/configure-dark.png)
+---
 
-### More screenshots
+## What it is
 
-| View | Dark | Light |
+| | |
+|---|---|
+| **Protocols** | SFTP · FTP · FTPS (Explicit + Implicit) |
+| **Form factor** | Single-binary CLI/server *and* native desktop app (macOS / Linux / Windows) — same code, two SKUs |
+| **Source bytes** | Synthetic random, or real files from disk (flat / by-account-folder / by-pattern / by-account-and-pattern layouts) |
+| **Round-trip** | Track-id suffix or filename-pattern matching; per-file processing-time capture if your server cooperates |
+| **Save downloads** | `discard` (counter only) or `local-disk` with template (`{user}/{date}/{trackid}_{filename}`) |
+| **Scale** | Single-machine *or* fan out to N workers via SSH (built-in spawn, reverse-tunnel, cumulative reporting) |
+| **Trust** | Host-key + leaf-cert TOFU pinning. JSON store, diff-able, audit-ready. |
+| **Reports** | Streaming CSV + per-run JSON metadata. p50 / p95 / p99 latency. Per-user error tracking. |
+| **Memory** | Sub-15 MB RSS at idle. Flat over 24-hour runs (streaming CSV writer, no buffering). |
+| **Footprint** | ~10 MB binary. Zero runtime deps. |
+
+## 6 video tutorials
+
+Walk-through scripts (production-ready storyboards with timestamps, exact UI actions, word-for-word VO):
+[`docs/tutorials/`](docs/tutorials/)
+
+| | Tutorial | What it teaches |
 |---|---|---|
-| Workbench (idle) | [workbench-idle-dark](docs/screenshots/workbench-idle-dark.png) | [workbench-idle-light](docs/screenshots/workbench-idle-light.png) |
-| Workbench (active) | [workbench-active-dark](docs/screenshots/workbench-active-dark.png) | [workbench-active-light](docs/screenshots/workbench-active-light.png) |
-| Configure | [configure-dark](docs/screenshots/configure-dark.png) | [configure-light](docs/screenshots/configure-light.png) |
-| Schedule | [schedule-dark](docs/screenshots/schedule-dark.png) | [schedule-light](docs/screenshots/schedule-light.png) |
-| Runs | [runs-dark](docs/screenshots/runs-dark.png) | [runs-light](docs/screenshots/runs-light.png) |
-| Cluster (with workers) | [cluster-with-workers-dark](docs/screenshots/cluster-with-workers-dark.png) | [cluster-with-workers-light](docs/screenshots/cluster-with-workers-light.png) |
-| Trust | [trust-dark](docs/screenshots/trust-dark.png) | [trust-light](docs/screenshots/trust-light.png) |
-| Cmd+K palette | [cmdk-palette-open-dark](docs/screenshots/cmdk-palette-open-dark.png) | [cmdk-palette-open-light](docs/screenshots/cmdk-palette-open-light.png) |
-| Host-key consent | [host-key-consent-modal-dark](docs/screenshots/host-key-consent-modal-dark.png) | [host-key-consent-modal-light](docs/screenshots/host-key-consent-modal-light.png) |
+| 01 | [First run in 90 seconds](docs/tutorials/01-first-run.md) | Synthetic upload + TOFU + CSV export |
+| 02 | [Real files end-to-end](docs/tutorials/02-real-files-end-to-end.md) | local-dir source + local-disk sink + SHA-256 verification |
+| 03 | [N accounts via conventions](docs/tutorials/03-n-accounts-conventions.md) | Layout picker (`by-user` / `by-pattern`) + per-user probe matrix |
+| 04 | [Round-trip + processing time](docs/tutorials/04-roundtrip-processing-time.md) | Track-id vs filename, server contract, p50/p95/p99 |
+| 05 | [Worker fan-out](docs/tutorials/05-worker-fanout-cluster.md) | SSH wizard + Distribute toggle + cumulative reporting |
+| 06 | [Enterprise: FTPS, trust, scheduling](docs/tutorials/06-enterprise-trust-scheduling.md) | TOFU + Trust panel as audit surface + scheduled runs |
 
 ## Feature tour
 

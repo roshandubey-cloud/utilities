@@ -989,6 +989,15 @@ type startReq struct {
 	PrivateKeyPEM        string `json:"private_key_pem"`
 	PrivateKeyPassphrase string `json:"private_key_passphrase"`
 
+	// TargetUsername / TargetPassword are single-user probe credentials
+	// for the Test-connection button. They DON'T drive the run (the
+	// run pulls users from the per-load CSVs); they round-trip through
+	// Export / Import so an operator who saved a config to disk can
+	// re-test the connection without retyping. Decoder-tolerant only —
+	// the runner ignores them.
+	TargetUsername string `json:"target_username,omitempty"`
+	TargetPassword string `json:"target_password,omitempty"`
+
 	// v0.14 — per-load source / sink overrides. The structs are defined
 	// in internal/config and accept JSON-passed-through verbatim. nil
 	// in any of them keeps the v0.13.x defaults (synthetic upload bytes

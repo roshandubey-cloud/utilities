@@ -558,6 +558,66 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.20] — 2026-05-02
+### Export/Import round-trip — three silent drops fixed + visual-first README
+
+Operator: *"make sure all the variation and variety and options and config
+is exportable and importable from the web app and no gap. also update the
+first git readme page with UI screenshots instead of bunch of text."*
+
+A subagent audit of every form field against `exportConfig` ↔
+`importConfigPayload` found 47/50 fields round-trip correctly today.
+Three silent drops, all closed:
+
+### 1. Private key PEM survived only when disclosure was OPEN
+- **Before:** `buildRequestBody()` gated the PEM read on
+  `keyDisclosure.open`. Operator pastes a PEM, closes the disclosure
+  for visual tidiness, exports — PEM is lost.
+- **After:** `exportConfig()` re-reads the textarea directly,
+  bypassing the disclosure-open gate. The gate stays in
+  `buildRequestBody()` (correct for `/api/start` — closed disclosure
+  means "don't use key auth for the run"), but Export now captures
+  whatever's in the field.
+
+### 2. Target Test-connection credentials never round-tripped
+- **Before:** `conn-user` and `conn-pass` (single-user creds for the
+  Test-connection probe) had no path through Export/Import. An
+  operator who saved a config to disk would have to retype the
+  Target creds before clicking Test connection on the imported
+  config.
+- **After:** New `target_username` / `target_password` fields in the
+  exported JSON. `importConfigPayload` restores them. Subject to
+  the same `save_passwords` checkbox as workload CSV passwords —
+  blanked by default, included when the operator explicitly opts in.
+- **Backend:** `startReq.TargetUsername` / `TargetPassword` JSON tags
+  added so `Import & Run now` doesn't trip on schema validation.
+  The runner ignores them — the run still pulls users from the
+  per-load CSVs as before.
+
+### 3. Sink template implicit default — cosmetic, kept as-is
+- The audit flagged `download_sink.template` always exporting
+  `{user}/{filename}` even when the operator didn't type it.
+  Re-imports correctly; the JSON is just one byte different from
+  pure-default. Functionally fine; not worth the special-case.
+
+### README — visual-first
+The first GitHub README page now leads with a hero workbench
+screenshot, then a 2x3 grid of every primary view (Configure / Runs
+/ Cluster / Schedule / Trust / Cmd+K), then a compact what-it-is
+table, then the 6-tutorial index. The 100-line bullet wall that was
+above the screenshots is moved below the fold. First impression is
+visual; details are still all there for readers who scroll.
+
+### Internal
+- `internal/web/static/js/legacy.js` — `exportConfig` re-reads PEM +
+  picks up target_username/target_password; `importConfigPayload`
+  restores both.
+- `internal/web/web.go` — `startReq` accepts `target_username` /
+  `target_password` (decoder-tolerant only, runner ignores).
+- `README.md` — restructured. Hero image + 6-screenshot grid +
+  what-it-is table + tutorial index lead the page.
+- `main.go` `platformVersion` → `0.14.20`; `wails.json` synced.
+
 ## [v0.14.19] — 2026-05-02
 ### Version display — server-rendered, no async fetch race
 
