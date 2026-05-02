@@ -74,6 +74,42 @@ func (a *App) SaveRunCsv(runID string) string {
 	return ""
 }
 
+// PickDirectory opens the OS-native folder picker and returns the chosen
+// absolute path. Empty string when the user cancels. Used by the v0.14
+// source/sink Browse buttons to spare operators from hand-typing paths.
+func (a *App) PickDirectory(title string) string {
+	if title == "" {
+		title = "Choose folder"
+	}
+	dir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: title,
+	})
+	if err != nil {
+		return ""
+	}
+	return dir
+}
+
+// PickFiles opens the OS-native multi-file picker and returns absolute
+// paths joined by "\n" so the legacy.js consumer can append directly to
+// the textarea. Empty string when the user cancels.
+func (a *App) PickFiles(title string) string {
+	if title == "" {
+		title = "Choose files"
+	}
+	paths, err := runtime.OpenMultipleFilesDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: title,
+	})
+	if err != nil || len(paths) == 0 {
+		return ""
+	}
+	out := paths[0]
+	for _, p := range paths[1:] {
+		out += "\n" + p
+	}
+	return out
+}
+
 func copyFile(src, dest string) error {
 	sf, err := os.Open(src)
 	if err != nil {

@@ -2958,3 +2958,93 @@ button.primary:hover:not(:disabled),
   margin-top: var(--sp-2);
   width: 100%;
 }
+
+/* New v0.14.3 UX affordances on top of the source/sink disclosures. */
+.input-with-action {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+}
+.input-with-action .input { flex: 1; }
+.src-actions,
+.sink-actions {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  margin-top: var(--sp-2);
+  flex-wrap: wrap;
+}
+.src-probe-out,
+.sink-probe-out {
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+}
+/* Yellow inline status banner — the operator's local-files / local-disk
+   pick is incomplete. Subtle, but loud enough that a dry run doesn't
+   silently fall back to synthetic / discard. */
+.src-warn {
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: color-mix(in oklab, var(--accent-warn, #d4a017) 12%, transparent);
+  border-left: 3px solid var(--accent-warn, #d4a017);
+  border-radius: var(--r-2);
+  font-size: var(--fs-12);
+  color: var(--text-primary);
+}
+.src-advanced-error {
+  margin-top: var(--sp-2);
+  padding: var(--sp-2);
+  background: color-mix(in oklab, var(--accent-danger, #c0392b) 14%, transparent);
+  border-left: 3px solid var(--accent-danger, #c0392b);
+  border-radius: var(--r-2);
+  font-size: var(--fs-12);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+/* Live template preview — quiet box, monospace path so the operator
+   sees exactly what the runner will write. */
+.sink-preview {
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-2);
+  border-radius: var(--r-2);
+  font-size: var(--fs-12);
+  display: flex;
+  gap: var(--sp-2);
+  align-items: baseline;
+}
+.sink-preview-label {
+  color: var(--text-tertiary);
+  font-weight: var(--fw-semibold);
+}
+.sink-preview-path {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  word-break: break-all;
+}
+.sink-var-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-left: var(--sp-1);
+}
+.sink-var-chips .chip-btn {
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+}
+/* Small "v0.14" feature pill in the disclosure summary so operators
+   clocking the new affordance for the first time know it's recent. */
+.badge-mini {
+  display: inline-block;
+  padding: 1px 6px;
+  margin-left: var(--sp-1);
+  background: color-mix(in oklab, var(--accent) 20%, transparent);
+  color: var(--accent);
+  border-radius: 999px;
+  font-size: var(--fs-10);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  vertical-align: 1px;
+}

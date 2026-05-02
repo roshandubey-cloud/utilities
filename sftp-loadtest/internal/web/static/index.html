@@ -843,7 +843,7 @@
                the v0.13 behaviour. Real-file sources let the operator push
                specific local files for content-aware tests. -->
           <details class="source-disclosure" data-role="source-disclosure" data-kind="normal">
-            <summary>Upload source <span class="hint">— defaults to synthetic random bytes</span></summary>
+            <summary>Upload source <span class="badge-mini">v0.14</span> <span class="hint">— synthetic random bytes by default; click to upload real files from disk</span></summary>
             <div class="source-body">
               <label class="label">Source kind</label>
               <div class="segmented" data-role="src-kind" role="tablist" aria-label="Source kind">
@@ -857,10 +857,16 @@
                 <label class="label" for="normal_src_files">Files <span class="hint">— one absolute path per line</span></label>
                 <textarea class="input mono" id="normal_src_files" data-role="src-files"
                           rows="4" spellcheck="false" placeholder="/tmp/fixtures/invoice-A.pdf&#10;/tmp/fixtures/invoice-B.pdf"></textarea>
+                <div class="src-actions">
+                  <button type="button" class="btn-ghost btn-sm" data-role="src-files-browse" hidden>Add files…</button>
+                </div>
               </div>
               <div class="src-fields src-dir-fields" data-role="src-dir-fields" hidden>
                 <label class="label" for="normal_src_dir">Directory <span class="hint">— top-level files only; subdirs + dotfiles skipped</span></label>
-                <input class="input mono" id="normal_src_dir" data-role="src-dir" type="text" placeholder="/tmp/fixtures">
+                <div class="input-with-action">
+                  <input class="input mono" id="normal_src_dir" data-role="src-dir" type="text" placeholder="/tmp/fixtures">
+                  <button type="button" class="btn-ghost btn-sm" data-role="src-dir-browse" hidden>Browse…</button>
+                </div>
               </div>
               <div class="src-fields src-mode-fields" data-role="src-mode-fields" hidden>
                 <label class="label">Pick mode</label>
@@ -872,12 +878,19 @@
                 <input type="hidden" data-role="src-mode-value" value="round-robin">
               </div>
 
+              <div class="src-fields src-probe-fields" data-role="src-probe-fields" hidden>
+                <button type="button" class="btn-ghost btn-sm" data-role="src-probe">Probe source</button>
+                <output class="src-probe-out" data-role="src-probe-out" aria-live="polite"></output>
+              </div>
+              <div class="src-warn" data-role="src-warn" role="status" aria-live="polite" hidden></div>
+
               <details class="source-advanced">
                 <summary>Per-user / per-pattern overrides (advanced JSON)</summary>
                 <label class="label" for="normal_src_advanced_json">JSON object — keys "per_user" + "per_pattern"</label>
                 <textarea class="input mono" id="normal_src_advanced_json" data-role="src-advanced"
                           rows="6" spellcheck="false"
                           placeholder='{&#10;  "per_user": {&#10;    "alice": { "kind": "local-files", "files": ["/tmp/alice/x.pdf"] }&#10;  },&#10;  "per_pattern": {&#10;    "invoice*": { "kind": "local-dir", "dir": "/tmp/invoices" }&#10;  }&#10;}'></textarea>
+                <div class="src-advanced-error" data-role="src-advanced-error" role="status" aria-live="polite" hidden></div>
                 <div class="hint">Most-specific wins: per_user → per_pattern → top-level kind above. Leave blank if you don't need overrides.</div>
               </details>
               <div class="hint">Real-file sources override min/max MB with the actual file size. Filename is still pattern-generated so trackid round-trips work.</div>
@@ -910,7 +923,7 @@
                operator point large-file uploads at a separate pool of
                real archives without affecting the normal stream. -->
           <details class="source-disclosure" data-role="source-disclosure" data-kind="large">
-            <summary>Upload source <span class="hint">— defaults to synthetic random bytes</span></summary>
+            <summary>Upload source <span class="badge-mini">v0.14</span> <span class="hint">— synthetic random bytes by default; click to upload real files from disk</span></summary>
             <div class="source-body">
               <label class="label">Source kind</label>
               <div class="segmented" data-role="src-kind" role="tablist" aria-label="Source kind">
@@ -924,10 +937,16 @@
                 <label class="label" for="large_src_files">Files</label>
                 <textarea class="input mono" id="large_src_files" data-role="src-files"
                           rows="4" spellcheck="false" placeholder="/tmp/fixtures/big-batch-A.zip&#10;/tmp/fixtures/big-batch-B.zip"></textarea>
+                <div class="src-actions">
+                  <button type="button" class="btn-ghost btn-sm" data-role="src-files-browse" hidden>Add files…</button>
+                </div>
               </div>
               <div class="src-fields src-dir-fields" data-role="src-dir-fields" hidden>
                 <label class="label" for="large_src_dir">Directory</label>
-                <input class="input mono" id="large_src_dir" data-role="src-dir" type="text" placeholder="/tmp/big-fixtures">
+                <div class="input-with-action">
+                  <input class="input mono" id="large_src_dir" data-role="src-dir" type="text" placeholder="/tmp/big-fixtures">
+                  <button type="button" class="btn-ghost btn-sm" data-role="src-dir-browse" hidden>Browse…</button>
+                </div>
               </div>
               <div class="src-fields src-mode-fields" data-role="src-mode-fields" hidden>
                 <label class="label">Pick mode</label>
@@ -939,11 +958,18 @@
                 <input type="hidden" data-role="src-mode-value" value="round-robin">
               </div>
 
+              <div class="src-fields src-probe-fields" data-role="src-probe-fields" hidden>
+                <button type="button" class="btn-ghost btn-sm" data-role="src-probe">Probe source</button>
+                <output class="src-probe-out" data-role="src-probe-out" aria-live="polite"></output>
+              </div>
+              <div class="src-warn" data-role="src-warn" role="status" aria-live="polite" hidden></div>
+
               <details class="source-advanced">
                 <summary>Per-user / per-pattern overrides (advanced JSON)</summary>
                 <textarea class="input mono" id="large_src_advanced_json" data-role="src-advanced"
                           rows="6" spellcheck="false"
                           placeholder='{ "per_user": { "lup1": { "kind": "local-files", "files": ["/tmp/lup1.zip"] } } }'></textarea>
+                <div class="src-advanced-error" data-role="src-advanced-error" role="status" aria-live="polite" hidden></div>
                 <div class="hint">Most-specific wins: per_user → per_pattern → top-level kind above.</div>
               </details>
             </div>
@@ -1003,7 +1029,7 @@
                the v0.13 throughput-only behaviour. local-disk persists
                every downloaded file under <root>/<rendered template>. -->
           <details class="source-disclosure" data-role="sink-disclosure">
-            <summary>Save downloads to disk <span class="hint">— defaults to discard (throughput only)</span></summary>
+            <summary>Save downloads to disk <span class="badge-mini">v0.14</span> <span class="hint">— discarded by default; click to save every download under a folder you pick</span></summary>
             <div class="source-body">
               <label class="label">Sink kind</label>
               <div class="segmented" data-role="sink-kind" role="tablist" aria-label="Sink kind">
@@ -1016,7 +1042,10 @@
                 <div class="field-row" style="--cols:2">
                   <div class="field">
                     <label class="label" for="sink_root">Root directory</label>
-                    <input class="input mono" id="sink_root" data-role="sink-root" type="text" placeholder="/tmp/loadtest-pulls">
+                    <div class="input-with-action">
+                      <input class="input mono" id="sink_root" data-role="sink-root" type="text" placeholder="/tmp/loadtest-pulls">
+                      <button type="button" class="btn-ghost btn-sm" data-role="sink-root-browse" hidden>Browse…</button>
+                    </div>
                   </div>
                   <div class="field">
                     <label class="label" for="sink_template">Path template</label>
@@ -1025,25 +1054,32 @@
                   </div>
                 </div>
                 <div class="hint" style="margin-top:6px">
-                  <b>Variables:</b>
-                  <code>{user}</code>
-                  <code>{filename}</code>
-                  <code>{basename}</code>
-                  <code>{ext}</code>
-                  <code>{trackid}</code>
-                  <code>{run_id}</code>
-                  <code>{date}</code>
-                  <code>{datetime}</code>.
-                  Examples:
-                  <code>{user}/{filename}</code>,
-                  <code>{date}/{user}/{trackid}_{filename}</code>,
-                  <code>{run_id}/{user}/{filename}</code>.
+                  <b>Insert variable:</b>
+                  <span class="sink-var-chips" data-role="sink-var-chips">
+                    <button type="button" class="chip-btn" data-var="{user}">{user}</button>
+                    <button type="button" class="chip-btn" data-var="{filename}">{filename}</button>
+                    <button type="button" class="chip-btn" data-var="{basename}">{basename}</button>
+                    <button type="button" class="chip-btn" data-var="{ext}">{ext}</button>
+                    <button type="button" class="chip-btn" data-var="{trackid}">{trackid}</button>
+                    <button type="button" class="chip-btn" data-var="{run_id}">{run_id}</button>
+                    <button type="button" class="chip-btn" data-var="{date}">{date}</button>
+                    <button type="button" class="chip-btn" data-var="{datetime}">{datetime}</button>
+                  </span>
+                </div>
+                <div class="sink-preview" data-role="sink-preview" aria-live="polite">
+                  <span class="sink-preview-label">Preview:</span>
+                  <code class="sink-preview-path" data-role="sink-preview-path">/tmp/loadtest-pulls/dl1/doc-12345.pdf</code>
                 </div>
                 <label class="toggle" style="margin-top:var(--sp-2)">
                   <input type="checkbox" id="sink_overwrite" data-role="sink-overwrite">
                   <span class="toggle-track"><span class="toggle-thumb"></span></span>
                   <span class="toggle-text">Overwrite existing files <span class="hint">(default refuses with O_EXCL — safer for re-runs)</span></span>
                 </label>
+                <div class="sink-actions">
+                  <button type="button" class="btn-ghost btn-sm" data-role="sink-probe">Probe sink</button>
+                  <output class="sink-probe-out" data-role="sink-probe-out" aria-live="polite"></output>
+                </div>
+                <div class="src-warn" data-role="sink-warn" role="status" aria-live="polite" hidden></div>
                 <div class="hint">Files are written 0600. Path-component sanitisation escapes <code>/</code> and <code>..</code> in template values to <code>_</code> so a hostile remote filename can't punch out of root.</div>
               </div>
             </div>

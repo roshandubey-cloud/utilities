@@ -44,6 +44,16 @@ function wireSourceDisclosure(root) {
   const modeEl     = root.querySelector('[data-role="src-mode-fields"]');
   const modePicker = root.querySelector('[data-role="src-mode"]');
   const modeValue  = root.querySelector('[data-role="src-mode-value"]');
+  const probeEl    = root.querySelector('[data-role="src-probe-fields"]');
+  const probeBtn   = root.querySelector('[data-role="src-probe"]');
+  const probeOut   = root.querySelector('[data-role="src-probe-out"]');
+  const warnEl     = root.querySelector('[data-role="src-warn"]');
+  const filesText  = root.querySelector('[data-role="src-files"]');
+  const dirInput   = root.querySelector('[data-role="src-dir"]');
+  const advText    = root.querySelector('[data-role="src-advanced"]');
+  const advError   = root.querySelector('[data-role="src-advanced-error"]');
+  const filesBrowse= root.querySelector('[data-role="src-files-browse"]');
+  const dirBrowse  = root.querySelector('[data-role="src-dir-browse"]');
   if (!kindPicker || !kindValue) return;
 
   function applyKind(kind) {
@@ -55,6 +65,9 @@ function wireSourceDisclosure(root) {
     if (dirEl)   dirEl.hidden   = kind !== 'local-dir';
     // Pick mode only matters for the file-backed sources.
     if (modeEl)  modeEl.hidden  = kind === 'synthetic';
+    // Probe is only meaningful when the source actually points at disk.
+    if (probeEl) probeEl.hidden = kind === 'synthetic';
+    refreshWarning();
   }
   kindPicker.querySelectorAll('button').forEach((btn) => {
     btn.addEventListener('click', (ev) => {
@@ -75,12 +88,103 @@ function wireSourceDisclosure(root) {
       });
     });
   }
+
+  // ---- Wails native pickers — only show when desktop bindings exist.
+  // Web build leaves the buttons hidden so the operator's hand-typed
+  // path workflow stays the only affordance.
+  if (filesBrowse && hasWailsPicker('PickFiles')) {
+    filesBrowse.hidden = false;
+    filesBrowse.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      try {
+        const picked = await window.go.main.App.PickFiles('Choose upload fixtures');
+        if (!picked) return;
+        const existing = (filesText.value || '').trim();
+        filesText.value = existing ? existing + '\n' + picked : picked;
+        filesText.dispatchEvent(new Event('input', { bubbles: true }));
+      } catch (e) { console.warn('PickFiles failed:', e); }
+    });
+  }
+  if (dirBrowse && hasWailsPicker('PickDirectory')) {
+    dirBrowse.hidden = false;
+    dirBrowse.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      try {
+        const picked = await window.go.main.App.PickDirectory('Choose upload directory');
+        if (!picked) return;
+        dirInput.value = picked;
+        dirInput.dispatchEvent(new Event('input', { bubbles: true }));
+      } catch (e) { console.warn('PickDirectory failed:', e); }
+    });
+  }
+
+  // ---- Live misconfiguration warning.
+  function refreshWarning() {
+    if (!warnEl) return;
+    const k = kindValue.value;
+    let msg = '';
+    if (k === 'local-files') {
+      const lines = (filesText?.value || '').split('\n').map((s) => s.trim()).filter(Boolean);
+      if (lines.length === 0) msg = 'Local files selected but no paths entered — the run will silently use synthetic random bytes.';
+    } else if (k === 'local-dir') {
+      if (!(dirInput?.value || '').trim()) msg = 'Local directory selected but no path entered — the run will silently use synthetic random bytes.';
+    }
+    warnEl.hidden = !msg;
+    warnEl.textContent = msg;
+  }
+  filesText?.addEventListener('input', refreshWarning);
+  dirInput?.addEventListener('input', refreshWarning);
+  refreshWarning();
+
+  // ---- Advanced JSON inline parse error so a typo doesn't silently
+  // brick the per-user / per-pattern overrides.
+  function refreshAdvError() {
+    if (!advText || !advError) return;
+    const raw = (advText.value || '').trim();
+    if (!raw) { advError.hidden = true; advError.textContent = ''; return; }
+    try { JSON.parse(raw); advError.hidden = true; advError.textContent = ''; }
+    catch (e) {
+      advError.hidden = false;
+      advError.textContent = 'JSON parse error: ' + e.message;
+    }
+  }
+  advText?.addEventListener('input', refreshAdvError);
+  refreshAdvError();
+
+  // ---- Probe button.
+  if (probeBtn && probeOut) {
+    probeBtn.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      probeOut.textContent = 'Probing…';
+      const cfg = readSource(root.dataset.kind) || { kind: kindValue.value };
+      try {
+        const r = await fetch('/api/probe-source', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'sftp-loadtest' },
+          body: JSON.stringify(cfg),
+        });
+        const j = await r.json();
+        probeOut.textContent = formatProbeResult(j);
+      } catch (e) {
+        probeOut.textContent = 'Probe failed: ' + e.message;
+      }
+    });
+  }
 }
 
 function wireSinkDisclosure(root) {
   const kindPicker = root.querySelector('[data-role="sink-kind"]');
   const kindValue  = root.querySelector('[data-role="sink-kind-value"]');
   const fieldsEl   = root.querySelector('[data-role="sink-fields"]');
+  const rootInput  = root.querySelector('[data-role="sink-root"]');
+  const tplInput   = root.querySelector('[data-role="sink-template"]');
+  const overwrite  = root.querySelector('[data-role="sink-overwrite"]');
+  const previewEl  = root.querySelector('[data-role="sink-preview-path"]');
+  const chipBox    = root.querySelector('[data-role="sink-var-chips"]');
+  const rootBrowse = root.querySelector('[data-role="sink-root-browse"]');
+  const probeBtn   = root.querySelector('[data-role="sink-probe"]');
+  const probeOut   = root.querySelector('[data-role="sink-probe-out"]');
+  const warnEl     = root.querySelector('[data-role="sink-warn"]');
   if (!kindPicker || !kindValue) return;
 
   function applyKind(kind) {
@@ -89,6 +193,7 @@ function wireSinkDisclosure(root) {
       b.setAttribute('aria-pressed', b.dataset.value === kind ? 'true' : 'false');
     });
     if (fieldsEl) fieldsEl.hidden = kind !== 'local-disk';
+    refreshWarning();
   }
   kindPicker.querySelectorAll('button').forEach((btn) => {
     btn.addEventListener('click', (ev) => {
@@ -97,6 +202,141 @@ function wireSinkDisclosure(root) {
     });
   });
   applyKind(kindValue.value || 'discard');
+
+  // ---- Native folder picker (Wails desktop only).
+  if (rootBrowse && hasWailsPicker('PickDirectory')) {
+    rootBrowse.hidden = false;
+    rootBrowse.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      try {
+        const picked = await window.go.main.App.PickDirectory('Choose download root');
+        if (!picked) return;
+        rootInput.value = picked;
+        rootInput.dispatchEvent(new Event('input', { bubbles: true }));
+      } catch (e) { console.warn('PickDirectory failed:', e); }
+    });
+  }
+
+  // ---- Variable chips: clicking inserts the {var} at the caret.
+  if (chipBox && tplInput) {
+    chipBox.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-var]');
+      if (!btn) return;
+      ev.preventDefault();
+      const v = btn.dataset.var;
+      const start = tplInput.selectionStart ?? tplInput.value.length;
+      const end   = tplInput.selectionEnd   ?? tplInput.value.length;
+      const before = tplInput.value.slice(0, start);
+      const after  = tplInput.value.slice(end);
+      tplInput.value = before + v + after;
+      const newPos = start + v.length;
+      tplInput.setSelectionRange(newPos, newPos);
+      tplInput.focus();
+      tplInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
+  // ---- Live preview: render the template against a sample upload.
+  function refreshPreview() {
+    if (!previewEl) return;
+    const tpl = (tplInput?.value || '').trim() || '{user}/{filename}';
+    const root_ = (rootInput?.value || '').trim() || '<root>';
+    const sample = {
+      user: 'dl1',
+      filename: 'doc-12345.pdf',
+      basename: 'doc-12345',
+      ext: '.pdf',
+      trackid: 'a1b2c3d4',
+      run_id: 'run-1700000000',
+      date: new Date().toISOString().slice(0, 10),
+      datetime: new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-'),
+    };
+    const rendered = renderTemplateClient(tpl, sample);
+    previewEl.textContent = root_.replace(/\/+$/, '') + '/' + rendered.replace(/^\/+/, '');
+  }
+  tplInput?.addEventListener('input', refreshPreview);
+  rootInput?.addEventListener('input', refreshPreview);
+  refreshPreview();
+
+  // ---- Misconfig warning + Probe.
+  function refreshWarning() {
+    if (!warnEl) return;
+    let msg = '';
+    if (kindValue.value === 'local-disk') {
+      if (!(rootInput?.value || '').trim()) {
+        msg = 'Local disk selected but no root directory entered — downloads will be discarded silently.';
+      }
+    }
+    warnEl.hidden = !msg;
+    warnEl.textContent = msg;
+  }
+  rootInput?.addEventListener('input', refreshWarning);
+  refreshWarning();
+
+  if (probeBtn && probeOut) {
+    probeBtn.addEventListener('click', async (ev) => {
+      ev.preventDefault();
+      probeOut.textContent = 'Probing…';
+      const cfg = readSink() || { kind: kindValue.value, root: (rootInput?.value || '').trim() };
+      try {
+        const r = await fetch('/api/probe-sink', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'sftp-loadtest' },
+          body: JSON.stringify(cfg),
+        });
+        const j = await r.json();
+        if (j.ok) {
+          probeOut.textContent = j.note ? j.note : `OK — ${j.root} is writable`;
+        } else {
+          probeOut.textContent = 'Error: ' + (j.error || 'unknown');
+        }
+      } catch (e) { probeOut.textContent = 'Probe failed: ' + e.message; }
+    });
+  }
+}
+
+// hasWailsPicker returns true when the Wails desktop runtime has bound
+// the named App method onto window.go. Web builds (CLI/server SKU) skip
+// the binding — we hide the Browse buttons instead of stubbing them.
+function hasWailsPicker(name) {
+  return typeof window !== 'undefined' &&
+         typeof window.go === 'object' &&
+         window.go.main &&
+         typeof window.go.main.App === 'object' &&
+         typeof window.go.main.App[name] === 'function';
+}
+
+// renderTemplateClient mirrors internal/sink/sink.go's renderTemplate so
+// the live preview shows the same path the runner would write. Keep
+// this in sync with the Go-side variable list.
+function renderTemplateClient(tpl, vars) {
+  return tpl.replace(/\$?\{([a-z_]+)\}/g, (_, k) => vars[k] !== undefined ? vars[k] : '{' + k + '}');
+}
+
+// formatProbeResult turns the /api/probe-source response into a one-line
+// human-readable summary. Failures show the error; success shows
+// "<n> files, <bytes>" with the first three filenames.
+function formatProbeResult(j) {
+  if (!j.ok) return 'Error: ' + (j.error || 'unknown');
+  if (j.kind === 'synthetic' || (!j.files || j.files.length === 0)) {
+    return j.note || 'OK';
+  }
+  const total = j.total_bytes || 0;
+  const head = j.files.slice(0, 3).map((f) => {
+    if (f.error) return f.path + ' (' + f.error + ')';
+    return f.path + ' (' + humanBytes(f.size) + ')';
+  });
+  let line = `OK — ${j.files.length} file${j.files.length === 1 ? '' : 's'}, ${humanBytes(total)} total`;
+  if (head.length) line += '\n  ' + head.join('\n  ');
+  if (j.files.length > 3) line += `\n  …and ${j.files.length - 3} more`;
+  return line;
+}
+
+function humanBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+  return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
 }
 
 // ---------- read field state into the JSON payload ----------

@@ -558,6 +558,69 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.3] — 2026-05-01
+### UX — sources & sinks usability pass
+
+A real-user audit of v0.14 surfaced seven gaps where the new feature
+worked but felt thin. v0.14.3 closes them in one coherent shipment.
+
+- **Native folder / file pickers (Wails desktop).** Two new
+  `App.PickDirectory(title)` and `App.PickFiles(title)` bindings drive
+  OS-native dialogs. JS detects the binding at mount time and reveals
+  Browse buttons next to every path field — local-files textarea,
+  local-dir input, sink root. Web build leaves the buttons hidden so
+  hand-typed paths remain the only affordance there (browsers can't
+  open arbitrary local FS).
+- **Live template preview.** A monospace path under the sink template
+  re-renders on every keystroke against a sample upload
+  (`{user}=dl1, {filename}=doc-12345.pdf, {trackid}=a1b2c3d4`,
+  current `{date}`/`{datetime}`). Operators see exactly what the
+  runner will write before they commit.
+- **Variable chips.** Eight clickable chips
+  (`{user} {filename} {basename} {ext} {trackid} {run_id} {date}
+  {datetime}`) under the template input insert at the caret position,
+  so the operator never has to remember the variable list.
+- **Inline misconfiguration warning.** Picking `local-files` with an
+  empty textarea (or `local-dir` with an empty path, or `local-disk`
+  with an empty root) now surfaces a yellow live-updating banner —
+  *"the run will silently use synthetic random bytes"* /
+  *"downloads will be discarded silently"*. v0.14.0 silently fell
+  back to defaults; that's no longer invisible.
+- **Inline JSON parse error.** The advanced per-user / per-pattern
+  textarea parses on every input and shows the JSON error inline in a
+  red strip instead of `console.warn`-only.
+- **`/api/probe-source` + `/api/probe-sink`.** Two new local-only
+  endpoints validate the operator's source/sink config before the
+  real run starts. Source returns the resolved file list with sizes
+  (or a friendly error per file); sink confirms the root is writable
+  via a probe-create-delete dance. Each disclosure has a Probe
+  button that shows the result inline. No network I/O — instant
+  feedback instead of "did my path actually resolve?" anxiety.
+- **Discoverability.** Disclosure summaries now read
+  *"…click to upload real files from disk"* / *"…click to save every
+  download under a folder you pick"* instead of dry default-state
+  copy, with a small `v0.14` pill so first-time viewers know the
+  feature is recent.
+
+### Internal
+- `internal/source/source.go` — added `(*LocalFiles).Files()` accessor
+  so `/api/probe-source` can list pool members without re-walking.
+- `internal/web/web.go` — two new handlers + `/api/probe-source` and
+  `/api/probe-sink` routes.
+- `cmd/desktop/app.go` — two new Wails-bound methods.
+- `internal/web/static/js/sources-sinks.js` — Browse / Probe / chip /
+  preview / warning / JSON-error wiring; client-side
+  `renderTemplateClient` mirrors `internal/sink/sink.go`'s
+  `renderTemplate`.
+- `internal/web/static/styles/components.css` — new `.input-with-action
+  .src-warn .src-advanced-error .sink-preview .sink-var-chips
+  .badge-mini` rules.
+- Validated end-to-end: 17 downloads through a
+  `local-files` source ↔ `local-disk` sink with template
+  `{user}/{date}/{trackid}_{filename}` came back byte-identical to
+  the fixture and laid out as `dl1/2026-05-01/<trackid>_<filename>`.
+- `main.go` `platformVersion` → `0.14.3`.
+
 ## [v0.14.2] — 2026-05-01
 ### Added — mocksftp `-persist-content`
 End-to-end byte-fidelity validation for the v0.14 sources & sinks
