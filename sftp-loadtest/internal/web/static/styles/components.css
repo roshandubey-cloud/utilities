@@ -2875,3 +2875,86 @@ button.primary:hover:not(:disabled),
   font-size: var(--fs-11);
   color: var(--text-tertiary);
 }
+
+/* v0.14 source/sink disclosures inside Normal / Large / Download cards.
+   Reuses the upload-advanced shape so the closed summary reads as a
+   secondary control, not a second card; the open body indents under
+   the summary to keep the host card's hierarchy intact. */
+.source-disclosure {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: var(--bw-1) solid var(--border-weak);
+}
+.source-disclosure > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: var(--sp-2);
+  border-radius: var(--r-2);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  transition: background var(--t-fast) var(--ease-out);
+}
+.source-disclosure > summary::-webkit-details-marker { display: none; }
+.source-disclosure > summary::marker { content: ''; }
+.source-disclosure > summary:hover { background: var(--action-hover); }
+.source-disclosure > summary:focus-visible { box-shadow: var(--focus-ring); }
+.source-disclosure > summary::before {
+  content: '▸';
+  display: inline-block;
+  width: 14px;
+  margin-right: var(--sp-1);
+  color: var(--text-tertiary);
+  transition: transform var(--t-default) var(--ease-out);
+}
+.source-disclosure[open] > summary::before { transform: rotate(90deg); }
+.source-disclosure > summary .hint {
+  margin-left: var(--sp-1);
+  font-weight: var(--fw-regular);
+}
+.source-body {
+  padding: var(--sp-3) var(--sp-2) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.source-body .label {
+  display: block;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+  margin-bottom: var(--sp-1);
+}
+.src-fields,
+.sink-fields { display: block; }
+.src-fields[hidden],
+.sink-fields[hidden] { display: none; }
+
+/* Nested advanced JSON disclosure — quieter chrome than the parent so
+   the per-user/per-pattern editor reads as an opt-in detail. */
+.source-advanced {
+  margin-top: var(--sp-2);
+  padding: var(--sp-2);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+  background: var(--surface-2);
+}
+.source-advanced > summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+}
+.source-advanced > summary::-webkit-details-marker { display: none; }
+.source-advanced > summary::before {
+  content: '▸';
+  display: inline-block;
+  width: 12px;
+  margin-right: var(--sp-1);
+  color: var(--text-tertiary);
+  transition: transform var(--t-default) var(--ease-out);
+}
+.source-advanced[open] > summary::before { transform: rotate(90deg); }
+.source-advanced textarea {
+  margin-top: var(--sp-2);
+  width: 100%;
+}

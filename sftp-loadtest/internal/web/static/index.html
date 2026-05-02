@@ -838,6 +838,51 @@
           <label for="normal_users" style="margin-top:10px">Users (CSV) <span class="muted">— username,password,pattern1*,pattern2*,…</span></label>
           <textarea class="csv-users" id="normal_users" placeholder="user1,pass1,invoice*,order*&#10;user2,pass2,report*.csv"></textarea>
           <div class="hint">Filenames: the trailing <code>*</code> in a pattern is replaced with <code>&lt;nanos&gt;_&lt;rnd&gt;</code>. The original extension is preserved — <code>invoice*</code> → <code>invoice&lt;nanos&gt;_&lt;rnd&gt;.txt</code>; <code>report*.csv</code> → <code>report&lt;nanos&gt;_&lt;rnd&gt;.csv</code>. Passwords auto-reveal while you're editing the field and re-mask as soon as you click away.</div>
+
+          <!-- v0.14 source picker — opt-in. Default kind=synthetic preserves
+               the v0.13 behaviour. Real-file sources let the operator push
+               specific local files for content-aware tests. -->
+          <details class="source-disclosure" data-role="source-disclosure" data-kind="normal">
+            <summary>Upload source <span class="hint">— defaults to synthetic random bytes</span></summary>
+            <div class="source-body">
+              <label class="label">Source kind</label>
+              <div class="segmented" data-role="src-kind" role="tablist" aria-label="Source kind">
+                <button type="button" class="seg-btn" data-value="synthetic" aria-pressed="true">Synthetic (random)</button>
+                <button type="button" class="seg-btn" data-value="local-files" aria-pressed="false">Local files</button>
+                <button type="button" class="seg-btn" data-value="local-dir" aria-pressed="false">Local directory</button>
+              </div>
+              <input type="hidden" data-role="src-kind-value" value="synthetic">
+
+              <div class="src-fields src-files-fields" data-role="src-files-fields" hidden>
+                <label class="label" for="normal_src_files">Files <span class="hint">— one absolute path per line</span></label>
+                <textarea class="input mono" id="normal_src_files" data-role="src-files"
+                          rows="4" spellcheck="false" placeholder="/tmp/fixtures/invoice-A.pdf&#10;/tmp/fixtures/invoice-B.pdf"></textarea>
+              </div>
+              <div class="src-fields src-dir-fields" data-role="src-dir-fields" hidden>
+                <label class="label" for="normal_src_dir">Directory <span class="hint">— top-level files only; subdirs + dotfiles skipped</span></label>
+                <input class="input mono" id="normal_src_dir" data-role="src-dir" type="text" placeholder="/tmp/fixtures">
+              </div>
+              <div class="src-fields src-mode-fields" data-role="src-mode-fields" hidden>
+                <label class="label">Pick mode</label>
+                <div class="segmented" data-role="src-mode" role="tablist" aria-label="Pick mode">
+                  <button type="button" class="seg-btn" data-value="round-robin" aria-pressed="true">Round-robin</button>
+                  <button type="button" class="seg-btn" data-value="random" aria-pressed="false">Random</button>
+                  <button type="button" class="seg-btn" data-value="sequential" aria-pressed="false">Sequential</button>
+                </div>
+                <input type="hidden" data-role="src-mode-value" value="round-robin">
+              </div>
+
+              <details class="source-advanced">
+                <summary>Per-user / per-pattern overrides (advanced JSON)</summary>
+                <label class="label" for="normal_src_advanced_json">JSON object — keys "per_user" + "per_pattern"</label>
+                <textarea class="input mono" id="normal_src_advanced_json" data-role="src-advanced"
+                          rows="6" spellcheck="false"
+                          placeholder='{&#10;  "per_user": {&#10;    "alice": { "kind": "local-files", "files": ["/tmp/alice/x.pdf"] }&#10;  },&#10;  "per_pattern": {&#10;    "invoice*": { "kind": "local-dir", "dir": "/tmp/invoices" }&#10;  }&#10;}'></textarea>
+                <div class="hint">Most-specific wins: per_user → per_pattern → top-level kind above. Leave blank if you don't need overrides.</div>
+              </details>
+              <div class="hint">Real-file sources override min/max MB with the actual file size. Filename is still pattern-generated so trackid round-trips work.</div>
+            </div>
+          </details>
         </div>
       </section>
 
@@ -860,6 +905,49 @@
           </div>
           <label for="large_users" style="margin-top:10px">Users (CSV)</label>
           <textarea class="csv-users" id="large_users" placeholder="user1,pass1,large*"></textarea>
+
+          <!-- Same source-picker shape as the Normal load card. Lets the
+               operator point large-file uploads at a separate pool of
+               real archives without affecting the normal stream. -->
+          <details class="source-disclosure" data-role="source-disclosure" data-kind="large">
+            <summary>Upload source <span class="hint">— defaults to synthetic random bytes</span></summary>
+            <div class="source-body">
+              <label class="label">Source kind</label>
+              <div class="segmented" data-role="src-kind" role="tablist" aria-label="Source kind">
+                <button type="button" class="seg-btn" data-value="synthetic" aria-pressed="true">Synthetic (random)</button>
+                <button type="button" class="seg-btn" data-value="local-files" aria-pressed="false">Local files</button>
+                <button type="button" class="seg-btn" data-value="local-dir" aria-pressed="false">Local directory</button>
+              </div>
+              <input type="hidden" data-role="src-kind-value" value="synthetic">
+
+              <div class="src-fields src-files-fields" data-role="src-files-fields" hidden>
+                <label class="label" for="large_src_files">Files</label>
+                <textarea class="input mono" id="large_src_files" data-role="src-files"
+                          rows="4" spellcheck="false" placeholder="/tmp/fixtures/big-batch-A.zip&#10;/tmp/fixtures/big-batch-B.zip"></textarea>
+              </div>
+              <div class="src-fields src-dir-fields" data-role="src-dir-fields" hidden>
+                <label class="label" for="large_src_dir">Directory</label>
+                <input class="input mono" id="large_src_dir" data-role="src-dir" type="text" placeholder="/tmp/big-fixtures">
+              </div>
+              <div class="src-fields src-mode-fields" data-role="src-mode-fields" hidden>
+                <label class="label">Pick mode</label>
+                <div class="segmented" data-role="src-mode" role="tablist" aria-label="Pick mode">
+                  <button type="button" class="seg-btn" data-value="round-robin" aria-pressed="true">Round-robin</button>
+                  <button type="button" class="seg-btn" data-value="random" aria-pressed="false">Random</button>
+                  <button type="button" class="seg-btn" data-value="sequential" aria-pressed="false">Sequential</button>
+                </div>
+                <input type="hidden" data-role="src-mode-value" value="round-robin">
+              </div>
+
+              <details class="source-advanced">
+                <summary>Per-user / per-pattern overrides (advanced JSON)</summary>
+                <textarea class="input mono" id="large_src_advanced_json" data-role="src-advanced"
+                          rows="6" spellcheck="false"
+                          placeholder='{ "per_user": { "lup1": { "kind": "local-files", "files": ["/tmp/lup1.zip"] } } }'></textarea>
+                <div class="hint">Most-specific wins: per_user → per_pattern → top-level kind above.</div>
+              </details>
+            </div>
+          </details>
         </div>
       </section>
 
@@ -910,6 +998,56 @@
           </div>
           <label for="download_users" style="margin-top:10px">Download users (CSV)</label>
           <textarea class="csv-users" id="download_users" placeholder="dl1,pwd1,*&#10;dl2,pwd2,*"></textarea>
+
+          <!-- v0.14 sink picker — opt-in. Default kind=discard preserves
+               the v0.13 throughput-only behaviour. local-disk persists
+               every downloaded file under <root>/<rendered template>. -->
+          <details class="source-disclosure" data-role="sink-disclosure">
+            <summary>Save downloads to disk <span class="hint">— defaults to discard (throughput only)</span></summary>
+            <div class="source-body">
+              <label class="label">Sink kind</label>
+              <div class="segmented" data-role="sink-kind" role="tablist" aria-label="Sink kind">
+                <button type="button" class="seg-btn" data-value="discard" aria-pressed="true">Discard (counter only)</button>
+                <button type="button" class="seg-btn" data-value="local-disk" aria-pressed="false">Save to local disk</button>
+              </div>
+              <input type="hidden" data-role="sink-kind-value" value="discard">
+
+              <div class="sink-fields" data-role="sink-fields" hidden>
+                <div class="field-row" style="--cols:2">
+                  <div class="field">
+                    <label class="label" for="sink_root">Root directory</label>
+                    <input class="input mono" id="sink_root" data-role="sink-root" type="text" placeholder="/tmp/loadtest-pulls">
+                  </div>
+                  <div class="field">
+                    <label class="label" for="sink_template">Path template</label>
+                    <input class="input mono" id="sink_template" data-role="sink-template" type="text"
+                           placeholder="{user}/{filename}" value="{user}/{filename}">
+                  </div>
+                </div>
+                <div class="hint" style="margin-top:6px">
+                  <b>Variables:</b>
+                  <code>{user}</code>
+                  <code>{filename}</code>
+                  <code>{basename}</code>
+                  <code>{ext}</code>
+                  <code>{trackid}</code>
+                  <code>{run_id}</code>
+                  <code>{date}</code>
+                  <code>{datetime}</code>.
+                  Examples:
+                  <code>{user}/{filename}</code>,
+                  <code>{date}/{user}/{trackid}_{filename}</code>,
+                  <code>{run_id}/{user}/{filename}</code>.
+                </div>
+                <label class="toggle" style="margin-top:var(--sp-2)">
+                  <input type="checkbox" id="sink_overwrite" data-role="sink-overwrite">
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                  <span class="toggle-text">Overwrite existing files <span class="hint">(default refuses with O_EXCL — safer for re-runs)</span></span>
+                </label>
+                <div class="hint">Files are written 0600. Path-component sanitisation escapes <code>/</code> and <code>..</code> in template values to <code>_</code> so a hostile remote filename can't punch out of root.</div>
+              </div>
+            </div>
+          </details>
         </div>
       </section>
 

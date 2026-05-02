@@ -558,6 +558,47 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.1] — 2026-05-01
+### Added — sources & sinks UI (Phase 2)
+The v0.14.0 backend already accepted `normal_source` / `large_source` /
+`download_sink` in the JSON payload. v0.14.1 surfaces those fields in
+the Configure form so operators can build the config without
+hand-editing JSON.
+
+- **Three new disclosure panels** inside the Normal load, Large load,
+  and Download cards. Closed-by-default summary (`— defaults to
+  synthetic random bytes` / `— defaults to discard`) keeps the v0.13
+  visual silhouette intact for operators who don't care.
+- **Segmented kind picker** per panel with `aria-pressed` state:
+  `synthetic / local-files / local-dir` for sources, `discard /
+  local-disk` for the sink.
+- **Kind-specific field groups** gated by `[hidden]`: file-list
+  textarea, dir input, pick-mode picker (`round-robin / random /
+  sequential`), sink root + template + overwrite toggle. The default
+  template `{user}/{filename}` is pre-filled so a single `local-disk`
+  click yields a sensible layout.
+- **Per-user / per-pattern overrides** live in a nested advanced JSON
+  textarea — keeps the most-specific resolution path available
+  without forcing a complex inline editor.
+- **Wire-format parity:** `readSource` / `readSink` return `null` when
+  the picker is on the v0.13 default, so a freshly loaded v0.14.1 UI
+  posts the same `/api/start` payload a v0.13 client would. No
+  silent payload churn for unchanged configs.
+- **Round-trip through Export / Import:** `applySource` / `applySink`
+  populate the new disclosures from a saved JSON, including expanding
+  the panel when a non-default kind is present.
+
+### Internal
+- New ES module `internal/web/static/js/sources-sinks.js` —
+  exports mounted on `window.__srcSink` so the non-module
+  `legacy.js` form serializer + import path can call into it
+  without bundler changes.
+- `components.css` gets `.source-disclosure` / `.source-body` /
+  `.src-fields` / `.sink-fields` / `.source-advanced` rules — quieter
+  chrome than `.disclosure` so the source panel reads as a secondary
+  control inside its host card, not a second card.
+- `main.go` `platformVersion` → `0.14.1`.
+
 ## [v0.14.0] — 2026-05-01
 ### Added — sources & sinks
 Major new feature surface. Until now uploads always sent random bytes
