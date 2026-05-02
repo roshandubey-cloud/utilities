@@ -27,7 +27,7 @@ import (
 // freshness. Also surfaced via the `-version` flag — the SSH-bootstrap
 // smoke test on a remote host runs `<bin> -version` to confirm the
 // binary it just installed actually executes.
-const platformVersion = "0.14.15"
+const platformVersion = "0.14.16"
 
 func main() {
 	if len(os.Args) >= 2 && (os.Args[1] == "-version" || os.Args[1] == "--version") {

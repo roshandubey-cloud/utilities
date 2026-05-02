@@ -558,6 +558,40 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.16] — 2026-05-02
+### Belt-and-suspenders strip — kill ALL stray dividers in workload cards
+
+v0.14.15 removed the explicit border-top dividers but the operator
+still saw lines on the Download card. Three remaining sources:
+
+1. **Legacy `.card > header` border-bottom.** Even though the legacy
+   header is parked OUTSIDE the body, the rule was still applying to
+   any `<header>` direct-child of `.card`. Belt-and-suspenders:
+   force `border-top: 0` and `border-bottom: 0` on the legacy `.card`,
+   its `<header>`, and its `.body` when nested inside a workload-body.
+
+2. **Parked legacy header rendering as a 22px greyed strip.** The
+   "Download test (round-trip)" duplicate at the bottom of each
+   workload card was a Playwright-visibility compromise from an
+   earlier release. Compressed to 1px tall with `opacity: 0` —
+   still in flow, still non-zero, accessibility-tree visible, but
+   not perceived as content noise.
+
+3. **Doubled top padding (sp-4 + sp-3 = 28px gap).** The
+   `.cfg-legacy-card > .body` had `padding-top: var(--sp-4)` while
+   the wrapping workload-body has its own sp-3. Removed the legacy
+   one; the workload-body owns the gap now.
+
+### Net result
+The Download card body now reads as one continuous panel from
+"Download folder" through "Save downloads to disk" — no perceived
+horizontal divisions. Same for Upload card.
+
+### Internal
+- `internal/web/static/styles/components.css` — 3 rules added /
+  modified.
+- `main.go` `platformVersion` → `0.14.16`; `wails.json` synced.
+
 ## [v0.14.15] — 2026-05-02
 ### Workload section — kill the random horizontal stripes
 

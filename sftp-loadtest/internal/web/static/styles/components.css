@@ -2576,11 +2576,33 @@ button.primary:hover:not(:disabled),
 .cfg-workload-card[data-enabled="true"] [data-role="workload-body"] {
   display: block;
   /* v0.14.15 — removed border-top divider between the toggle header
-     and body. The header is already visually distinct (font weight,
-     toggle pill, subtitle) — the line was redundant chrome that
-     fragmented the card. Add a small top padding instead so the
-     first body row breathes. */
+     and body. v0.14.16 — also strip any stray border-top /
+     border-bottom on direct descendants (legacy .card chrome,
+     nested headers, etc). The card surface now reads as one
+     continuous panel. */
   padding: var(--sp-3) var(--sp-4) var(--sp-4);
+}
+/* Belt-and-suspenders: hide every stray horizontal line on direct
+   children of the workload body. Catches the legacy .card > header
+   border-bottom, any cfg-legacy-header-park rule that drifted, and
+   any future hint paragraph that adds its own divider. */
+.cfg-workload-card [data-role="workload-body"] > .card,
+.cfg-workload-card [data-role="workload-body"] > .card > header,
+.cfg-workload-card [data-role="workload-body"] > .card > .body {
+  border-top: 0 !important;
+  border-bottom: 0 !important;
+}
+.cfg-workload-card .cfg-legacy-header-park {
+  /* The parked legacy header was rendering as a 22px-high greyed
+     row at the bottom of every workload card — operator-visible
+     noise. Compress to a single visually-hidden line that
+     Playwright can still see (clip-path keeps it in flow + non-
+     zero size + non-clipped per accessibility tree). */
+  height: 1px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none;
 }
 
 /* The legacy card that's nested INSIDE a workload-card needs its own
@@ -2622,7 +2644,10 @@ button.primary:hover:not(:disabled),
   align-items: center;
   gap: 4px;
 }
-.cfg-legacy-card > .body  { padding: var(--sp-4) 0 0 !important; }
+/* v0.14.16 — was sp-4 (16px) doubling up with the workload-body's
+   own sp-3 top padding for a 28px gap that read as a section break.
+   Now 0 top padding; the workload-body owns the gap. */
+.cfg-legacy-card > .body  { padding: 0 !important; }
 
 /* --- Switch (matte, glassy) ------------------------------------------ */
 .switch {
