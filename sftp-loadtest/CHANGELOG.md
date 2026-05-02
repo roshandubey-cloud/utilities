@@ -117,9 +117,25 @@ Three follow-ups from the v0.13.7 validation pass.
   Updated the FTPS probe path in `web.handleProbe` to call the new
   helper.
 
+## [v0.13.12] — 2026-05-01
+### Fixed
+- **Probe with "Trust on first use" actually trusts now.** v0.13.8
+  added FTPS auto-TOFU on the runner side but `probeFTP` still set
+  `dialOpts.TLSStore` only when `!tofu`. With TOFU enabled the dial
+  fell through to standard chain verify and rejected every self-signed
+  lab cert before the post-success `tlsStore.Add` block could run —
+  surfacing as the "FTPS certificate is not trusted" / "TLS handshake
+  failed" message even though the user had ticked the box. probeFTP
+  now wires `TLSStore` whenever the store exists and propagates the
+  `tofu` flag through `TLSTrustOnFirstUse`, so the same store-backed
+  VerifyConnection path the runner uses drives the probe too.
+  Pinned by manual run against the local mockftpserver — first probe
+  with TOFU pins the cert and returns `stage: complete`; second probe
+  without TOFU verifies cleanly against the stored fingerprint.
+
 ## [Unreleased]
 
-(no changes since v0.13.11)
+(no changes since v0.13.12)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -238,7 +254,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.11...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.12...HEAD
+[v0.13.12]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.12
 [v0.13.11]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.11
 [v0.13.10]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.10
 [v0.13.9]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.9

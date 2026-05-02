@@ -464,14 +464,18 @@ func (s *Server) probeFTP(w http.ResponseWriter, out map[string]any, proto proto
 		TLSServerName:      tlsServerName,
 		TLSCaptureCallback: func(fp string) { capturedFP = fp },
 	}
-	// FTPS verifies against the store unless either:
-	//   - the operator explicitly opted into TOFU for this probe
-	//     (re-probe after Accept on the consent / renewal modal), OR
-	//   - the operator ticked "Skip TLS verification" — that's an
-	//     explicit "trust any cert" gate weaker than the store, so
-	//     the store has no role.
-	if proto == protocol.FTPS && !tofu && !insecureSkipVerify && tlsStore != nil {
+	// FTPS attaches the TLS trust store unless the operator explicitly
+	// ticked "Skip TLS verification" — that's a "trust any cert" gate
+	// weaker than the store, so the store has no role there. The TOFU
+	// flag rides on TLSTrustOnFirstUse so the same store-backed
+	// VerifyConnection path the runner uses (added in v0.13.8) drives
+	// the probe too. Without this wiring, probe-with-TOFU dialed with
+	// the system CA chain → rejected the self-signed lab cert →
+	// surfaced as a generic handshake error before the post-success
+	// Add block could run.
+	if proto == protocol.FTPS && !insecureSkipVerify && tlsStore != nil {
 		dialOpts.TLSStore = tlsStore
+		dialOpts.TLSTrustOnFirstUse = tofu
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
