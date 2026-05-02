@@ -664,6 +664,7 @@ type poolSlot struct {
 	tlsServerName      string
 	tlsStore           *hostkeys.TLSStore // shared across slots; nil disables store-backed verify
 	tlsTrustOnFirstUse bool               // auto-add unknown certs to tlsStore on first contact
+	tlsPolicy          string             // v0.15.0 — minimum TLS version policy
 
 	mu     sync.Mutex
 	client protocol.Conn
@@ -682,6 +683,7 @@ func (s *poolSlot) dialOpts() protocol.DialOpts {
 		TLSServerName:      s.tlsServerName,
 		TLSStore:           s.tlsStore,
 		TLSTrustOnFirstUse: s.tlsTrustOnFirstUse,
+		TLSPolicy:          s.tlsPolicy,
 	}
 }
 
@@ -1498,6 +1500,15 @@ func pickActiveUser(users []config.UserCreds, i *uint64, disable *disablePolicy)
 
 func (r *Run) runNormal(ctx context.Context, deadline time.Time) {
 	fpm := r.Cfg.Normal.FilesPerMinute
+	ramp := r.Cfg.Normal.Ramp
+	// v0.15.0 — step-load ramp. When Ramp is set, FilesPerMinute is
+	// the (optional) ceiling; the runner starts at Ramp.StartFPM and
+	// adds Ramp.StepFPM every Ramp.StepEverySec seconds. Capped at
+	// Ramp.CeilingFPM (preferred), falling back to FilesPerMinute,
+	// falling back to "no cap" (very large int).
+	if ramp != nil && ramp.StartFPM > 0 {
+		fpm = ramp.StartFPM
+	}
 	if fpm <= 0 {
 		return
 	}
@@ -1518,6 +1529,11 @@ func (r *Run) runNormal(ctx context.Context, deadline time.Time) {
 	var lastMinute int64 = -1
 	var accumulator float64
 
+	// Ramp tracking: lastRampStep is the highest step index applied so
+	// far. Recomputed each tick when ramp is active; cheap.
+	runStart := time.Now()
+	var lastRampFPM = fpm
+
 	sem := make(chan struct{}, len(users)*r.Cfg.ParallelStreams)
 
 	for {
@@ -1527,6 +1543,24 @@ func (r *Run) runNormal(ctx context.Context, deadline time.Time) {
 		case now := <-ticker.C:
 			if now.After(deadline) {
 				return
+			}
+			// Recompute fpm if ramping. Cheap arithmetic; the ticker
+			// fires every 50 ms, so this runs ~20 times/sec.
+			if ramp != nil && ramp.StartFPM > 0 {
+				elapsedSec := int(now.Sub(runStart).Seconds())
+				steps := elapsedSec / ramp.StepEverySec
+				newFPM := ramp.StartFPM + steps*ramp.StepFPM
+				ceiling := ramp.CeilingFPM
+				if ceiling == 0 {
+					ceiling = r.Cfg.Normal.FilesPerMinute
+				}
+				if ceiling > 0 && newFPM > ceiling {
+					newFPM = ceiling
+				}
+				if newFPM != lastRampFPM {
+					filesPerTick = float64(newFPM) * float64(tickInterval) / float64(time.Minute)
+					lastRampFPM = newFPM
+				}
 			}
 			// Reset the round-robin cursor at each minute boundary.
 			if m := now.Unix() / 60; m != lastMinute {
@@ -1818,6 +1852,7 @@ func buildPool(cfg *config.RunConfig, u config.UserCreds, size int, auth []ssh.A
 			tlsServerName:      cfg.TLSServerName,
 			tlsStore:           tlsStore,
 			tlsTrustOnFirstUse: cfg.TLSTrustOnFirstUse,
+			tlsPolicy:          cfg.TLSPolicy,
 		}
 		c, err := protocol.Dial(context.Background(), proto, slot.dialOpts())
 		if err != nil {

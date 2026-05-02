@@ -73,6 +73,12 @@ type RunConfig struct {
 	// them. The webui only sets this true when the operator has ticked
 	// the TOFU box on the run form.
 	TLSTrustOnFirstUse bool `json:"tls_trust_on_first_use,omitempty"`
+
+	// TLSPolicy (v0.15.0) — minimum TLS version for FTPS. Recognised
+	// values: "" / "default" (TLS 1.2 minimum), "modern" / "tls13"
+	// (TLS 1.3 only — for FedRAMP / FIPS-140-3 compliance posts),
+	// "legacy" (TLS 1.0 minimum — only for ancient servers).
+	TLSPolicy string `json:"tls_policy,omitempty"`
 }
 
 type NormalLoad struct {
@@ -85,6 +91,42 @@ type NormalLoad struct {
 	// the operator route specific filename patterns ("invoice*") at
 	// specific input directories. Nil = default synthetic behaviour.
 	Source *SourceConfig `json:"source,omitempty"`
+	// Ramp, when non-nil, drives a step-load pattern instead of a fixed
+	// FilesPerMinute. The runner starts at Ramp.StartFPM, adds
+	// Ramp.StepFPM every Ramp.StepEverySec seconds, and caps at
+	// Ramp.CeilingFPM (or FilesPerMinute if CeilingFPM is 0). Used to
+	// find the capacity ceiling without manually splitting a run into
+	// multiple fixed-FPM tests.
+	Ramp *RampConfig `json:"ramp,omitempty"`
+}
+
+// RampConfig describes a step-load schedule on top of NormalLoad.
+// Validate enforces StartFPM >= 1, StepFPM >= 0, StepEverySec >= 1.
+type RampConfig struct {
+	StartFPM     int `json:"start_fpm"`
+	StepFPM      int `json:"step_fpm"`
+	StepEverySec int `json:"step_every_sec"`
+	CeilingFPM   int `json:"ceiling_fpm"`
+}
+
+// Validate checks RampConfig invariants. Nil receiver is fine.
+func (r *RampConfig) Validate() error {
+	if r == nil {
+		return nil
+	}
+	if r.StartFPM < 1 {
+		return errors.New("ramp.start_fpm must be >= 1")
+	}
+	if r.StepFPM < 0 {
+		return errors.New("ramp.step_fpm must be >= 0")
+	}
+	if r.StepEverySec < 1 {
+		return errors.New("ramp.step_every_sec must be >= 1")
+	}
+	if r.CeilingFPM < 0 {
+		return errors.New("ramp.ceiling_fpm must be >= 0 (0 = use FilesPerMinute as ceiling)")
+	}
+	return nil
 }
 
 type LargeFileLoad struct {

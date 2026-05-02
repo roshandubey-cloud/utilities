@@ -21,6 +21,35 @@ type Schedule struct {
 	CreatedAt time.Time `json:"created_at"`
 	Note      string    `json:"note,omitempty"`
 	Config    startReq  `json:"config"`
+
+	// EveryStr (v0.15.0) is the optional repeat interval as a Go
+	// time.ParseDuration string (e.g. "1h", "24h", "168h" for weekly).
+	// Empty / zero means one-shot (the v0.13/v0.14 default behaviour).
+	// On fire, the scheduler re-writes RunAt = RunAt + Every and keeps
+	// the entry on disk. Persisted as a string so JSON files round-trip
+	// cleanly between server versions.
+	EveryStr string `json:"every,omitempty"`
+}
+
+// every parses EveryStr into a Duration. Returns 0 (no repeat) on
+// empty or invalid values. Accepts the "Xd" extension for days
+// (Go's stdlib ParseDuration tops out at hours).
+func (s *Schedule) every() time.Duration {
+	if s == nil || s.EveryStr == "" {
+		return 0
+	}
+	v := s.EveryStr
+	if strings.HasSuffix(v, "d") {
+		// "7d" → 168h. Reuse Go's hour parser by swapping the suffix.
+		if d, err := time.ParseDuration(strings.TrimSuffix(v, "d") + "h"); err == nil && d > 0 {
+			return d * 24
+		}
+		return 0
+	}
+	if d, err := time.ParseDuration(v); err == nil && d > 0 {
+		return d
+	}
+	return 0
 }
 
 // scheduleStore persists Schedule entries as one JSON file per entry under
@@ -141,6 +170,7 @@ func (s *Server) handleScheduleCreate(w http.ResponseWriter, r *http.Request) {
 		RunAt string   `json:"run_at"` // ISO-8601, interpreted in the server's local TZ if no offset
 		Note  string   `json:"note"`
 		Cfg   startReq `json:"config"`
+		Every string   `json:"every"` // v0.15.0 — recurrence; "1h", "24h", "7d", or "" for one-shot
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -180,6 +210,13 @@ func (s *Server) handleScheduleCreate(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now(),
 		Note:      strings.TrimSpace(req.Note),
 		Config:    req.Cfg,
+		EveryStr:  strings.TrimSpace(req.Every),
+	}
+	// Validate Every parses (if provided) — fail at schedule time, not
+	// at fire time, so a typoed recurrence shows up immediately.
+	if entry.EveryStr != "" && entry.every() == 0 {
+		http.Error(w, "every: invalid duration (use '1h', '24h', '7d', etc.)", http.StatusBadRequest)
+		return
 	}
 	if err := s.schedules.save(entry); err != nil {
 		http.Error(w, "save: "+err.Error(), http.StatusInternalServerError)
@@ -299,12 +336,32 @@ func (s *Server) scheduleSweep() {
 		}
 		if _, err := s.startRun(sch.Config, "schedule"); err != nil {
 			log.Printf("schedule %s fire failed: %v — dropping", sch.ID, err)
-		} else {
-			log.Printf("schedule %s fired at %s (was due %s)", sch.ID, now.Format(time.RFC3339), sch.RunAt.Format(time.RFC3339))
+			_ = s.schedules.delete(sch.ID)
+			return
 		}
-		// Always delete after an attempt: we want at-most-once semantics, not
-		// retry-forever on a permanently-bad config.
-		_ = s.schedules.delete(sch.ID)
+		log.Printf("schedule %s fired at %s (was due %s)", sch.ID, now.Format(time.RFC3339), sch.RunAt.Format(time.RFC3339))
+		// v0.15.0 — recurring schedules. When Every is set, advance
+		// RunAt by Every and persist the updated schedule instead of
+		// deleting. If RunAt + Every is still in the past (e.g. a
+		// "every 1h" schedule that fired late by 3 hours), advance to
+		// the next future tick so the run doesn't immediately re-fire.
+		if every := sch.every(); every > 0 {
+			next := sch.RunAt.Add(every)
+			for !next.After(now) {
+				next = next.Add(every)
+			}
+			sch.RunAt = next
+			if err := s.schedules.save(sch); err != nil {
+				log.Printf("schedule %s recurrence write failed: %v — dropping", sch.ID, err)
+				_ = s.schedules.delete(sch.ID)
+			} else {
+				log.Printf("schedule %s recurrence: next fire at %s", sch.ID, next.Format(time.RFC3339))
+			}
+		} else {
+			// One-shot: delete after firing. At-most-once semantics
+			// stay intact; we never retry a permanently-bad config.
+			_ = s.schedules.delete(sch.ID)
+		}
 		// Only fire one schedule per sweep — let the next tick pick up the
 		// next one, and don't pile up if the server was off for a week.
 		return

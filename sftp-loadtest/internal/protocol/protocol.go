@@ -122,6 +122,18 @@ type DialOpts struct {
 	// Has no effect when TLSStore is nil.
 	TLSTrustOnFirstUse bool
 
+	// TLSPolicy (v0.15.0) clamps the minimum TLS version. Recognised
+	// values:
+	//   ""        / "default"  — Go default (TLS 1.2 minimum)
+	//   "modern"  / "tls13"    — TLS 1.3 only (rejects servers with
+	//                            anything older; required by some
+	//                            FedRAMP / FIPS-140-3 compliance posts)
+	//   "legacy"               — TLS 1.0 minimum (for very old servers
+	//                            that haven't been updated; not
+	//                            recommended on production)
+	// Unknown values fall back to "default".
+	TLSPolicy string
+
 	// Streams hints at per-stream parallelism. Some implementations may
 	// size internal pools off this; today only used as documentation.
 	Streams int
@@ -294,8 +306,17 @@ func dialFTP(ctx context.Context, opts DialOpts, useTLS bool) (Conn, error) {
 		// safer than InsecureSkipVerify alone, since unknown certs
 		// without TOFU still error.
 		skipChainVerify := opts.InsecureSkipVerify || opts.TLSStore != nil
+		// v0.15.0 — TLS minimum-version policy.
+		minVer := uint16(tls.VersionTLS12) // Go default
+		switch opts.TLSPolicy {
+		case "modern", "tls13":
+			minVer = tls.VersionTLS13
+		case "legacy":
+			minVer = tls.VersionTLS10
+		}
 		tlsCfg := &tls.Config{
 			ServerName:         serverName,
+			MinVersion:         minVer,
 			InsecureSkipVerify: skipChainVerify, //nolint:gosec // store-backed verify replaces chain verify when TLSStore set
 			VerifyConnection: func(state tls.ConnectionState) error {
 				captureCert(state)

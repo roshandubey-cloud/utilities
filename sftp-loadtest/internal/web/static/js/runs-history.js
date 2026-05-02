@@ -15,6 +15,23 @@ import { apiFetch } from './api.js';
 // the request rate stays trivial.
 const REFRESH_MS = 3000;
 
+// v0.15.0 — run comparison. Module-scope state for the two run IDs
+// currently selected for diff. Persisted to localStorage so a
+// refresh during a comparison doesn't drop the selection.
+const CMP_KEY = 'sftp-loadtest-cmp-v1';
+const cmpState = (() => {
+  try { return JSON.parse(localStorage.getItem(CMP_KEY) || '[]'); } catch { return []; }
+})();
+function cmpSave() { try { localStorage.setItem(CMP_KEY, JSON.stringify(cmpState)); } catch {} }
+function cmpToggle(id) {
+  const i = cmpState.indexOf(id);
+  if (i >= 0) cmpState.splice(i, 1);
+  else if (cmpState.length < 2) cmpState.push(id);
+  else { cmpState.shift(); cmpState.push(id); } // keep most-recent two
+  cmpSave();
+}
+function cmpClear() { cmpState.length = 0; cmpSave(); }
+
 export function mountRunsHistory(rootSelector) {
   const root = document.querySelector(rootSelector);
   if (!root) return;
@@ -58,7 +75,20 @@ export function mountRunsHistory(rootSelector) {
           </div>`;
         return;
       }
-      slot.innerHTML = merged.slice(0, 10).map(rowMarkup).join('');
+      // v0.15.0 — render the comparison banner + cards. Banner is
+      // sticky at the top of the panel; shows a "pick another run"
+      // hint when 1 is selected, full delta when 2 are selected.
+      const top10 = merged.slice(0, 10);
+      slot.innerHTML = comparisonBanner(top10) + top10.map(rowMarkup).join('');
+      slot.querySelectorAll('[data-action="cmp-toggle"]').forEach((cb) => {
+        cb.addEventListener('change', (ev) => {
+          cmpToggle(ev.target.dataset.runId);
+          // Re-render so the banner reflects the new selection.
+          refresh();
+        });
+      });
+      const clearBtn = slot.querySelector('[data-action="cmp-clear"]');
+      if (clearBtn) clearBtn.addEventListener('click', () => { cmpClear(); refresh(); });
       slot.querySelectorAll('[data-action="view"]').forEach((btn) => {
         btn.addEventListener('click', (ev) => {
           ev.preventDefault();
@@ -210,6 +240,10 @@ function rowMarkup(entry) {
           <div class="body-small" style="color:var(--text-tertiary)">${formatStarted(r.started_at)}${r.stopped_at ? ' · ' + formatDuration(r.started_at, r.stopped_at) : ''}${shapeLine}${throttledBadge ? ' · ' + throttledBadge : ''}${interruptedBadge ? ' · ' + interruptedBadge : ''}</div>
         </div>
         <div class="runs-history-actions">
+          <label class="check-inline" title="Pick two runs to compare." style="font-size:var(--fs-12)">
+            <input type="checkbox" data-action="cmp-toggle" data-run-id="${escapeAttr(r.id)}" ${cmpState.includes(r.id) ? 'checked' : ''}>
+            <span>Compare</span>
+          </label>
           <a class="btn btn-sm btn-ghost" href="${csvUrl}" download data-external="1">CSV</a>
           <button class="btn btn-sm btn-secondary" type="button" data-action="view" data-run-id="${escapeAttr(r.id)}">View records</button>
         </div>
@@ -411,3 +445,62 @@ function formatDuration(startISO, stopISO) {
 }
 function escapeHTML(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function escapeAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+
+// v0.15.0 — comparison banner. Renders nothing when no runs selected,
+// a single-row hint when 1 is selected, and a delta row when 2 are
+// selected. Computes deltas client-side from the run summaries already
+// in the merged list — no extra API calls.
+function comparisonBanner(merged) {
+  if (cmpState.length === 0) return '';
+  // Resolve selected IDs back into run records. Filter to runs the
+  // current page has data for; ignore stale ids.
+  const idIndex = new Map();
+  merged.forEach((entry) => {
+    const r = entry.kind === 'cluster' ? entry.cluster : entry.raw;
+    if (r && r.id) idIndex.set(r.id, r);
+  });
+  const picks = cmpState.map((id) => idIndex.get(id)).filter(Boolean);
+  if (picks.length === 1) {
+    return `<div class="runs-cmp-banner runs-cmp-banner-1">
+      <span><b>Pick another run to compare</b> — selected: <code>${escapeHTML(picks[0].id)}</code></span>
+      <button type="button" class="btn btn-sm btn-ghost" data-action="cmp-clear">Clear</button>
+    </div>`;
+  }
+  const [a, b] = picks;
+  const deltas = [
+    cmpDelta('Files',         Number(a.total_files || 0),  Number(b.total_files || 0)),
+    cmpDelta('Throughput',    Number(a.overall_mbps || 0), Number(b.overall_mbps || 0), 'Mbps'),
+    cmpDelta('Failed',        Number(a.failed_files || 0), Number(b.failed_files || 0), '', /*lowerIsBetter*/ true),
+    cmpDelta('Skipped',       Number(a.dispatch_skips || 0), Number(b.dispatch_skips || 0), '', true),
+    cmpDelta('p99 latency',   pickP99(a),                  pickP99(b),                   'ms', true),
+  ];
+  return `<div class="runs-cmp-banner runs-cmp-banner-2">
+    <div class="runs-cmp-head">
+      <span><b>Comparing</b></span>
+      <code>${escapeHTML(a.id)}</code>
+      <span class="runs-cmp-arrow">→</span>
+      <code>${escapeHTML(b.id)}</code>
+      <button type="button" class="btn btn-sm btn-ghost" data-action="cmp-clear">Clear</button>
+    </div>
+    <div class="runs-cmp-deltas">${deltas.join('')}</div>
+  </div>`;
+}
+
+function pickP99(r) {
+  // Solo runs persist latency_p99_ms in the summary; cluster runs put
+  // it under aggregate. Either way return ms or 0.
+  return Number(r.latency_p99_ms || (r.aggregate && r.aggregate.latency_p99_ms) || 0);
+}
+
+function cmpDelta(label, a, b, unit = '', lowerIsBetter = false) {
+  const delta = b - a;
+  const pct = a > 0 ? (delta / a) * 100 : 0;
+  const better = lowerIsBetter ? delta < 0 : delta > 0;
+  const cls = delta === 0 ? 'eq' : (better ? 'good' : 'bad');
+  const arrow = delta === 0 ? '=' : (delta > 0 ? '↑' : '↓');
+  return `<div class="runs-cmp-delta runs-cmp-delta-${cls}">
+    <div class="eyebrow">${escapeHTML(label)}</div>
+    <div class="metric-default tabular">${a.toFixed(2)}${unit ? ' ' + unit : ''} <span class="runs-cmp-arrow">→</span> ${b.toFixed(2)}${unit ? ' ' + unit : ''}</div>
+    <div class="body-small">${arrow} ${Math.abs(delta).toFixed(2)}${unit ? ' ' + unit : ''} (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)</div>
+  </div>`;
+}

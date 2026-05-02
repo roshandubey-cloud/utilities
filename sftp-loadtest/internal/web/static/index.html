@@ -580,16 +580,24 @@
             </div>
             <input type="hidden" id="tls_mode" data-role="tls-mode-value" value="explicit">
           </div>
-          <div class="field-row" style="--cols:2">
+          <div class="field-row" style="--cols:3">
             <div class="field">
               <label class="label" for="tls_server_name">Server name <span class="label-hint">(optional, SNI)</span></label>
               <input class="input" id="tls_server_name" data-role="tls-server-name" type="text" placeholder="defaults to host">
             </div>
             <div class="field">
+              <label class="label" for="tls_policy" title="Default = TLS 1.2 minimum. Modern = TLS 1.3 only (FedRAMP / FIPS 140-3 compliance). Legacy = TLS 1.0 minimum (only for ancient servers).">TLS minimum <span class="badge-mini">v0.15</span></label>
+              <select class="input" id="tls_policy" data-role="tls-policy">
+                <option value="">Default (TLS 1.2)</option>
+                <option value="modern">Modern (TLS 1.3 only)</option>
+                <option value="legacy">Legacy (TLS 1.0+)</option>
+              </select>
+            </div>
+            <div class="field">
               <label class="toggle" style="align-self:flex-end;margin-top:var(--sp-3)">
                 <input type="checkbox" id="tls_skip_verify" data-role="tls-skip-verify">
                 <span class="toggle-track"><span class="toggle-thumb"></span></span>
-                <span class="toggle-text">Trust self-signed cert (skip verify entirely)</span>
+                <span class="toggle-text">Trust self-signed cert</span>
               </label>
             </div>
           </div>
@@ -850,6 +858,41 @@
           <label for="normal_users" style="margin-top:10px"
                  title="Trailing * in a pattern is replaced with <nanos>_<rnd>. The original extension is preserved — invoice* → invoice<nanos>_<rnd>.txt; report*.csv → report<nanos>_<rnd>.csv. Passwords auto-reveal while you're editing and re-mask on blur.">Users (CSV) <span class="muted">— username,password,pattern1*,pattern2*,…</span></label>
           <textarea class="csv-users" id="normal_users" placeholder="user1,pass1,invoice*,order*&#10;user2,pass2,report*.csv"></textarea>
+
+          <!-- v0.15.0 — step-load ramp. When enabled, the runner starts at
+               start_fpm and adds step_fpm every step_every_sec seconds, capped
+               at ceiling_fpm (or Files-per-minute above if blank). Used to
+               find capacity ceilings without manually splitting a run. -->
+          <details class="source-disclosure" data-role="ramp-disclosure">
+            <summary>Step-load ramp <span class="badge-mini">v0.15</span> <span class="hint">— fixed FPM by default; click to ramp up over time</span></summary>
+            <div class="source-body">
+              <label class="check-inline" style="margin-bottom:var(--sp-2)">
+                <input type="checkbox" id="ramp_enabled" data-role="ramp-enabled">
+                <span>Enable step-load ramp</span>
+              </label>
+              <div class="ramp-fields" data-role="ramp-fields" hidden>
+                <div class="field-row" style="--cols:4">
+                  <div class="field">
+                    <label class="label" for="ramp_start" title="Initial FPM the run launches at.">Start FPM</label>
+                    <input class="input" id="ramp_start" data-role="ramp-start" type="number" value="10" min="1">
+                  </div>
+                  <div class="field">
+                    <label class="label" for="ramp_step" title="FPM added at each step boundary.">Step FPM</label>
+                    <input class="input" id="ramp_step" data-role="ramp-step" type="number" value="10" min="0">
+                  </div>
+                  <div class="field">
+                    <label class="label" for="ramp_every" title="Seconds between step bumps.">Every (sec)</label>
+                    <input class="input" id="ramp_every" data-role="ramp-every" type="number" value="60" min="1">
+                  </div>
+                  <div class="field">
+                    <label class="label" for="ramp_ceiling" title="Hard cap. 0 = use Files-per-minute above as ceiling.">Ceiling FPM</label>
+                    <input class="input" id="ramp_ceiling" data-role="ramp-ceiling" type="number" value="0" min="0">
+                  </div>
+                </div>
+                <div class="hint">Ramp drives the rate; the Files-per-minute field above acts as the ceiling when Ceiling FPM is 0.</div>
+              </div>
+            </div>
+          </details>
 
           <!-- v0.14 source picker — opt-in. Default kind=synthetic preserves
                the v0.13 behaviour. Real-file sources let the operator push
@@ -1131,6 +1174,77 @@
       </div>
       <div id="err"></div>
 
+      <!-- ============ ALERTS (v0.15.0) ============ -->
+      <section class="card" style="margin-top:18px" data-component="alerts">
+        <header><span class="toggle-label">Alerts <span class="badge-mini">v0.15</span></span><span class="pill">Slack · webhook · email</span></header>
+        <div class="body">
+          <div class="hint">
+            Fire a notification when a run finishes with errors, exceeds a latency threshold, or hits the dispatch-skip ceiling. Configuration is global — one set of channels per server install. <strong>Saved at <code>&lt;reportsDir&gt;/alerts.json</code></strong>; passwords stored in plaintext, so prefer webhook channels when possible.
+          </div>
+          <div class="row" style="margin-top:10px">
+            <div style="flex:1">
+              <label for="alert_slack" title="Incoming-webhook URL: https://hooks.slack.com/services/.../...">Slack webhook URL</label>
+              <input id="alert_slack" type="text" placeholder="https://hooks.slack.com/services/...">
+            </div>
+            <div style="flex:1">
+              <label for="alert_webhook" title="Generic JSON POST endpoint. Used for PagerDuty Events, Opsgenie, Datadog Events, or your own bridge.">Generic webhook URL</label>
+              <input id="alert_webhook" type="text" placeholder="https://example.com/hooks/sftpl">
+            </div>
+          </div>
+          <details class="source-disclosure" style="margin-top:10px">
+            <summary>Email (SMTP) <span class="hint">— optional; webhook channels are usually simpler</span></summary>
+            <div class="source-body">
+              <div class="field-row" style="--cols:3">
+                <div class="field">
+                  <label class="label" for="alert_smtp_host">SMTP host</label>
+                  <input class="input" id="alert_smtp_host" type="text" placeholder="smtp.example.com">
+                </div>
+                <div class="field">
+                  <label class="label" for="alert_smtp_port">Port</label>
+                  <input class="input" id="alert_smtp_port" type="number" value="587">
+                </div>
+                <div class="field">
+                  <label class="label" for="alert_email_from">From</label>
+                  <input class="input" id="alert_email_from" type="text" placeholder="alerts@example.com">
+                </div>
+              </div>
+              <div class="field-row" style="--cols:3">
+                <div class="field">
+                  <label class="label" for="alert_smtp_user">SMTP user</label>
+                  <input class="input" id="alert_smtp_user" type="text" autocomplete="off">
+                </div>
+                <div class="field">
+                  <label class="label" for="alert_smtp_pass">SMTP password</label>
+                  <input class="input" id="alert_smtp_pass" type="password" autocomplete="off">
+                </div>
+                <div class="field">
+                  <label class="label" for="alert_email_to">Recipients <span class="label-hint">(comma-sep)</span></label>
+                  <input class="input" id="alert_email_to" type="text" placeholder="oncall@example.com, sre@example.com">
+                </div>
+              </div>
+            </div>
+          </details>
+          <label class="label" style="margin-top:14px; display:block">Triggers</label>
+          <div class="check-inline-row" style="display:flex; flex-wrap:wrap; gap:var(--sp-3); margin-top:6px">
+            <label class="check-inline"><input type="checkbox" id="alert_on_failure" checked> <span>Run had failures</span></label>
+            <label class="check-inline"><input type="checkbox" id="alert_on_skips"> <span>Dispatch skips &gt; 0</span></label>
+            <label class="check-inline">
+              <span>p99 latency &gt;</span>
+              <input id="alert_p99_ms" type="number" value="0" min="0" style="width:70px"> <span>ms (0 = off)</span>
+            </label>
+            <label class="check-inline">
+              <span>Error rate &gt;</span>
+              <input id="alert_err_pct" type="number" step="0.1" value="0" min="0" max="100" style="width:60px"> <span>% (0 = off)</span>
+            </label>
+          </div>
+          <div class="actions" style="padding:14px 0 0">
+            <button type="button" class="btn btn-accent-soft" id="alertsSaveBtn">Save alerts config</button>
+            <button type="button" class="btn btn-ghost" id="alertsTestBtn" title="Fire a synthetic alert through every configured channel">Send test alert</button>
+            <span id="alerts_status" class="hint"></span>
+          </div>
+        </div>
+      </section>
+
       <!-- ============ SCHEDULING & CONFIG I/O ============ -->
       <section class="card" style="margin-top:18px">
         <header><span class="toggle-label">Schedule &amp; config</span><span class="pill">save, share, run later</span></header>
@@ -1167,7 +1281,25 @@
               <label for="sched_at">Schedule run at</label>
               <input id="sched_at" type="datetime-local" step="60">
             </div>
-            <div style="flex:3">
+            <div style="flex:2">
+              <label for="sched_freq" title="One-shot fires once at the time above. Recurring fires repeatedly — every hour / day / week — starting at that time.">Frequency <span class="badge-mini">v0.15</span></label>
+              <select id="sched_freq" data-role="sched-freq">
+                <option value="">One-shot</option>
+                <option value="1h">Hourly</option>
+                <option value="24h">Daily</option>
+                <option value="7d">Weekly</option>
+                <option value="custom">Custom…</option>
+              </select>
+            </div>
+          </div>
+          <div class="row" id="sched_custom_row" style="margin-top:8px; display:none">
+            <div style="flex:1">
+              <label for="sched_every" title="Go duration string. Examples: 30m, 2h, 12h, 3d, 168h">Every</label>
+              <input id="sched_every" type="text" placeholder="e.g. 30m, 6h, 3d">
+            </div>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <div style="flex:1">
               <label for="sched_note">Note (optional)</label>
               <input id="sched_note" type="text" placeholder="nightly soak against prod-sftp-1">
             </div>

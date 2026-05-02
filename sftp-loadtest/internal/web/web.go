@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,7 @@ import (
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/protocol"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/report"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/runner"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/alerts"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/sftpx"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/source"
 )
@@ -62,6 +64,13 @@ type Server struct {
 	// so the cluster coordinator can detect worker / master skew. Wired
 	// from main.go via SetVersion. Empty until SetVersion is called.
 	version string
+
+	// alertsCfg (v0.15.0) is the global alerts configuration: webhook
+	// URLs, SMTP settings, threshold rules. Persisted as alerts.json
+	// under reportsDir; loaded on Server creation; mutated via
+	// /api/alerts. nil-safe — empty Config disables every channel.
+	alertsCfg   alerts.Config
+	alertsCfgMu sync.Mutex
 }
 
 // NewServer constructs the HTTP server. schedulesDir may be empty, in which
@@ -77,7 +86,69 @@ func NewServer(reportsDir, schedulesDir string) *Server {
 		s.schedules = newScheduleStore(schedulesDir)
 		go s.scheduleTicker(s.stopCh)
 	}
+	// v0.15.0 — load alerts config from disk on startup so the channels
+	// configured by the operator survive restarts.
+	s.loadAlertsConfig()
 	return s
+}
+
+// alertsConfigPath returns the on-disk JSON path for the alerts
+// configuration. Lives next to reports so backups capture both.
+func (s *Server) alertsConfigPath() string {
+	if s.reportsDir == "" {
+		return ""
+	}
+	return filepath.Join(s.reportsDir, "alerts.json")
+}
+
+// loadAlertsConfig reads alerts.json on startup. Missing file =
+// alerts disabled (zero-value Config). Malformed file = log + zero.
+func (s *Server) loadAlertsConfig() {
+	p := s.alertsConfigPath()
+	if p == "" {
+		return
+	}
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		return // no file is fine — alerts disabled
+	}
+	var cfg alerts.Config
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		log.Printf("alerts: parse %s: %v — alerts disabled", p, err)
+		return
+	}
+	s.alertsCfgMu.Lock()
+	s.alertsCfg = cfg
+	s.alertsCfgMu.Unlock()
+}
+
+// saveAlertsConfig writes the current config back to disk. Atomic
+// write via temp + rename so a crash mid-write doesn't corrupt the
+// file.
+func (s *Server) saveAlertsConfig() error {
+	p := s.alertsConfigPath()
+	if p == "" {
+		return errors.New("reportsDir not configured; alerts cannot persist")
+	}
+	s.alertsCfgMu.Lock()
+	cfg := s.alertsCfg
+	s.alertsCfgMu.Unlock()
+	raw, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := p + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, p)
+}
+
+// alertsConfig returns a defensive copy of the current alerts config.
+func (s *Server) alertsConfig() alerts.Config {
+	s.alertsCfgMu.Lock()
+	defer s.alertsCfgMu.Unlock()
+	return s.alertsCfg
 }
 
 // Shutdown stops background tickers AND tears down every SSH-bootstrapped
@@ -774,6 +845,144 @@ func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// dispatchAlertsWhenDone waits for the run to fully finalize (track-id
+// drain + teardown) then evaluates trigger thresholds against the
+// final metrics and fires to every configured channel. Runs in a
+// goroutine; alert delivery is best-effort and never blocks the run.
+func (s *Server) dispatchAlertsWhenDone(run *runner.Run, cfg *config.RunConfig) {
+	if run == nil {
+		return
+	}
+	<-run.Done()
+	alertCfg := s.alertsConfig()
+	if !alertCfg.Anything() {
+		return // alerts disabled — fast exit
+	}
+	// Final metrics.
+	m := run.Metrics.Snapshot()
+	totalFiles := m.TotalFiles
+	failed := run.FailedFiles.Load()
+	skips := run.DispatchSkips.Load()
+	upSnap := run.UploadLatency.Snapshot()
+	p99ms := float64(upSnap.P99) / 1e6 // ns → ms
+	errorRate := 0.0
+	if totalFiles > 0 {
+		errorRate = float64(failed) / float64(totalFiles) * 100
+	}
+	host := ""
+	proto := ""
+	if cfg != nil {
+		host = cfg.Host
+		proto = cfg.Protocol
+		if proto == "" {
+			proto = "sftp"
+		}
+	}
+	ev := alerts.Event{
+		Kind:          "run_complete",
+		RunID:         run.ID,
+		StartedAt:     run.StartedAt,
+		EndedAt:       time.Now(),
+		Host:          host,
+		Protocol:      proto,
+		TotalFiles:    totalFiles,
+		FailedFiles:   failed,
+		TotalBytes:    m.TotalBytes,
+		OverallMbps:   m.OverallMBps,
+		P99LatencyMS:  p99ms,
+		DispatchSkips: skips,
+		ErrorRate:     errorRate,
+	}
+	reasons := alertCfg.ShouldFire(ev)
+	if len(reasons) == 0 {
+		return // no triggers met — silent success
+	}
+	ev.Reasons = reasons
+	d := alerts.NewDispatcher(alertCfg)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	d.Fire(ctx, ev)
+}
+
+// /api/alerts — GET returns the current alerts.Config; POST replaces
+// it. Persisted to alerts.json under reportsDir. Passwords (SMTP)
+// are persisted in plaintext — operators that don't want that should
+// use a webhook + a CI/CD secret manager and ignore the SMTP fields.
+func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, s.alertsConfig())
+	case http.MethodPost:
+		var cfg alerts.Config
+		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.alertsCfgMu.Lock()
+		s.alertsCfg = cfg
+		s.alertsCfgMu.Unlock()
+		if err := s.saveAlertsConfig(); err != nil {
+			http.Error(w, "save: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true})
+	default:
+		http.Error(w, "GET or POST", http.StatusMethodNotAllowed)
+	}
+}
+
+// /api/alerts/test — fires a synthetic Event through every configured
+// channel so the operator can verify their webhook URLs / SMTP creds
+// without waiting for a real run to fail.
+func (s *Server) handleAlertsTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg := s.alertsConfig()
+	if !cfg.Anything() {
+		writeJSON(w, map[string]any{"ok": false, "error": "no alert channels configured"})
+		return
+	}
+	d := alerts.NewDispatcher(cfg)
+	ev := alerts.Event{
+		Kind:          "test",
+		RunID:         "test-event",
+		StartedAt:     time.Now().Add(-1 * time.Minute),
+		EndedAt:       time.Now(),
+		Host:          "127.0.0.1",
+		Protocol:      "sftp",
+		TotalFiles:    100,
+		FailedFiles:   2,
+		TotalBytes:    104857600,
+		OverallMbps:   8.39,
+		P99LatencyMS:  87,
+		DispatchSkips: 0,
+		ErrorRate:     2.0,
+		Reasons:       []string{"test alert from /api/alerts/test"},
+	}
+	d.Fire(r.Context(), ev)
+	writeJSON(w, map[string]any{"ok": true, "channels_attempted": channelCount(cfg)})
+}
+
+// channelCount reports how many channels would be attempted for an
+// alert with the given config. Used by the /api/alerts/test response
+// so the operator sees whether all 3 paths were tried (or only
+// whatever subset they configured).
+func channelCount(cfg alerts.Config) int {
+	n := 0
+	if cfg.SlackWebhookURL != "" {
+		n++
+	}
+	if cfg.GenericWebhookURL != "" {
+		n++
+	}
+	if cfg.SMTPHost != "" && len(cfg.EmailTo) > 0 {
+		n++
+	}
+	return n
+}
+
 // /api/host — one-shot snapshot of the client machine's capacity. Called
 // once at UI load (and any time the operator wants to refresh) so testers
 // always see the real ceilings (FD limit, cores, RAM, NICs) of the box
@@ -823,6 +1032,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/probe", s.handleProbe)
 	mux.HandleFunc("/api/probe-source", s.handleProbeSource)
 	mux.HandleFunc("/api/probe-sink", s.handleProbeSink)
+	mux.HandleFunc("/api/alerts", s.handleAlerts)
+	mux.HandleFunc("/api/alerts/test", s.handleAlertsTest)
 	mux.HandleFunc("/api/start", s.handleStart)
 	mux.HandleFunc("/api/stop", s.handleStop)
 	mux.HandleFunc("/api/status", s.handleStatus)
@@ -960,12 +1171,23 @@ type startReq struct {
 	// is set; that flag bypasses the store entirely.
 	TLSTrustOnFirstUse    bool   `json:"tls_trust_on_first_use,omitempty"`
 
+	// TLSPolicy (v0.15.0) clamps the minimum TLS version. "" / "default"
+	// = Go default (TLS 1.2 minimum); "modern" / "tls13" = TLS 1.3
+	// only; "legacy" = TLS 1.0 minimum. Wired into RunConfig.TLSPolicy
+	// at /api/start time and from there into protocol.DialOpts.
+	TLSPolicy string `json:"tls_policy,omitempty"`
+
 	NormalEnabled     bool   `json:"normal_enabled"`
 	FilesPerMinute    int    `json:"files_per_minute"`
 	NormalMinMB       int    `json:"normal_min_mb"`
 	NormalMaxMB       int    `json:"normal_max_mb"`
 	NormalContentType string `json:"normal_content_type"`
 	NormalUsersCSV    string `json:"normal_users_csv"`
+
+	// v0.15.0 — step-load ramp. Optional. When start_fpm > 0, the runner
+	// ramps fpm over time instead of using FilesPerMinute as a fixed
+	// rate. Wired into config.NormalLoad.Ramp at /api/start time.
+	NormalRamp *config.RampConfig `json:"normal_ramp,omitempty"`
 
 	LargeEnabled    bool   `json:"large_enabled"`
 	LargeMin        int    `json:"large_min"`
@@ -1026,6 +1248,7 @@ func buildRunConfig(req startReq) (*config.RunConfig, error) {
 		TLSInsecureSkipVerify:  req.TLSInsecureSkipVerify,
 		TLSServerName:          req.TLSServerName,
 		TLSTrustOnFirstUse:     req.TLSTrustOnFirstUse,
+		TLSPolicy:              req.TLSPolicy,
 	}
 	if req.NormalEnabled {
 		cfg.Normal = &config.NormalLoad{
@@ -1034,6 +1257,10 @@ func buildRunConfig(req startReq) (*config.RunConfig, error) {
 			MaxSizeMB:      req.NormalMaxMB,
 			ContentType:    req.NormalContentType,
 			Source:         req.NormalSource, // nil-safe; keeps synthetic default
+			Ramp:           req.NormalRamp,   // nil-safe; uses fixed FilesPerMinute
+		}
+		if err := cfg.Normal.Ramp.Validate(); err != nil {
+			return nil, fmt.Errorf("normal ramp: %w", err)
 		}
 		users, err := config.ParseUsersCSV(strings.NewReader(req.NormalUsersCSV))
 		if err != nil {
@@ -1088,6 +1315,11 @@ func (s *Server) startRun(req startReq, startedBy string) (*runner.Run, error) {
 		return nil, err
 	}
 	run.StartedBy = startedBy
+	// v0.15.0 — alert dispatch on run completion. Goroutine waits for
+	// run.Done() (full teardown after track-id drain), evaluates
+	// triggers against the final metrics, and fires to every
+	// configured channel. Non-blocking; errors get logged.
+	go s.dispatchAlertsWhenDone(run, cfg)
 	s.mu.Lock()
 	s.runs[run.ID] = run
 	s.order = append(s.order, run.ID)

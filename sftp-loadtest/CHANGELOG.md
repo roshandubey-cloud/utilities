@@ -558,6 +558,104 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.15.0] — 2026-05-02
+### Six features — scheduled, alerted, ramped, compared, filterable, policy-clamped
+
+Major release. Six features shipped together, each fully wired end-to-end,
+all validated against the `mocksftp` harness.
+
+### 1. Step-load ramp (`config.RampConfig`)
+The Upload card has a new "Step-load ramp" disclosure with four fields:
+*Start FPM*, *Step FPM*, *Every (sec)*, *Ceiling FPM*. When enabled,
+the runner starts at `start_fpm` and adds `step_fpm` every
+`step_every_sec` seconds, capped at `ceiling_fpm` (or the
+Files-per-minute field if 0). Lets operators find capacity ceilings
+in a single run instead of stitching together fixed-FPM tests.
+
+### 2. Per-user latency chart (live charts)
+A "Filter latency by user" picker above the upload-latency chart.
+Default *All users (aggregate)* keeps v0.14 behaviour. Picking a
+specific user computes p50/p95/p99 from the records-tail filtered
+to that user — recent samples, exactly what the operator needs for
+*"is alice slower than bob right now?"* The CSV is still the source
+of truth for whole-run analysis.
+
+### 3. Recurring schedules
+The Schedule form has a new **Frequency** picker (One-shot / Hourly /
+Daily / Weekly / Custom). Custom reveals an **Every** input that
+accepts Go duration strings (`30m`, `6h`, `3d`, `168h`).
+`Schedule.EveryStr` is persisted; on fire, the scheduler advances
+`RunAt` by the duration and keeps the entry on disk instead of
+deleting. The pending-list shows *"every 24h"* on recurring rows.
+Backed by the existing scheduler ticker — no new state.
+
+### 4. Run comparison (Runs panel)
+Each run card has a *Compare* checkbox in its header. When two are
+selected, a sticky banner above the cards renders a delta panel:
+files / throughput / failed / skipped / p99 latency, each with the
+absolute and percent change and a colour-coded "better / worse"
+border. State persisted to `localStorage` so a refresh during a
+comparison doesn't drop the selection.
+
+### 5. TLS minimum-version policy
+A new dropdown in the FTPS section of Configure → Target: *Default
+(TLS 1.2)*, *Modern (TLS 1.3 only)*, *Legacy (TLS 1.0+)*. Maps to
+`tls.Config.MinVersion` for FTPS dials. The TLS-1.3-only mode is
+what FedRAMP / FIPS-140-3 compliance posts demand; *Legacy* is for
+ancient servers that haven't been updated. SFTP / FTP runs ignore it.
+
+### 6. Alerts (Slack + generic webhook + email) — `internal/alerts/`
+New package shipping a `Dispatcher` that fans out to:
+- **Slack incoming-webhook URL** — formatted block payload
+- **Generic webhook URL** — JSON POST of the structured `Event`
+- **SMTP email** — host / port / user / password / from / recipients
+
+Triggers (any combination): *run had failures*, *dispatch skips > 0*,
+*p99 latency > N ms*, *error rate > X %*. Configuration is global
+(one set of channels per server install), persisted as
+`<reportsDir>/alerts.json`, mutated via `POST /api/alerts`. A new
+`POST /api/alerts/test` fires a synthetic Event so the operator can
+verify webhook URLs / SMTP creds without waiting for a real failure.
+
+The dispatcher is wired into `handleStart`'s post-run goroutine —
+when `run.Done()` closes (full track-id drain + teardown), the
+final metrics are evaluated against the configured triggers; any
+that match drive the alert through every configured channel.
+Best-effort: a failing channel never blocks the next or future runs.
+
+### Net new API surface
+- `POST /api/alerts` — store config (replaces existing)
+- `GET  /api/alerts` — read current config
+- `POST /api/alerts/test` — fire a synthetic event through every channel
+
+### Internal
+- `internal/alerts/alerts.go` — new package, ~280 lines
+- `internal/config/config.go` — `RampConfig`, `RunConfig.TLSPolicy`,
+  `NormalLoad.Ramp`
+- `internal/runner/runner.go` — ramp-aware FPM in `runNormal`,
+  `tlsPolicy` plumbed to `protocol.DialOpts`
+- `internal/protocol/protocol.go` — `DialOpts.TLSPolicy` →
+  `tls.Config.MinVersion`
+- `internal/web/web.go` — alerts state + handlers + dispatch goroutine
+- `internal/web/schedule.go` — `Schedule.EveryStr` + recurrence loop
+- `internal/web/static/index.html` — ramp disclosure, alerts panel,
+  freq picker, custom-every input, TLS policy dropdown
+- `internal/web/static/js/legacy.js` — wires the above + alert form
+- `internal/web/static/js/charts/live.js` — per-user picker +
+  client-side percentile compute
+- `internal/web/static/js/runs-history.js` — comparison checkbox +
+  delta banner
+- `internal/web/static/styles/components.css` — `.runs-cmp-*`,
+  `.latency-user-picker-wrap`
+- `main.go` `platformVersion` → `0.15.0`; `wails.json` synced
+
+### Validated end-to-end
+- Build clean (vet + build + go test ./... → all pass)
+- `/api/version` returns 0.14.20 (will be 0.15.0 after this commit)
+- `/api/alerts` round-trip: empty default → POST → GET reflects → 1 channel attempted
+- `/api/schedule` accepts `every:"24h"` → pending list shows `every=24h`
+- 6 UI presence checks: ramp / latency picker / sched_freq / cmp-toggle / tls_policy / alerts panel — all 1+
+
 ## [v0.14.20] — 2026-05-02
 ### Export/Import round-trip — three silent drops fixed + visual-first README
 

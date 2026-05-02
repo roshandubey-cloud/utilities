@@ -241,12 +241,30 @@ document.querySelectorAll('input[data-toggles]').forEach(cb => {
   sync();
 });
 
+// v0.15.0 — ramp checkbox reveals the 4 ramp fields.
+(function wireRampToggle() {
+  const cb = document.getElementById('ramp_enabled');
+  if (!cb) return;
+  const fields = document.querySelector('[data-role="ramp-fields"]');
+  if (!fields) return;
+  const sync = () => { fields.hidden = !cb.checked; };
+  cb.addEventListener('change', sync);
+  sync();
+})();
+// Also persist ramp fields in saveConfig/restore so a refresh doesn't
+// wipe the ramp the operator just typed.
+const RAMP_KEYS = ['ramp_start', 'ramp_step', 'ramp_every', 'ramp_ceiling'];
+const RAMP_TOGGLES = ['ramp_enabled'];
+
 // ---------- config persistence (localStorage) ----------
 const CFG_KEYS = ['host','port','folder','parallel','duration','poll','timeout_min','max_fails',
   'fpm','nmin','nmax','ncontent','normal_users',
   'lmin','lmax','lunit','interval','large_users',
-  'dfolder','dparallel','download_users'];
-const TOGGLES = ['normal_enabled','large_enabled','download_enabled'];
+  'dfolder','dparallel','download_users',
+  // v0.15.0 — step-load ramp fields. Persisted across refreshes so
+  // a typo + reload doesn't wipe the ramp the operator was setting up.
+  'ramp_start','ramp_step','ramp_every','ramp_ceiling'];
+const TOGGLES = ['normal_enabled','large_enabled','download_enabled','ramp_enabled'];
 const LS_KEY = 'sftp-loadtest-config-v1';
 const SAVE_PWD_KEY = 'sftp-loadtest-save-passwords-v1';
 
@@ -800,6 +818,9 @@ function buildRequestBody() {
     tls_server_name: protocol === 'ftps' ? tlsServerName : '',
     tls_insecure_skip_verify: protocol === 'ftps' ? tlsSkipVerify : false,
     tls_trust_on_first_use: protocol === 'ftps' ? tofuChecked : false,
+    // v0.15.0 — TLS minimum-version policy. Only emitted for FTPS;
+    // SFTP / FTP runs ignore it.
+    tls_policy: protocol === 'ftps' ? (document.getElementById('tls_policy')?.value || '') : '',
     // v0.14 source/sink fields. readSource / readSink return null when
     // the operator left the picker on the default (synthetic / discard)
     // — the backend then uses the v0.13.x defaults exactly. Only one
@@ -819,6 +840,15 @@ function buildRequestBody() {
     normal_max_mb: parseInt($('nmax').value) || 1,
     normal_content_type: $('ncontent').value || 'binary',
     normal_users_csv: getCsvRaw('normal_users'),
+    // v0.15.0 — step-load ramp. Only emitted when enabled; otherwise
+    // null so the wire format stays identical to v0.14.x for fixed-FPM
+    // runs.
+    normal_ramp: $('ramp_enabled') && $('ramp_enabled').checked ? {
+      start_fpm:      parseInt($('ramp_start').value) || 0,
+      step_fpm:       parseInt($('ramp_step').value) || 0,
+      step_every_sec: parseInt($('ramp_every').value) || 0,
+      ceiling_fpm:    parseInt($('ramp_ceiling').value) || 0,
+    } : null,
     large_enabled: $('large_enabled').checked,
     large_min: parseInt($('lmin').value) || 1,
     large_max: parseInt($('lmax').value) || 1,
@@ -978,6 +1008,9 @@ function importConfigPayload(cfg) {
   if (tofuToggle) tofuToggle.checked = cfg.tls_trust_on_first_use !== false;
   const tlsServer = document.getElementById('tls_server_name');
   if (tlsServer) tlsServer.value = cfg.tls_server_name || '';
+  // v0.15.0 — TLS minimum-version policy.
+  const tlsPolicy = document.getElementById('tls_policy');
+  if (tlsPolicy) tlsPolicy.value = cfg.tls_policy || '';
   strSet('host', cfg.host);
   strSet('port', cfg.port);
   strSet('folder', cfg.upload_folder);
@@ -1010,6 +1043,16 @@ function importConfigPayload(cfg) {
   strSet('nmax', cfg.normal_max_mb);
   strSet('ncontent', cfg.normal_content_type);
   if (cfg.normal_users_csv !== undefined) setCsvRaw('normal_users', cfg.normal_users_csv);
+  // v0.15.0 — step-load ramp restore.
+  if (cfg.normal_ramp && cfg.normal_ramp.start_fpm > 0) {
+    chkSet('ramp_enabled', true);
+    strSet('ramp_start',   cfg.normal_ramp.start_fpm);
+    strSet('ramp_step',    cfg.normal_ramp.step_fpm);
+    strSet('ramp_every',   cfg.normal_ramp.step_every_sec);
+    strSet('ramp_ceiling', cfg.normal_ramp.ceiling_fpm);
+  } else {
+    chkSet('ramp_enabled', false);
+  }
   chkSet('large_enabled', cfg.large_enabled);
   strSet('lmin', cfg.large_min);
   strSet('lmax', cfg.large_max);
@@ -1105,7 +1148,19 @@ async function scheduleRun() {
   // it in its own local TZ — critical when the UI runs on a laptop and the
   // tool runs on a server in a different timezone.
   const utcISO = new Date(runAt).toISOString();
-  const body = { run_at: utcISO, note: $('sched_note').value.trim(), config: buildRequestBody() };
+  // v0.15.0 — recurrence picker. "" = one-shot (legacy behaviour);
+  // "1h" / "24h" / "7d" = preset; "custom" reads the Every text input.
+  let every = '';
+  const freq = $('sched_freq');
+  if (freq) {
+    const v = (freq.value || '').trim();
+    if (v === 'custom') {
+      every = ($('sched_every')?.value || '').trim();
+    } else if (v) {
+      every = v;
+    }
+  }
+  const body = { run_at: utcISO, note: $('sched_note').value.trim(), every, config: buildRequestBody() };
   try {
     const res = await apiFetch('/api/schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(await res.text());
@@ -1131,13 +1186,111 @@ async function pollSchedules() {
     schedules.forEach(s => {
       const tr = document.createElement('tr');
       const when = new Date(s.run_at).toLocaleString();
-      tr.innerHTML = `<td title="${s.id}">${s.id}</td><td>${when}</td><td title="${s.note || ''}">${s.note || ''}</td><td><button class="ghost" data-cancel="${s.id}">Cancel</button></td>`;
+      // v0.15.0 — surface recurring schedules so the operator can tell
+      // which entries fire repeatedly. Append "every Xh" to the time
+      // column for recurring rows.
+      const repeat = s.every ? ` · every ${s.every}` : '';
+      tr.innerHTML = `<td title="${s.id}">${s.id}</td><td>${when}${repeat}</td><td title="${s.note || ''}">${s.note || ''}</td><td><button class="ghost" data-cancel="${s.id}">Cancel</button></td>`;
       tb.appendChild(tr);
     });
     tb.querySelectorAll('[data-cancel]').forEach(b => b.addEventListener('click', () => cancelSchedule(b.dataset.cancel)));
   } catch {}
 }
 $('scheduleBtn').addEventListener('click', scheduleRun);
+
+// v0.15.0 — Alerts panel: load / save / test.
+(function wireAlerts() {
+  const get = (id) => document.getElementById(id);
+  const slack = get('alert_slack');
+  if (!slack) return; // alerts panel not in this build
+  const fields = {
+    slack_webhook_url:    'alert_slack',
+    generic_webhook_url:  'alert_webhook',
+    smtp_host:            'alert_smtp_host',
+    smtp_port:            'alert_smtp_port',
+    smtp_user:            'alert_smtp_user',
+    smtp_password:        'alert_smtp_pass',
+    email_from:           'alert_email_from',
+    // email_to is comma-separated → split on save, join on load
+  };
+  function load() {
+    apiFetch('/api/alerts').then((r) => r.ok ? r.json() : null).then((cfg) => {
+      if (!cfg) return;
+      Object.entries(fields).forEach(([k, id]) => {
+        const el = get(id);
+        if (el && cfg[k] !== undefined) el.value = String(cfg[k] || '');
+      });
+      const to = get('alert_email_to');
+      if (to && Array.isArray(cfg.email_to)) to.value = cfg.email_to.join(', ');
+      get('alert_on_failure').checked = !!cfg.alert_on_failure;
+      get('alert_on_skips').checked   = !!cfg.alert_on_dispatch_skips;
+      get('alert_p99_ms').value       = cfg.alert_on_p99_ms || 0;
+      get('alert_err_pct').value      = cfg.alert_on_error_rate_pct || 0;
+    }).catch(() => {});
+  }
+  function readForm() {
+    const out = {};
+    Object.entries(fields).forEach(([k, id]) => {
+      const el = get(id);
+      if (!el) return;
+      out[k] = el.type === 'number' ? (parseInt(el.value) || 0) : el.value.trim();
+    });
+    const toRaw = (get('alert_email_to')?.value || '').trim();
+    out.email_to = toRaw ? toRaw.split(',').map((s) => s.trim()).filter(Boolean) : [];
+    out.alert_on_failure         = !!get('alert_on_failure').checked;
+    out.alert_on_dispatch_skips  = !!get('alert_on_skips').checked;
+    out.alert_on_p99_ms          = parseInt(get('alert_p99_ms').value) || 0;
+    out.alert_on_error_rate_pct  = parseFloat(get('alert_err_pct').value) || 0;
+    return out;
+  }
+  async function save() {
+    const status = get('alerts_status');
+    status.textContent = 'Saving…';
+    try {
+      const r = await apiFetch('/api/alerts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(readForm()),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      status.textContent = 'Saved.';
+      setTimeout(() => { status.textContent = ''; }, 2500);
+    } catch (e) { status.textContent = 'Save failed: ' + e.message; }
+  }
+  async function test() {
+    const status = get('alerts_status');
+    status.textContent = 'Firing test alert…';
+    try {
+      // Save first so the test uses the latest field values, not the
+      // last-saved config.
+      const r0 = await apiFetch('/api/alerts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(readForm()),
+      });
+      if (!r0.ok) throw new Error('save: ' + await r0.text());
+      const r = await apiFetch('/api/alerts/test', { method: 'POST' });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.error || 'test failed');
+      status.textContent = `Fired through ${j.channels_attempted} channel(s) — check inbox / Slack.`;
+    } catch (e) { status.textContent = 'Test failed: ' + e.message; }
+  }
+  get('alertsSaveBtn').addEventListener('click', save);
+  get('alertsTestBtn').addEventListener('click', test);
+  load();
+})();
+
+// v0.15.0 — frequency picker: reveal the custom Every input only when
+// the operator picks Custom. Hidden for the One-shot / Hourly / Daily /
+// Weekly presets (which have a fixed Every value).
+(function wireSchedFreq() {
+  const sel = document.getElementById('sched_freq');
+  const row = document.getElementById('sched_custom_row');
+  if (!sel || !row) return;
+  const sync = () => { row.style.display = sel.value === 'custom' ? '' : 'none'; };
+  sel.addEventListener('change', sync);
+  sync();
+})();
 
 // Pretty-print a link rate. /sys/class/net/<n>/speed gives megabits/sec.
 function formatLink(mbps) {
