@@ -211,9 +211,26 @@ Three follow-ups from the v0.13.7 validation pass.
   toggle (`data-role="tofu"`) instead of the legacy `#probe_tofu`
   ID, which was retired in the workbench redesign.
 
+## [v0.13.17] — 2026-05-01
+### Fixed
+- **THIRD probe path was still SFTP-defaulting on FTPS Run.** v0.13.16
+  fixed `legacy.js`'s probe paths but missed `start-preflight.js` —
+  a capture-phase click wrapper around `#startBtn` that runs an
+  /api/probe BEFORE the real /api/start to handle SSH host-key
+  consent / renewal. Its `probeBody` had no `protocol` field, so
+  hitting Run on FTPS triggered an SFTP probe → SSH handshake against
+  the TLS port → "SSH handshake failed" toast in the masthead → click
+  was preventDefault'd → /api/start never fired. The user-visible
+  symptom: the same misleading message even after every other fix.
+- `mountStartPreflight` now early-returns for any non-SFTP protocol —
+  host-key consent is an SSH concept; FTPS cert trust is handled
+  run-side. `firstCredential` is no longer called for FTPS clicks.
+- For the SFTP path, the preflight body now explicitly sets
+  `protocol: 'sftp'` so future protocol-default changes can't trip it.
+
 ## [Unreleased]
 
-(no changes since v0.13.16)
+(no changes since v0.13.17)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -332,7 +349,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.16...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.17...HEAD
+[v0.13.17]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.17
 [v0.13.16]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.16
 [v0.13.15]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.15
 [v0.13.14]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.14

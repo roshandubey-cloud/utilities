@@ -47,6 +47,17 @@ async function onStartClick(ev) {
     ev.stopImmediatePropagation();
     return;
   }
+  // SSH host-key consent only applies to SFTP. FTP has no key, FTPS uses
+  // a TLS leaf cert handled by the runner-side tls_trust_on_first_use
+  // path. If we ran an SFTP probe against an FTPS port here, /api/probe
+  // would default to sftp and try an SSH handshake — fail with
+  // "SSH handshake failed", show as a toast, and block the run from
+  // ever firing. Skip this whole flow for non-SFTP protocols and let
+  // /api/start handle its own pre-flight.
+  const protocol = (document.getElementById('protocol')?.value || 'sftp').toLowerCase();
+  if (protocol !== 'sftp') {
+    return;
+  }
   const host = (document.getElementById('host')?.value || '').trim();
   const port = parseInt(document.getElementById('port')?.value || '0', 10);
   if (!host || !port) {
@@ -71,6 +82,7 @@ async function onStartClick(ev) {
       host, port,
       username: cred.user,
       password: cred.pass,
+      protocol: 'sftp',
       trust_on_first_use: true,
     };
     const res = await apiPostJSON('/api/probe', probeBody);
