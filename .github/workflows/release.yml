@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.22'
+          go-version: '1.25'
           cache: true
           cache-dependency-path: sftp-loadtest/go.sum
 
@@ -129,7 +129,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.22'
+          go-version: '1.25'
           cache: true
           cache-dependency-path: sftp-loadtest/go.sum
 
@@ -194,6 +194,76 @@ jobs:
             sftp-loadtest-desktop-app-linux-amd64.zip
           fail_on_unmatched_files: true
 
+  # ------------------------------------------------------------------ SBOM
+  # CycloneDX SBOM uploaded as a release asset on every tag — required by
+  # most enterprise procurement flows and a prerequisite for Sigstore /
+  # supply-chain attestations. anchore/sbom-action runs `syft` and
+  # produces a single `sftp-loadtest-sbom-<tag>.cdx.json` attached to the
+  # GitHub release.
+  build-sbom:
+    name: build SBOM (CycloneDX)
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache: true
+          cache-dependency-path: sftp-loadtest/go.sum
+      - uses: anchore/sbom-action@v0
+        with:
+          path: sftp-loadtest
+          format: cyclonedx-json
+          output-file: sftp-loadtest-sbom-${{ github.ref_name }}.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sftp-loadtest-sbom-${{ github.ref_name }}.cdx.json
+          fail_on_unmatched_files: true
+
+  # --------------------------------------------------- Container (GHCR)
+  # Multi-stage Docker build of the webui binary, pushed to GHCR on
+  # every tag. Runs against the same go.mod the release binaries use, so
+  # `docker run ghcr.io/.../sftp-loadtest:vX.Y.Z` is byte-equivalent
+  # to the linux-amd64 webui zip.
+  build-container:
+    name: build + push container (GHCR)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}/sftp-loadtest
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./sftp-loadtest
+          file: ./sftp-loadtest/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   # ---------------------------------------------------------- Linux arm64
   # Closes the dual-SKU parity gap — webui ships linux-arm64, desktop-app
   # was previously amd64-only. Built on a native arm64 runner because Wails
@@ -208,7 +278,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.22'
+          go-version: '1.25'
           cache: true
           cache-dependency-path: sftp-loadtest/go.sum
 
@@ -257,7 +327,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.22'
+          go-version: '1.25'
           cache: true
           cache-dependency-path: sftp-loadtest/go.sum
 
