@@ -558,6 +558,23 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.10] — 2026-05-02
+### UI — drop chatty section titles in Configure
+
+Removed three question-style `<h2 class="cfg-section-title">` lines:
+- *"Where am I targeting?"*
+- *"What's the workload shape?"*
+- *"How long, how aggressively?"*
+
+Each section now reads as `[1 · Target]` eyebrow + a short
+descriptive subtitle. Same information density, less voice. Also
+trimmed the Target subtitle to drop "folder" (folder lives on the
+Upload card since v0.14.6) and renamed "Quick checks" → "Test
+connection" to match the button.
+
+### Internal
+- `main.go` `platformVersion` → `0.14.10`; `wails.json` synced.
+
 ## [v0.14.9] — 2026-05-02
 ### No click is ever silently ignored
 

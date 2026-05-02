@@ -108,8 +108,7 @@ export function mountConfigureRedesign() {
       <section class="cfg-section" data-section="target">
         <header class="cfg-section-head">
           <div class="cfg-section-eyebrow">1 · Target</div>
-          <h2 class="cfg-section-title">Where am I targeting?</h2>
-          <p class="cfg-section-sub">Host, port, folder, and credentials — verified live by Quick checks.</p>
+          <p class="cfg-section-sub">Host, port, and credentials — verified live by Test connection.</p>
         </header>
         <div class="cfg-section-body" data-slot="target"></div>
       </section>
@@ -117,7 +116,6 @@ export function mountConfigureRedesign() {
       <section class="cfg-section" data-section="workload">
         <header class="cfg-section-head">
           <div class="cfg-section-eyebrow">2 · Workload</div>
-          <h2 class="cfg-section-title">What's the workload shape?</h2>
           <p class="cfg-section-sub">Combine up to three flows. Each can be enabled independently.</p>
         </header>
         <div class="cfg-section-body cfg-workload-body" data-slot="workload"></div>
@@ -126,7 +124,6 @@ export function mountConfigureRedesign() {
       <section class="cfg-section" data-section="limits">
         <header class="cfg-section-head">
           <div class="cfg-section-eyebrow">3 · Resource limits</div>
-          <h2 class="cfg-section-title">How long, how aggressively?</h2>
           <p class="cfg-section-sub">Per-user parallelism (split for upload + download), plus run-wide duration, polling, timeouts, and the disable-after-fails ceiling.</p>
         </header>
         <div class="cfg-section-body" data-slot="limits"></div>
