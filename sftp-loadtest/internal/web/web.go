@@ -756,6 +756,24 @@ func (s *Server) handleProbeSink(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// /api/version — lightweight unauthenticated GET for the masthead.
+// Returns {version, started_at} so a fresh page load can render the
+// platform version next to the brand without crossing the BasicAuth
+// gate that /healthz?detail=1 sits behind. Cache-Control: no-store so
+// the WebKit per-app cache on macOS doesn't pin the value across an
+// app upgrade.
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "GET required", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, map[string]any{
+		"version":    s.getVersion(),
+		"started_at": processStart.Format(time.RFC3339),
+	})
+}
+
 // /api/host — one-shot snapshot of the client machine's capacity. Called
 // once at UI load (and any time the operator wants to refresh) so testers
 // always see the real ceilings (FD limit, cores, RAM, NICs) of the box
@@ -806,6 +824,7 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/api/host", s.handleHost)
+	mux.HandleFunc("/api/version", s.handleVersion)
 	mux.HandleFunc("/api/probe", s.handleProbe)
 	mux.HandleFunc("/api/probe-source", s.handleProbeSource)
 	mux.HandleFunc("/api/probe-sink", s.handleProbeSink)

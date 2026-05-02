@@ -558,6 +558,30 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.5] — 2026-05-02
+### Live platform version visible in the UI
+
+Operator-reported gap: there was no place in the running app or web UI
+to see the platform version. The macOS About dialog showed
+`0.4.0-dev` because `cmd/desktop/wails.json` had drifted from
+`main.go`'s `platformVersion` const for ~14 releases.
+
+- New unauthenticated **`GET /api/version`** returns
+  `{version, started_at}`. Sets `Cache-Control: no-store` so the
+  WebKit per-app cache on macOS doesn't pin the value across an
+  app upgrade — every fresh page load reads the running binary's
+  real version.
+- **Masthead pill.** A small monospace `vX.Y.Z` next to the
+  "SFTP Load Test" wordmark, fetched on mount. Hidden until the
+  response arrives so we never flash a placeholder.
+- **`wails.json` productVersion → `0.14.5`** (was stuck at
+  `0.4.0-dev`). Drives the macOS About dialog.
+- **CI guard against drift:** new
+  `TestWailsProductVersionMatchesPlatform` in `cmd/desktop/main_test.go`
+  reads `wails.json` and the `platformVersion` literal in `main.go`,
+  fails the test when they differ. Bumping one without the other
+  now breaks the build.
+
 ## [v0.14.4] — 2026-05-02
 ### Sources scale to N users / N files
 

@@ -660,6 +660,24 @@
   letter-spacing: var(--tracking-tight);
   color: var(--text-primary);
 }
+/* Live platform version next to the wordmark — fetched from
+   /api/version on mount. Quiet monospace pill so it reads as a
+   build identifier, not a feature claim. Hidden until the response
+   arrives so we never flash a placeholder. */
+.brand-version {
+  display: inline-block;
+  margin-left: var(--sp-2);
+  padding: 1px 6px;
+  background: color-mix(in oklab, var(--text-tertiary) 14%, transparent);
+  color: var(--text-tertiary);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-regular);
+  letter-spacing: 0;
+  vertical-align: 1px;
+  user-select: text;
+}
 
 .masthead-nav {
   display: flex;
