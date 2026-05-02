@@ -102,9 +102,24 @@ Three follow-ups from the v0.13.7 validation pass.
   hand-tuned variants (white sheen on top edges, soft shadow underneath).
   Closes the user's "Windows looks flat next to Mac" finding.
 
+## [v0.13.11] — 2026-05-01
+### Fixed
+- **FTPS error messages no longer say "SSH handshake failed".** The
+  probe + run paths funnelled FTP/FTPS errors through
+  `friendlyProbeError`, which only knew SFTP-flavoured patterns —
+  so a TLS handshake error on port 19990 surfaced as
+  `SSH handshake failed — check server config, credentials, or network.`
+  Added a sibling `friendlyFTPError` that maps TLS / FTP-control-channel
+  patterns to FTP language: TLS handshake mismatch hints at implicit
+  vs explicit, x509 unknown-authority hints at the new
+  `tls_trust_on_first_use` flag, FTP 530 maps to login-incorrect,
+  421 to service-not-available, 550 to folder-not-writable, etc.
+  Updated the FTPS probe path in `web.handleProbe` to call the new
+  helper.
+
 ## [Unreleased]
 
-(no changes since v0.13.10)
+(no changes since v0.13.11)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -223,7 +238,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.10...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.11...HEAD
+[v0.13.11]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.11
 [v0.13.10]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.10
 [v0.13.9]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.9
 [v0.13.8]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.8

@@ -502,7 +502,7 @@ func (s *Server) probeFTP(w http.ResponseWriter, out map[string]any, proto proto
 			writeJSON(w, out)
 			return
 		}
-		out["error"] = friendlyProbeError("ssh_or_sftp", err)
+		out["error"] = friendlyFTPError(proto, err)
 		if capturedFP != "" {
 			out["captured_fingerprint"] = capturedFP
 			out["captured_for_host"] = host
@@ -1252,6 +1252,11 @@ func (s *Server) handleReportCSV(w http.ResponseWriter, r *http.Request) {
 // response no longer leaks library-specific stderr (handshake fingerprints,
 // SSH protocol versions, file paths in known_hosts wrapping). Stage is one
 // of "tcp", "ssh_or_sftp", "list".
+//
+// SFTP-specific. FTP/FTPS probes use friendlyFTPError instead — that
+// helper maps TLS-handshake / FTP-control-channel patterns to FTP
+// language so the operator never sees "SSH handshake failed" on a
+// run targeting an FTPS server.
 func friendlyProbeError(stage string, err error) string {
 	if err == nil {
 		return ""
@@ -1286,6 +1291,60 @@ func friendlyProbeError(stage string, err error) string {
 		return "Folder listing failed — verify the path exists and the user can read it."
 	default:
 		return "Connection failed — see server log for details."
+	}
+}
+
+// friendlyFTPError is the FTP/FTPS sibling of friendlyProbeError. The
+// underlying error patterns are different — FTPS uses TLS for the
+// handshake (not SSH) and FTP returns numeric reply codes (530 for
+// auth, 421 for service-not-available, etc.). Mapping them through
+// the SFTP-flavoured helper produced misleading "SSH handshake
+// failed" messages on FTPS errors. Split out so each helper stays
+// straightforward.
+func friendlyFTPError(proto protocol.Protocol, err error) string {
+	if err == nil {
+		return ""
+	}
+	tag := "FTP"
+	if proto == protocol.FTPS {
+		tag = "FTPS"
+	}
+	low := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(low, "no such host"):
+		return "Hostname could not be resolved."
+	case strings.Contains(low, "connection refused"):
+		return tag + " server refused the connection — verify the server is running on this port."
+	case strings.Contains(low, "i/o timeout"), strings.Contains(low, "deadline exceeded"):
+		return "Connection timed out — verify the host is reachable and not firewalled."
+	case strings.Contains(low, "network is unreachable"):
+		return "Network is unreachable from this host."
+	// FTPS / TLS handshake patterns.
+	case strings.Contains(low, "tls: handshake failure"),
+		strings.Contains(low, "tls handshake error"),
+		strings.Contains(low, "remote error: tls"):
+		return "TLS handshake failed — the server may not support implicit-TLS on this port, or it may not accept your TLS version. Try `tls_mode: explicit` if the server uses AUTH TLS on port 21."
+	case strings.Contains(low, "x509: certificate signed by unknown authority"),
+		strings.Contains(low, "certificate is not trusted"),
+		strings.Contains(low, "self-signed certificate"):
+		return "FTPS certificate is not trusted. Either set `tls_trust_on_first_use: true` to TOFU-pin it, or `tls_insecure_skip_verify: true` for a lab server."
+	case strings.Contains(low, "x509: certificate has expired"),
+		strings.Contains(low, "certificate has expired or is not yet valid"):
+		return "FTPS certificate has expired. The server needs a renewed cert."
+	case strings.Contains(low, "x509: certificate is valid for"):
+		return "FTPS certificate's SAN/CN doesn't match the host you're connecting to. Override with `tls_server_name` if you're using an alias."
+	case strings.Contains(low, "ftp: 530"), strings.Contains(low, "login incorrect"):
+		return tag + " login rejected (530) — verify username and password."
+	case strings.Contains(low, "ftp: 421"):
+		return tag + " server is not available (421) — too many connections, or the server is shutting down."
+	case strings.Contains(low, "ftp: 550"):
+		return tag + " server denied the request (550) — typically the upload folder doesn't exist or isn't writable."
+	case strings.Contains(low, "auth tls"):
+		return "Server rejected AUTH TLS — verify the server supports explicit FTPS, or switch to implicit-TLS (`tls_mode: implicit`)."
+	case strings.Contains(low, "eof"), strings.Contains(low, "use of closed network connection"):
+		return tag + " server closed the connection during handshake — common when implicit-TLS is required but plain FTP was negotiated, or vice versa."
+	default:
+		return tag + " connection failed — see server log for details."
 	}
 }
 
