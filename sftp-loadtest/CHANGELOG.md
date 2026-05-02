@@ -277,9 +277,35 @@ Three follow-ups from the v0.13.7 validation pass.
   `.cmdk-result-trail`, `.cmdk-banner*`). Backwards compatible — old
   thin rows still render identically if some code path emits them.
 
+## [v0.13.20] — 2026-05-01
+### Fixed
+- **Desktop Trust panel can now manage SSH host keys from the UI.**
+  Previously the desktop app only wired file-mode (`sftpx.UseKnownHosts`
+  + `srv.SetKnownHostsPath(~/.ssh/known_hosts)`) so the Trust panel
+  fell back to its read-only "managed externally" message —
+  operators were told to edit `~/.ssh/known_hosts` directly and
+  restart. The CLI tool defaulted to store mode (UI-managed JSON);
+  the desktop app didn't.
+- Desktop now opens `<dataDir>/hosts.json` via `hostkeys.Open` (mirrors
+  the existing `tls-hosts.json` wiring), calls
+  `srv.SetHostKeyStore(store)` to make it the live trust authority, and
+  binds `sftpx.SetHostKeyCallback(store.StrictCallback())` for the
+  runner. The Trust panel now shows entries with Add / Remove buttons
+  and a "store mode" badge instead of the file-mode banner.
+- `~/.ssh/known_hosts` is still ensured (so terminal `ssh` keeps
+  working alongside the app) but the file-mode callback is NOT bound
+  when store mode is active — silently double-trusting via two
+  authorities was the wrong default.
+- New `Server.HostKeyStoreActive() bool` helper so callers wiring
+  trust at startup can decide which mode is live without poking at
+  internals.
+- Graceful degradation: if `hostkeys.Open` fails (read-only volume,
+  etc.) the desktop falls through to the legacy file-mode wiring so
+  trust is still honoured.
+
 ## [Unreleased]
 
-(no changes since v0.13.19)
+(no changes since v0.13.20)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -398,7 +424,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.19...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.20...HEAD
+[v0.13.20]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.20
 [v0.13.19]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.19
 [v0.13.18]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.18
 [v0.13.17]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.17

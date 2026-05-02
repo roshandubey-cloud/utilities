@@ -52,19 +52,47 @@ func main() {
 		log.Fatalf("create schedules dir: %v", err)
 	}
 
+	srv := web.NewServer(reportsDir, schedulesDir)
+	defer srv.Shutdown()
+
+	// SSH host-key trust store — UI-managed JSON at <dataDir>/hosts.json,
+	// the same shape the CLI's `default` branch uses. Opened BEFORE any
+	// fallback to ~/.ssh/known_hosts so the desktop UI's Trust panel
+	// reads/writes a store the operator can manage in-app instead of
+	// pointing them at a file. If the store fails to open we degrade to
+	// file mode (legacy behaviour) so trust is still honoured even when
+	// the user's home dir is on a read-only volume.
+	hostKeyStorePath := filepath.Join(dataDir, "hosts.json")
+	store, oerr := hostkeys.Open(hostKeyStorePath)
+	if oerr != nil {
+		log.Printf("open host-key store %s: %v — falling back to file mode", hostKeyStorePath, oerr)
+	} else if err := store.Save(); err != nil {
+		log.Printf("init host-key store %s: %v — falling back to file mode", hostKeyStorePath, err)
+	} else {
+		srv.SetHostKeyStore(store)
+		sftpx.SetHostKeyCallback(store.StrictCallback())
+		log.Printf("ssh host-key verification: trust store=%s (managed via UI)", hostKeyStorePath)
+	}
+
+	// File-mode fallback. Only takes effect when the store wiring above
+	// failed; we still ensure ~/.ssh/known_hosts exists so terminal `ssh`
+	// keeps working alongside the app.
 	knownHostsPath, err := ensureKnownHosts()
 	if err != nil {
 		log.Printf("known_hosts: %v — host-key verification will be unavailable until resolved", err)
+	} else if srv.HostKeyStoreActive() {
+		// Store mode is live. Don't bind the file-mode callback (which
+		// would make the trust panel read/write the OpenSSH file). The
+		// known_hosts file is left alone so terminal ssh still works.
+		log.Printf("ssh host-key verification: known_hosts=%s (kept for terminal ssh; UI uses the JSON store)", knownHostsPath)
 	} else if err := sftpx.UseKnownHosts(knownHostsPath); err != nil {
 		log.Printf("load known_hosts (%s): %v — first-connect TOFU still works via the UI checkbox", knownHostsPath, err)
 	} else {
-		log.Printf("ssh host-key verification: known_hosts=%s", knownHostsPath)
+		srv.SetKnownHostsPath(knownHostsPath)
+		log.Printf("ssh host-key verification: known_hosts=%s (file-mode fallback)", knownHostsPath)
 	}
 
-	srv := web.NewServer(reportsDir, schedulesDir)
-	defer srv.Shutdown()
-	srv.SetKnownHostsPath(knownHostsPath)
-	// FTPS leaf-cert TOFU store — sibling of the SSH known_hosts setup.
+	// FTPS leaf-cert TOFU store — sibling of the SSH host-key setup.
 	// Lives under the same desktop data dir so the operator's UI-managed
 	// trust list survives across app launches.
 	tlsStorePath := filepath.Join(dataDir, "tls-hosts.json")

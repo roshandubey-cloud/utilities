@@ -111,6 +111,17 @@ func (s *Server) SetHostKeyStore(store *hostkeys.Store) {
 	s.hostKeyStore = store
 }
 
+// HostKeyStoreActive reports whether the tool-managed JSON trust store
+// is the active SSH host-key authority. Callers wiring the desktop /
+// CLI use this to decide whether to ALSO bind the legacy file-mode
+// callback (the UI shows different copy in store mode vs file mode,
+// and binding both would silently double-trust).
+func (s *Server) HostKeyStoreActive() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hostKeyStore != nil
+}
+
 func (s *Server) getHostKeyStore() *hostkeys.Store {
 	s.mu.Lock()
 	defer s.mu.Unlock()
