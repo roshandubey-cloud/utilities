@@ -40,6 +40,14 @@ type FileRecord struct {
 	// Download phase — populated if download test is enabled and this file
 	// (matched by trackID) was selected for download.
 	DownloadUser      string
+	// DownloadAvailableAt is when the download worker first observed the
+	// file in the destination outbox (LIST result), separate from
+	// TrackIDAt which is when the upload-side track-id watcher detected
+	// it. The two can differ when the download worker has its own
+	// poll cadence or queue depth — surfacing both lets the operator
+	// separate "server made it available slow" from "client picked it
+	// up slow." Defaults to the zero time when not yet observed.
+	DownloadAvailableAt time.Time
 	DownloadStartTime time.Time
 	DownloadEndTime   time.Time
 	DownloadSizeBytes int64
@@ -180,6 +188,7 @@ func (s *Store) AttachDownloadByFilenameID(marker string, d DownloadResult) bool
 		return false
 	}
 	r.DownloadUser = d.DownloadUser
+	r.DownloadAvailableAt = d.AvailableAt
 	r.DownloadStartTime = d.StartTime
 	r.DownloadEndTime = d.EndTime
 	r.DownloadSizeBytes = d.SizeBytes
@@ -207,6 +216,7 @@ func (s *Store) AttachDownloadByBasename(basename string, d DownloadResult) bool
 		return false
 	}
 	r.DownloadUser = d.DownloadUser
+	r.DownloadAvailableAt = d.AvailableAt
 	r.DownloadStartTime = d.StartTime
 	r.DownloadEndTime = d.EndTime
 	r.DownloadSizeBytes = d.SizeBytes
@@ -230,6 +240,7 @@ func (s *Store) AttachDownload(user, filename string, d DownloadResult) {
 		return
 	}
 	r.DownloadUser = d.DownloadUser
+	r.DownloadAvailableAt = d.AvailableAt
 	r.DownloadStartTime = d.StartTime
 	r.DownloadEndTime = d.EndTime
 	r.DownloadSizeBytes = d.SizeBytes
@@ -418,6 +429,15 @@ type EffectiveSpeedFn func(bytes int64, startTime time.Time, dur time.Duration) 
 
 // CSVHeader is the canonical column list, exported so both the bulk and
 // streaming writers agree.
+//
+// History note: pre-v0.13.29, `download_available_at` was written with
+// `r.TrackIDAt` — the same value `track_id_detected_at` already carried.
+// Two columns, identical data. v0.13.29 added a real
+// `FileRecord.DownloadAvailableAt`, populated from
+// `DownloadResult.AvailableAt`, so the column now carries useful data
+// (when the download worker first saw the file in the destination
+// outbox vs when the track-id was detected via polling). They can
+// differ when the download worker has its own queue depth / pacing.
 var CSVHeader = []string{
 	"user", "kind", "filename", "filename_id", "start_time", "end_time", "duration_sec",
 	"size_bytes", "expected_bytes", "incomplete",
@@ -469,7 +489,7 @@ func buildRow(r FileRecord, slowdownMins map[int64]bool, eff EffectiveSpeedFn) [
 		r.Error,
 		r.ErrorCode,
 		r.DownloadUser,
-		fmtTime(r.TrackIDAt),
+		fmtTime(r.DownloadAvailableAt),
 		fmtTime(r.DownloadStartTime),
 		fmtTime(r.DownloadEndTime),
 		strconv.FormatFloat(r.DownloadWait.Seconds(), 'f', 3, 64),

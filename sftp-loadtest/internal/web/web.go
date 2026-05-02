@@ -1088,6 +1088,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"download_orphans":    run.DownloadOrphans.Load(),
 		"download_in_queue":   run.DownloadQueueDepth(), // 0 under pairless poll model
 		"download_dropped":    run.DownloadDropped.Load(),
+		// Workload-shape flags so the live UI can hide tiles that
+		// don't apply to the active run (download tiles, large-file
+		// stats, etc.). Without these the operator sees a 0-valued
+		// tile and wonders whether the feature failed silently.
+		"download_enabled":    run.Cfg != nil && run.Cfg.Download != nil,
+		"normal_enabled":      run.Cfg != nil && run.Cfg.Normal != nil,
+		"large_enabled":       run.Cfg != nil && run.Cfg.LargeFile != nil,
 		"failed_files":        run.FailedFiles.Load(),
 		"failed_bytes":        run.FailedBytes.Load(),
 		"errors_by_code":      run.ErrorsByCode(),

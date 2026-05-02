@@ -395,7 +395,11 @@ func sealAllAndWriteMeta(r *Run, reportsDir string) error {
 		meta.UploadUsers = len(r.Cfg.NormalUsers)
 		meta.ParallelStreams = r.Cfg.ParallelStreams
 		if r.Cfg.Normal != nil {
+			meta.NormalEnabled = true
 			meta.FilesPerMinute = r.Cfg.Normal.FilesPerMinute
+		}
+		if r.Cfg.LargeFile != nil {
+			meta.LargeEnabled = true
 		}
 		if r.Cfg.Download != nil {
 			meta.DownloadEnabled = true

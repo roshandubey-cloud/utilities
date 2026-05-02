@@ -190,13 +190,24 @@ function rowMarkup(entry) {
   const interruptedBadge = r.interrupted
     ? `<span class="badge badge-warning" title="The process exited before this run could finalise. Counts were reconstructed from the on-disk CSV; in-flight state at crash time is lost."><span class="dot"></span>Interrupted</span>`
     : '';
+  // Workload-shape badges so the operator can see at a glance what
+  // this run actually exercised — without these, a normal-only run
+  // and a normal+large+download run looked identical in the card list.
+  const shapeBadges = [];
+  if (r.normal_enabled) shapeBadges.push(`<span class="badge badge-info" title="Steady-rate small files were enabled."><span class="dot"></span>normal</span>`);
+  if (r.large_enabled) shapeBadges.push(`<span class="badge badge-info" title="Interval large files were enabled."><span class="dot"></span>large</span>`);
+  if (r.download_enabled) {
+    const mode = r.download_match_mode || 'trackid';
+    shapeBadges.push(`<span class="badge badge-info" title="Download verification was enabled (${mode} match mode)."><span class="dot"></span>download · ${escapeHTML(mode)}</span>`);
+  }
+  const shapeLine = shapeBadges.length ? ' · ' + shapeBadges.join(' ') : '';
   const csvUrl = `/api/report.csv?run=${encodeURIComponent(r.id)}`;
   return `
     <article class="runs-history-card">
       <header class="runs-history-card-head">
         <div class="runs-history-id">
           <div class="mono">${escapeHTML(r.id)}</div>
-          <div class="body-small" style="color:var(--text-tertiary)">${formatStarted(r.started_at)}${r.stopped_at ? ' · ' + formatDuration(r.started_at, r.stopped_at) : ''}${throttledBadge ? ' · ' + throttledBadge : ''}${interruptedBadge ? ' · ' + interruptedBadge : ''}</div>
+          <div class="body-small" style="color:var(--text-tertiary)">${formatStarted(r.started_at)}${r.stopped_at ? ' · ' + formatDuration(r.started_at, r.stopped_at) : ''}${shapeLine}${throttledBadge ? ' · ' + throttledBadge : ''}${interruptedBadge ? ' · ' + interruptedBadge : ''}</div>
         </div>
         <div class="runs-history-actions">
           <a class="btn btn-sm btn-ghost" href="${csvUrl}" download data-external="1">CSV</a>

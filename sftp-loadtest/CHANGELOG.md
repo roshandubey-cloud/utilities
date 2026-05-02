@@ -503,9 +503,43 @@ Three follow-ups from the v0.13.7 validation pass.
   to be wrong (e.g., /api/start failed validation) it's corrected
   within one tick.
 
+## [v0.13.29] — 2026-05-01
+### Fixed
+- **CSV `download_available_at` column was a duplicate of
+  `track_id_detected_at`.** `buildRow` wrote `r.TrackIDAt` into both
+  columns — silent data corruption: two columns, identical values.
+  Added `FileRecord.DownloadAvailableAt`, populated from
+  `DownloadResult.AvailableAt` in all three merge sites
+  (`AttachDownload*` paths). The column now distinguishes "download
+  worker first observed the file in the outbox" from "track-id
+  watcher detected the upload landed" — the two can diverge when
+  the download worker has its own queue depth or pacing.
+- **Analyzer's "downloads stalled" suggestion fired when downloads
+  were disabled.** Without the gate, a non-zero `DownloadStalled`
+  from a stale counter would surface a nonsensical
+  recommendation. Now requires `m.DownloadEnabled && DownloadStalled > 0`.
+  Pinned by `TestSuggest_DownloadsStalled_DisabledIsSkipped`.
+- **Live `Downloads` / `Leftover (prior runs)` tiles always
+  rendered with `0` even when the run had no downloads
+  configured.** Operators read this as "downloads ran but failed."
+  Tiles now carry a `.dl-only[data-dl-enabled="false"]` CSS hide,
+  driven by a new `download_enabled` flag on `/api/status`.
+
+### Added
+- `RunMeta.NormalEnabled` and `RunMeta.LargeEnabled` capture the
+  workload toggles at seal time. `DownloadEnabled` was already
+  there; the symmetric pair lets historical reports + the UI
+  branch correctly on what the run actually exercised.
+- `/api/status` now surfaces `normal_enabled`, `large_enabled`,
+  `download_enabled` so live UI tiles can hide irrelevant rows.
+- Runs-history cards (Previous-runs panel) gain workload-shape
+  badges in the subtitle: `normal`, `large`, `download · trackid`
+  / `download · filename`. A normal-only run and a normal + large
+  + download run now look different at a glance.
+
 ## [Unreleased]
 
-(no changes since v0.13.28)
+(no changes since v0.13.29)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -624,7 +658,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.28...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.29...HEAD
+[v0.13.29]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.29
 [v0.13.28]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.28
 [v0.13.27]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.27
 [v0.13.26]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.26

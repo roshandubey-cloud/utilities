@@ -589,6 +589,14 @@ async function poll() {
     $('m_skip').textContent = s.dispatch_skips || 0;
     $('m_dcomp').textContent = s.download_completed || 0;
     $('m_dorph').textContent = s.download_orphans || 0;
+    // Toggle [.dl-only] tiles based on whether the active run actually
+    // configured downloads. /api/status surfaces download_enabled (true
+    // when r.Cfg.Download != nil); we mirror it onto the tiles parent
+    // so CSS can hide the irrelevant rows without DOM churn each poll.
+    const dlEnabled = !!s.download_enabled;
+    document.querySelectorAll('.dl-only').forEach((el) => {
+      el.dataset.dlEnabled = dlEnabled ? 'true' : 'false';
+    });
     $('m_failf').textContent = s.failed_files || 0;
 
     // error-code chips

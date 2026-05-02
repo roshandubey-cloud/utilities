@@ -36,6 +36,14 @@ type RunMeta struct {
 	ParallelStreams         int  `json:"parallel_streams"`
 	DownloadParallelStreams int  `json:"download_parallel_streams"`
 	FilesPerMinute          int    `json:"files_per_minute"`
+	// Workload toggles captured at run start so historical reports + the
+	// UI can branch on what the run actually exercised. Without these,
+	// a download-disabled run still showed an empty "Downloads" tile and
+	// the analyzer's download-stalled suggestion logic had no way to
+	// distinguish "0 stalled because feature off" from "0 stalled because
+	// it worked perfectly." Same problem with normal vs large uploads.
+	NormalEnabled           bool   `json:"normal_enabled"`
+	LargeEnabled            bool   `json:"large_enabled"`
 	DownloadEnabled         bool   `json:"download_enabled"`
 	DownloadMatchMode       string `json:"download_match_mode,omitempty"`
 

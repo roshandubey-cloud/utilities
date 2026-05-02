@@ -251,6 +251,7 @@
     letter-spacing: var(--tracking-tight);
     color: var(--text-primary);
   }
+  .stat.dl-only[data-dl-enabled="false"] { display: none; }
   .stat.bad .v { color: var(--danger-fg-soft); }
   .stat.ok  .v { color: var(--success-fg-soft); }
 
@@ -995,8 +996,11 @@
             <div class="stat"><div class="k">Pending track-IDs</div><div class="v" id="m_pending">0</div></div>
             <div class="stat"><div class="k">Slowdowns</div><div class="v" id="m_slow">0</div></div>
             <div class="stat" title="Ticks where all parallel slots were busy"><div class="k">Skipped</div><div class="v" id="m_skip">0</div></div>
-            <div class="stat"><div class="k">Downloads</div><div class="v" id="m_dcomp">0</div></div>
-            <div class="stat" title="Files a download user pulled from its outbox that were left over from a previous run — not errors, just leftovers. Already included in the Downloads count."><div class="k">Leftover (prior runs)</div><div class="v" id="m_dorph">0</div></div>
+            <!-- Download tiles render only when the active run had Download enabled.
+                 Live status sets data-download-enabled on a parent so CSS can hide
+                 these without JS rebuilding the DOM on every poll. -->
+            <div class="stat dl-only" data-tile="downloads"><div class="k">Downloads</div><div class="v" id="m_dcomp">0</div></div>
+            <div class="stat dl-only" data-tile="downloads-orphans" title="Files a download user pulled from its outbox that were left over from a previous run — not errors, just leftovers. Already included in the Downloads count."><div class="k">Leftover (prior runs)</div><div class="v" id="m_dorph">0</div></div>
             <div class="stat bad"><div class="k">Failed files</div><div class="v" id="m_failf">0</div></div>
             <div class="stat bad"><div class="k">Disabled users</div><div class="v" id="m_disabled">0</div></div>
           </div>

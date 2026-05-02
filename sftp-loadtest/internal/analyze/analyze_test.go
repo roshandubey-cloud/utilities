@@ -133,6 +133,7 @@ func TestSuggest_NetworkLimited_NotFiredIfSkipsPresent(t *testing.T) {
 func TestSuggest_DownloadsStalled(t *testing.T) {
 	m := persist.RunMeta{
 		TotalFiles:              200,
+		DownloadEnabled:         true, // gate added in v0.13.29 — without this, the suggestion is intentionally skipped
 		DownloadStalled:         60,
 		DownloadParallelStreams: 1,
 		DownloadUsers:           1,
@@ -144,6 +145,22 @@ func TestSuggest_DownloadsStalled(t *testing.T) {
 	}
 	if s.Severity != SeverityCritical {
 		t.Errorf("30%% stalled is critical, got %s", s.Severity)
+	}
+}
+
+// TestSuggest_DownloadsStalled_DisabledIsSkipped pins the v0.13.29 gate:
+// even with non-zero DownloadStalled, the suggestion must NOT fire when
+// DownloadEnabled is false (the run never had downloads — a stalled
+// counter would be a stale artifact, not a real signal).
+func TestSuggest_DownloadsStalled_DisabledIsSkipped(t *testing.T) {
+	m := persist.RunMeta{
+		TotalFiles:      200,
+		DownloadEnabled: false,
+		DownloadStalled: 60,
+	}
+	out := Suggest(m)
+	if findSuggestion(out, "Downloads stalled") != nil {
+		t.Error("downloads-stalled fired despite DownloadEnabled=false")
 	}
 }
 

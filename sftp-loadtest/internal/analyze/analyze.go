@@ -118,7 +118,13 @@ func Suggest(m persist.RunMeta) []persist.Suggestion {
 	}
 
 	// --- Downloads never arrived -----------------------------------------
-	if m.DownloadStalled > 0 && total > 0 {
+	// Only meaningful when the run actually had downloads enabled. Without
+	// the gate, a download-disabled run with DownloadStalled=0 silently
+	// skipped this branch (correct), but if any future code path
+	// initialises DownloadStalled from a stale counter we'd surface a
+	// nonsense suggestion ("downloads stalled" when downloads were never
+	// configured). Belt + braces.
+	if m.DownloadEnabled && m.DownloadStalled > 0 && total > 0 {
 		stallPct := float64(m.DownloadStalled) / float64(total) * 100.0
 		sev := SeverityWarn
 		if stallPct >= 25 {
