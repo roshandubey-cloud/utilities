@@ -537,9 +537,30 @@ Three follow-ups from the v0.13.7 validation pass.
   / `download · filename`. A normal-only run and a normal + large
   + download run now look different at a glance.
 
+## [v0.13.30] — 2026-05-01
+### Fixed
+- **Sidebar Search input read as broken — only fired on Enter.**
+  Clicking the box and typing produced no visible feedback because
+  the handler waited for an Enter keypress before dispatching
+  `sftpl:open-cmdk`. There was no hint Enter was required and
+  Spotlight-trained users gave up after one keystroke.
+- The Search input now opens the command palette **on the first
+  keystroke**, forwarding the typed character as the initial query.
+  The palette steals focus immediately so subsequent keystrokes go
+  to its (live-filtering) input. Same Esc / arrow / Enter mechanics
+  the palette already supports.
+- Enter still works as a keyboard-only path: tab into the box, press
+  Enter, the palette opens empty-handed (curated First-steps view).
+- Placeholder updated from `Search…` to
+  `Search commands, presets, runs…` so the affordance is obvious
+  before the operator clicks.
+- `opening` debounce flag prevents a fast typist from
+  double-dispatching the event during the input → focus transfer
+  window.
+
 ## [Unreleased]
 
-(no changes since v0.13.29)
+(no changes since v0.13.30)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -658,7 +679,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.29...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.30...HEAD
+[v0.13.30]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.30
 [v0.13.29]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.29
 [v0.13.28]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.28
 [v0.13.27]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.27

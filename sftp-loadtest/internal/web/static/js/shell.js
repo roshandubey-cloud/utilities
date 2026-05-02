@@ -480,13 +480,34 @@ function readView() {
 function wireSidebarSearch(shell, main) {
   const input = shell.querySelector('[data-role="sidebar-search"]');
   if (!input) return;
+  // Make the sidebar Search read like a real search box: typing a single
+  // character immediately opens the Cmd+K palette pre-filled with that
+  // value, the same way Spotlight or VS Code's quick-open works. Until
+  // v0.13.30 it only fired on Enter — clicking the box and typing
+  // looked completely broken because nothing happened until the
+  // operator hit Enter, and there was no hint they needed to.
+  input.placeholder = 'Search commands, presets, runs…';
+  let opening = false;
+  function openPalette(q) {
+    if (opening) return;
+    opening = true;
+    document.dispatchEvent(new CustomEvent('sftpl:open-cmdk', { detail: { query: q } }));
+    // Clear the local input on the next tick — the palette has its
+    // own input and steals focus; we don't want a stale value left
+    // here when the operator closes the palette and clicks back.
+    setTimeout(() => { input.value = ''; opening = false; }, 0);
+  }
+  input.addEventListener('input', (ev) => {
+    const q = ev.target.value;
+    if (q.length === 0) return;
+    openPalette(q);
+  });
+  // Enter is the keyboard-only path (some users tab into the box and
+  // press Enter without typing). Open the palette empty-handed if so.
   input.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter') {
       ev.preventDefault();
-      // Open Cmd+K palette pre-filled with the current text — better
-      // search experience than filtering sidebar rows in place.
-      document.dispatchEvent(new CustomEvent('sftpl:open-cmdk', { detail: { query: input.value } }));
-      input.value = '';
+      openPalette(input.value || '');
     }
   });
 }
