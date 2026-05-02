@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "exported_at": "2026-05-01T18:41:00Z",
+  "comment": "FTPS implicit-TLS load test against the local mockftpserver on 127.0.0.1:19990. Uses the new v0.13.8 auto-TOFU feature so the self-signed mock cert is accepted on first contact and pinned to the trust store. ~30 files/min, 1 MB each, 30-second run.",
+  "config": {
+    "host": "127.0.0.1",
+    "port": 19990,
+    "protocol": "ftps",
+    "tls_mode": "implicit",
+    "tls_trust_on_first_use": true,
+
+    "upload_folder": "/inbox",
+    "parallel_streams": 2,
+    "duration_hours": 0.0084,
+    "poll_seconds": 2,
+    "track_id_timeout_seconds": 30,
+    "max_consecutive_failures": 3,
+
+    "normal_enabled": true,
+    "files_per_minute": 30,
+    "normal_min_mb": 1,
+    "normal_max_mb": 1,
+    "normal_content_type": "binary",
+    "normal_users_csv": "u1,p1,small*\nu2,p2,small*\n",
+
+    "large_enabled": false,
+    "download_enabled": false
+  }
+}
