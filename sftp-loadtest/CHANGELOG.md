@@ -426,9 +426,27 @@ Three follow-ups from the v0.13.7 validation pass.
   worker-NN.{csv,json}; ListClusterRuns reads them back; summed
   counters match (66 files / 1 failed across the two workers).
 
+## [v0.13.25] — 2026-05-01
+### Changed
+- **Sidebar sections collapse to 3 rows + "Show N more" toggle.**
+  Recent runs / Trusted hosts / Saved presets each rendered up to
+  10 rows in the sidebar. On smaller laptops a long-running operator
+  session ended up pushing primary nav (Workbench / Configure /
+  Schedule / Runs / Cluster / Trust) off the bottom of the viewport.
+- Each section now caps the visible-by-default count at 3 with a
+  `Show N more` (uppercase, sidebar-mute color) toggle below. Click
+  expands; click again collapses back to 3. Expanded state survives
+  the periodic refresh so a "Show all" choice doesn't snap back.
+- Hard cap of 30 rows when fully expanded — the Runs / Trust
+  panels still surface the full list with proper scrolling. Sidebar
+  is for quick access, not a data table.
+- Overflow rows carry `data-overflow="true"` and are gated by a
+  parent `data-expanded="false|true"` CSS rule, so JS just toggles
+  one attribute instead of rebuilding the DOM.
+
 ## [Unreleased]
 
-(no changes since v0.13.24)
+(no changes since v0.13.25)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -547,7 +565,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.24...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.25...HEAD
+[v0.13.25]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.25
 [v0.13.24]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.24
 [v0.13.23]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.23
 [v0.13.22]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.22

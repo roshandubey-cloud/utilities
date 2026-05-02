@@ -155,8 +155,13 @@ function renderConfigs(slot) {
     slot.innerHTML = '<div class="shell-sidebar-empty">No presets yet. Save the current form via ⌘K → “Save current config…”.</div>';
     return;
   }
-  slot.innerHTML = list.map((cfg) => `
-    <div class="shell-sidebar-row sidebar-row-with-action" data-action="cfg" data-id="${escapeAttr(cfg.id)}">
+  const visible = list.slice(0, SIDEBAR_MAX_ROWS);
+  const wasExpanded = slot.dataset.expanded === 'true';
+  const showAll = wasExpanded && visible.length > SIDEBAR_PREVIEW_N;
+  const rowHTML = visible.map((cfg, i) => {
+    const overflowAttr = i >= SIDEBAR_PREVIEW_N ? ' data-overflow="true"' : '';
+    return `
+    <div class="shell-sidebar-row sidebar-row-with-action" data-action="cfg" data-id="${escapeAttr(cfg.id)}"${overflowAttr}>
       <span class="row-icon" aria-hidden="true">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
              stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
@@ -165,7 +170,21 @@ function renderConfigs(slot) {
       <span class="row-label" title="${escapeAttr(cfg.name)}">${escapeHTML(cfg.name)}</span>
       <button class="row-action-btn" type="button" data-action="cfg-delete"
               data-id="${escapeAttr(cfg.id)}" title="Delete preset">×</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+  const toggleHTML = visible.length > SIDEBAR_PREVIEW_N
+    ? `<div class="shell-sidebar-toggle" data-role="toggle">${showAll ? 'Show fewer' : `Show ${visible.length - SIDEBAR_PREVIEW_N} more`}</div>`
+    : '';
+  slot.dataset.expanded = String(showAll);
+  slot.innerHTML = rowHTML + toggleHTML;
+  const toggle = slot.querySelector('[data-role="toggle"]');
+  if (toggle) {
+    toggle.addEventListener('click', () => {
+      const open = slot.dataset.expanded === 'true';
+      slot.dataset.expanded = open ? 'false' : 'true';
+      toggle.textContent = open ? `Show ${visible.length - SIDEBAR_PREVIEW_N} more` : 'Show fewer';
+    });
+  }
   slot.querySelectorAll('[data-action="cfg"]').forEach((row) => {
     row.addEventListener('click', (ev) => {
       // Skip when the click bubbled up from the delete button.
@@ -191,6 +210,14 @@ function renderConfigs(slot) {
 }
 
 // ---------- Recent runs ----------
+// Each section caps at SIDEBAR_PREVIEW_N rows by default with an
+// expandable "Show N more / Show fewer" footer row. Without this, a
+// long-running operator session ended up with a 10-row Runs section
+// + 10-row Trust section pushing primary nav off the bottom of the
+// viewport on smaller laptops.
+const SIDEBAR_PREVIEW_N = 3;
+const SIDEBAR_MAX_ROWS = 30; // hard cap so we never paint a 200-row sidebar
+
 async function renderRuns(slot) {
   if (!slot) return;
   let runs = [];
@@ -198,14 +225,21 @@ async function renderRuns(slot) {
     const r = await apiFetch('/api/runs');
     if (r.ok) {
       const j = await r.json();
-      runs = (j.runs || []).filter((x) => Number(x.total_files) > 0).slice(0, 10);
+      runs = (j.runs || []).filter((x) => Number(x.total_files) > 0).slice(0, SIDEBAR_MAX_ROWS);
     }
   } catch { /* leave empty */ }
   if (runs.length === 0) {
     slot.innerHTML = '<div class="shell-sidebar-empty">Finished runs will appear here.</div>';
     return;
   }
-  slot.innerHTML = runs.map((r) => {
+
+  // Preserve expanded/collapsed state across refreshes — the runs poll
+  // re-renders every few seconds and we don't want to keep slamming
+  // the user's "Show all" choice back to collapsed.
+  const wasExpanded = slot.dataset.expanded === 'true';
+  const showAll = wasExpanded && runs.length > SIDEBAR_PREVIEW_N;
+
+  const rowHTML = runs.map((r, i) => {
     const failed = Number(r.failed_files || 0);
     const total = Number(r.total_files || 0);
     const ok = total > 0 && failed === 0;
@@ -215,13 +249,20 @@ async function renderRuns(slot) {
       : status === 'interrupted'
       ? '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="var(--warning-fg-soft)" stroke-width="1.6" stroke-linecap="round"><path d="M8 4v5"/><path d="M8 12h.01"/><circle cx="8" cy="8" r="6"/></svg>'
       : '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="var(--danger-fg-soft)" stroke-width="1.6" stroke-linecap="round"><path d="M5 5l6 6M11 5l-6 6"/></svg>';
+    const overflowAttr = i >= SIDEBAR_PREVIEW_N ? ' data-overflow="true"' : '';
     return `
-      <div class="shell-sidebar-row" data-action="run" data-id="${escapeAttr(r.id)}">
+      <div class="shell-sidebar-row" data-action="run" data-id="${escapeAttr(r.id)}"${overflowAttr}>
         <span class="row-icon" aria-hidden="true">${icon}</span>
         <span class="row-label" title="${escapeAttr(r.id)}">${escapeHTML(r.id)}</span>
         <span class="row-meta">${formatRel(r.started_at)}</span>
       </div>`;
   }).join('');
+  const toggleHTML = runs.length > SIDEBAR_PREVIEW_N
+    ? `<div class="shell-sidebar-toggle" data-role="toggle">${showAll ? 'Show fewer' : `Show ${runs.length - SIDEBAR_PREVIEW_N} more`}</div>`
+    : '';
+  slot.dataset.expanded = String(showAll);
+  slot.innerHTML = rowHTML + toggleHTML;
+
   slot.querySelectorAll('[data-action="run"]').forEach((row) => {
     row.addEventListener('click', () => {
       const id = row.dataset.id;
@@ -235,6 +276,14 @@ async function renderRuns(slot) {
       proxy.remove();
     });
   });
+  const toggle = slot.querySelector('[data-role="toggle"]');
+  if (toggle) {
+    toggle.addEventListener('click', () => {
+      const open = slot.dataset.expanded === 'true';
+      slot.dataset.expanded = open ? 'false' : 'true';
+      toggle.textContent = open ? `Show ${runs.length - SIDEBAR_PREVIEW_N} more` : 'Show fewer';
+    });
+  }
 }
 
 // ---------- Trusted hosts ----------
@@ -258,10 +307,17 @@ async function renderTrust(slot) {
     slot.innerHTML = '<div class="shell-sidebar-empty">No trusted hosts yet.</div>';
     return;
   }
-  slot.innerHTML = hosts.map((h) => `
+  // Cap to SIDEBAR_MAX_ROWS so a heavy fleet doesn't paint a 200-row
+  // sidebar; the Trust panel surfaces the full list.
+  const visible = hosts.slice(0, SIDEBAR_MAX_ROWS);
+  const wasExpanded = slot.dataset.expanded === 'true';
+  const showAll = wasExpanded && visible.length > SIDEBAR_PREVIEW_N;
+  const rowHTML = visible.map((h, i) => {
+    const overflowAttr = i >= SIDEBAR_PREVIEW_N ? ' data-overflow="true"' : '';
+    return `
     <div class="shell-sidebar-row sidebar-row-with-action" data-action="trust"
          data-host="${escapeAttr(h.host)}" data-port="${h.port}"
-         title="${escapeAttr(h.fingerprint || '')}">
+         title="${escapeAttr(h.fingerprint || '')}"${overflowAttr}>
       <span class="row-icon" aria-hidden="true">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
              stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
@@ -271,7 +327,21 @@ async function renderTrust(slot) {
       <span class="row-meta">${h.port}</span>
       <button class="row-action-btn" type="button" data-action="trust-forget"
               data-host="${escapeAttr(h.host)}" data-port="${h.port}" title="Forget">×</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+  const toggleHTML = visible.length > SIDEBAR_PREVIEW_N
+    ? `<div class="shell-sidebar-toggle" data-role="toggle">${showAll ? 'Show fewer' : `Show ${visible.length - SIDEBAR_PREVIEW_N} more`}</div>`
+    : '';
+  slot.dataset.expanded = String(showAll);
+  slot.innerHTML = rowHTML + toggleHTML;
+  const toggle = slot.querySelector('[data-role="toggle"]');
+  if (toggle) {
+    toggle.addEventListener('click', () => {
+      const open = slot.dataset.expanded === 'true';
+      slot.dataset.expanded = open ? 'false' : 'true';
+      toggle.textContent = open ? `Show ${visible.length - SIDEBAR_PREVIEW_N} more` : 'Show fewer';
+    });
+  }
   slot.querySelectorAll('[data-action="trust-forget"]').forEach((btn) => {
     btn.addEventListener('click', async (ev) => {
       ev.stopPropagation();
