@@ -558,6 +558,92 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.4] — 2026-05-02
+### Sources scale to N users / N files
+
+The v0.14.0 `local-dir` source was a single shared pool — fine for one
+user with one set of fixtures, awkward for real load tests with 50
+accounts each owning their own files. v0.14.4 adds a `Layout` knob to
+`local-dir` so operators can use familiar conventions instead of
+hand-rolling per-user JSON overrides.
+
+- **`layout: "flat"`** — default, identical to v0.14.0–3 (one pool,
+  every user picks from `<root>/*`).
+- **`layout: "by-user"`** — `<root>/<username>/*` per account. Drop
+  fixture files into `<root>/alice/`, `<root>/bob/`, `<root>/charlie/`
+  and the runner routes each upload accordingly. Missing subdirs fail
+  the upload with a friendly error instead of falling back to a
+  shared pool.
+- **`layout: "by-pattern"`** — `<root>/*` filtered by
+  `filepath.Match` against each user's CSV pattern column. Different
+  accounts carve up the same flat directory by their patterns
+  (`invoice-*`, `report-*`, `ack-*`).
+- **`layout: "by-user-pattern"`** — both axes:
+  `<root>/<username>/*` further filtered by pattern. The strictest
+  layout for accounts that have their own subdir AND distinct file
+  types within it.
+
+A new `internal/source.LocalTree` type backs the three non-flat
+layouts. Per-(user, pattern) pools are resolved lazily and cached for
+the rest of the run, so a 50-account test against
+`<root>/<account>/*` is cheap on startup.
+
+### `/api/probe-source` upgraded to a per-user matrix
+
+The probe endpoint now accepts a `{ source, users[{username, pattern}] }`
+envelope (the legacy bare-config shape still works) and returns one
+row per (user, pattern) pair when the layout is non-flat:
+
+```json
+{ "ok": true, "kind": "local-dir", "layout": "by-user",
+  "users": [
+    { "username": "alice", "pattern": "inv-*", "files": [...], "total_bytes": 72 },
+    { "username": "bob",   "pattern": "rpt-*", "files": [...], "total_bytes": 54 },
+    { "username": "nobody","pattern": "*",     "ok": false, "error": "no such directory" }
+  ]
+}
+```
+
+Operators can verify all 50 accounts resolve to non-empty pools before
+they start a long run — and a missing subdir or a typoed pattern
+shows up immediately as an in-line per-row error.
+
+### UI surfaces the convention
+
+- New **layout sub-picker** inside the Local-directory disclosure
+  (Normal load, Large load): four segmented buttons with live
+  teaching copy that explains what `<root>/<user>/*` means in each
+  mode.
+- **Probe button now forwards CSV users.** Reads the same
+  `normal_users` / `large_users` textareas the run will use, sends
+  them with the probe, and renders a compact matrix of
+  Account / Pattern / Files / Total under the Probe output. Failed
+  rows highlight red with the per-account error.
+- **Round-trip through Export/Import** — `readSource` emits
+  `layout` only when non-default; `applySource` restores both the
+  picker state and the right teaching-copy span on import.
+
+### Validated end-to-end
+
+- `by-user`: 3 accounts (alice/bob/charlie) with distinct subdirs,
+  each routed through paired download users. Per-account hash sets
+  matched their source subdir exactly — zero cross-account leakage.
+  35 downloads in total, all byte-identical to source fixtures.
+- `by-pattern`: 3 accounts sharing one flat root with patterns
+  `inv-*`, `rpt-*`, `ack-*`. Per-pattern hash sets matched the
+  filtered globs exactly — alice (inv-*) got only inv-A/inv-B,
+  bob (rpt-*) got rpt-1/rpt-2/rpt-3, charlie (ack-*) got ack-X.
+
+### Internal
+- `internal/config.SourceConfig.Layout` field with enum validation
+  in `Validate()`.
+- `internal/source.LocalTree` (lazy per-(user, pattern) pool cache)
+  + `Layout`, `LayoutFlat`, `LayoutByUser`, `LayoutByPattern`,
+  `LayoutByUserAndPattern` constants + `FilesFor(user, pattern)` for
+  the probe API.
+- `internal/runner.buildSourceLeaf` routes layout!="flat" → LocalTree.
+- `main.go` `platformVersion` → `0.14.4`.
+
 ## [v0.14.3] — 2026-05-01
 ### UX — sources & sinks usability pass
 

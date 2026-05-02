@@ -3034,6 +3034,75 @@ button.primary:hover:not(:disabled),
   font-family: var(--font-mono);
   font-size: var(--fs-11);
 }
+/* Layout sub-picker — the n-users-n-files knob inside local-dir.
+   Stacks below the dir input; the segmented buttons need a wider base
+   width to accommodate the four labels without truncation. */
+.segmented-block {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-top: var(--sp-1);
+}
+.segmented-block .seg-btn {
+  flex: 1 1 calc(50% - var(--sp-1));
+  min-width: 0;
+}
+.src-layout-help {
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-2);
+  border-radius: var(--r-2);
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+}
+.src-layout-help code {
+  font-family: var(--font-mono);
+  background: color-mix(in oklab, var(--text-tertiary) 15%, transparent);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: var(--fs-11);
+}
+/* Per-user probe result matrix — one row per CSV (user, pattern) pair
+   showing the resolved file count + total size, or the per-row error
+   when the by-user / by-pattern lookup failed. */
+.src-probe-matrix {
+  margin-top: var(--sp-2);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+  overflow: hidden;
+  font-size: var(--fs-12);
+}
+.probe-matrix-head,
+.probe-matrix-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1.4fr 0.6fr 1fr;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+}
+.probe-matrix-head {
+  background: var(--surface-2);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.probe-matrix-row {
+  border-top: var(--bw-1) solid var(--border-weak);
+  align-items: baseline;
+}
+.probe-matrix-row .mono { font-family: var(--font-mono); }
+.probe-matrix-row-err {
+  background: color-mix(in oklab, var(--accent-danger, #c0392b) 8%, transparent);
+}
+.probe-matrix-err {
+  grid-column: 3 / 5;
+  color: var(--accent-danger, #c0392b);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  word-break: break-all;
+}
+
 /* Small "v0.14" feature pill in the disclosure summary so operators
    clocking the new affordance for the first time know it's recent. */
 .badge-mini {

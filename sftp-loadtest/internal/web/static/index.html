@@ -862,10 +862,24 @@
                 </div>
               </div>
               <div class="src-fields src-dir-fields" data-role="src-dir-fields" hidden>
-                <label class="label" for="normal_src_dir">Directory <span class="hint">— top-level files only; subdirs + dotfiles skipped</span></label>
+                <label class="label" for="normal_src_dir">Root directory</label>
                 <div class="input-with-action">
                   <input class="input mono" id="normal_src_dir" data-role="src-dir" type="text" placeholder="/tmp/fixtures">
                   <button type="button" class="btn-ghost btn-sm" data-role="src-dir-browse" hidden>Browse…</button>
+                </div>
+                <label class="label" style="margin-top:var(--sp-3)">How are your fixtures organized?</label>
+                <div class="segmented segmented-block" data-role="src-layout" role="tablist" aria-label="Folder layout">
+                  <button type="button" class="seg-btn" data-value="flat" aria-pressed="true">Flat (one pool)</button>
+                  <button type="button" class="seg-btn" data-value="by-user" aria-pressed="false">By account folder</button>
+                  <button type="button" class="seg-btn" data-value="by-pattern" aria-pressed="false">By filename pattern</button>
+                  <button type="button" class="seg-btn" data-value="by-user-pattern" aria-pressed="false">By account + pattern</button>
+                </div>
+                <input type="hidden" data-role="src-layout-value" value="flat">
+                <div class="src-layout-help" data-role="src-layout-help">
+                  <span data-layout-help="flat">All users share one pool: <code>&lt;root&gt;/*</code>. Each upload picks one file from the same flat list.</span>
+                  <span data-layout-help="by-user" hidden>Each account pulls from <code>&lt;root&gt;/&lt;username&gt;/*</code>. Create one subdir per account in the CSV; if it's missing the run fails for that user.</span>
+                  <span data-layout-help="by-pattern" hidden>One root, many patterns: <code>&lt;root&gt;/*</code> filtered by each user's CSV pattern (e.g. user with pattern <code>invoice-*</code> only picks files whose names match <code>invoice-*</code>).</span>
+                  <span data-layout-help="by-user-pattern" hidden>The strictest layout: <code>&lt;root&gt;/&lt;username&gt;/*</code> further filtered by the user's pattern. Use when each account has its own subdir AND distinct file types.</span>
                 </div>
               </div>
               <div class="src-fields src-mode-fields" data-role="src-mode-fields" hidden>
@@ -881,6 +895,7 @@
               <div class="src-fields src-probe-fields" data-role="src-probe-fields" hidden>
                 <button type="button" class="btn-ghost btn-sm" data-role="src-probe">Probe source</button>
                 <output class="src-probe-out" data-role="src-probe-out" aria-live="polite"></output>
+                <div class="src-probe-matrix" data-role="src-probe-matrix" hidden></div>
               </div>
               <div class="src-warn" data-role="src-warn" role="status" aria-live="polite" hidden></div>
 
@@ -942,10 +957,24 @@
                 </div>
               </div>
               <div class="src-fields src-dir-fields" data-role="src-dir-fields" hidden>
-                <label class="label" for="large_src_dir">Directory</label>
+                <label class="label" for="large_src_dir">Root directory</label>
                 <div class="input-with-action">
                   <input class="input mono" id="large_src_dir" data-role="src-dir" type="text" placeholder="/tmp/big-fixtures">
                   <button type="button" class="btn-ghost btn-sm" data-role="src-dir-browse" hidden>Browse…</button>
+                </div>
+                <label class="label" style="margin-top:var(--sp-3)">How are your fixtures organized?</label>
+                <div class="segmented segmented-block" data-role="src-layout" role="tablist" aria-label="Folder layout">
+                  <button type="button" class="seg-btn" data-value="flat" aria-pressed="true">Flat (one pool)</button>
+                  <button type="button" class="seg-btn" data-value="by-user" aria-pressed="false">By account folder</button>
+                  <button type="button" class="seg-btn" data-value="by-pattern" aria-pressed="false">By filename pattern</button>
+                  <button type="button" class="seg-btn" data-value="by-user-pattern" aria-pressed="false">By account + pattern</button>
+                </div>
+                <input type="hidden" data-role="src-layout-value" value="flat">
+                <div class="src-layout-help" data-role="src-layout-help">
+                  <span data-layout-help="flat">All large-file users share one pool: <code>&lt;root&gt;/*</code>.</span>
+                  <span data-layout-help="by-user" hidden>Each account pulls from <code>&lt;root&gt;/&lt;username&gt;/*</code>. Match account folder names to your CSV usernames.</span>
+                  <span data-layout-help="by-pattern" hidden><code>&lt;root&gt;/*</code> filtered by each user's CSV pattern.</span>
+                  <span data-layout-help="by-user-pattern" hidden><code>&lt;root&gt;/&lt;username&gt;/*</code> filtered by pattern.</span>
                 </div>
               </div>
               <div class="src-fields src-mode-fields" data-role="src-mode-fields" hidden>
@@ -961,6 +990,7 @@
               <div class="src-fields src-probe-fields" data-role="src-probe-fields" hidden>
                 <button type="button" class="btn-ghost btn-sm" data-role="src-probe">Probe source</button>
                 <output class="src-probe-out" data-role="src-probe-out" aria-live="polite"></output>
+                <div class="src-probe-matrix" data-role="src-probe-matrix" hidden></div>
               </div>
               <div class="src-warn" data-role="src-warn" role="status" aria-live="polite" hidden></div>
 
