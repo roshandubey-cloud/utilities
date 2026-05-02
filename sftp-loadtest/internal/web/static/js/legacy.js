@@ -847,7 +847,35 @@ function setDownloadMatchMode(v) {
   const id = v === 'filename' ? 'dmm_filename' : 'dmm_trackid';
   const el = document.getElementById(id);
   if (el) el.checked = true;
+  // v0.14.18 — also reflect into the segmented control. Radios are
+  // hidden in DOM (kept for serializer back-compat); the segmented
+  // buttons are what the operator actually clicks.
+  document.querySelectorAll('[data-role="match-mode-picker"] button').forEach((b) => {
+    b.setAttribute('aria-pressed', b.dataset.value === v ? 'true' : 'false');
+  });
 }
+
+// Wire the segmented match-mode picker once the DOM is ready. Click
+// flips the corresponding hidden radio (so getDownloadMatchMode reads
+// the right value) AND updates aria-pressed via setDownloadMatchMode.
+(function wireMatchModePicker() {
+  function attach() {
+    const picker = document.querySelector('[data-role="match-mode-picker"]');
+    if (!picker || picker.dataset.wired) return;
+    picker.dataset.wired = '1';
+    picker.querySelectorAll('button').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        setDownloadMatchMode(btn.dataset.value);
+      });
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attach);
+  } else {
+    attach();
+  }
+})();
 
 // ---------- export / import full config ----------
 // By default the exported JSON has password columns blanked out so configs
