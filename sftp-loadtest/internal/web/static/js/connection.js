@@ -22,7 +22,11 @@ export function mountConnectionCard(rootSelector) {
   const portEl = $('[data-role="port"]');
   const userEl = $('[data-role="username"]');
   const passEl = $('[data-role="password"]');
-  const folderEl = $('[data-role="folder"]');
+  // Folder lives in the upload card (relocated by upload-restructure.js).
+  // The probe reads it from the legacy hidden #folder input that the
+  // upload card writes through to — same wire format as v0.13, just no
+  // duplicate field on this card.
+  const folderEl = document.getElementById('folder');
   const tofuEl = $('[data-role="tofu"]');
   const submitEl = $('[data-role="submit"]');
   const resetEl = $('[data-role="reset"]');
@@ -163,9 +167,12 @@ export function mountConnectionCard(rootSelector) {
     const list = readHistory();
     recentEl.innerHTML = '';
     if (list.length === 0) {
-      recentEl.innerHTML = '<span class="help">No recent connections — your last 8 will appear here.</span>';
+      // Hide the row entirely when empty — the empty-state copy was
+      // adding noise to a card that's already information-dense.
+      recentEl.hidden = true;
       return;
     }
+    recentEl.hidden = false;
     const label = document.createElement('span');
     label.className = 'help';
     label.textContent = 'Recent:';
@@ -184,6 +191,20 @@ export function mountConnectionCard(rootSelector) {
     });
   }
   renderRecent();
+
+  // ---------- password show/hide toggle ----------
+  // Operators retype passwords because they can't verify what they
+  // typed. The eye-button flips type=password ↔ text in place.
+  const passToggleEl = root.querySelector('[data-role="pass-toggle"]');
+  if (passToggleEl && passEl) {
+    passToggleEl.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      const showing = passEl.type === 'text';
+      passEl.type = showing ? 'password' : 'text';
+      passToggleEl.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+      passToggleEl.classList.toggle('is-revealing', !showing);
+    });
+  }
 
   // ---------- result rendering ----------
   function setIdle() {
@@ -262,7 +283,7 @@ export function mountConnectionCard(rootSelector) {
         const body = { host, port, trust_on_first_use: true, accept_changed: true };
         if (userEl.value) body.username = userEl.value;
         if (passEl.value) body.password = passEl.value;
-        if (folderEl.value) body.folder = folderEl.value.trim();
+        if (folderEl && folderEl.value) body.folder = folderEl.value.trim();
         const proto = getProtocol();
         body.protocol = proto;
         if (proto === 'ftps') {
@@ -441,20 +462,23 @@ export function mountConnectionCard(rootSelector) {
   });
 
   function resetForm() {
-    [userEl, passEl, folderEl].forEach((el) => { if (el) el.value = ''; });
+    // Reset only Target fields. Folder no longer lives on this card, so
+    // Reset doesn't clear the upload-card folder anymore — that one's
+    // owned by the workload section.
+    [userEl, passEl].forEach((el) => { if (el) el.value = ''; });
     if (tofuEl) tofuEl.checked = false;
     setIdle();
     hostEl.focus();
   }
 
-  // Sync host/port/folder from Quick Checks into the LEGACY hidden Connection
-  // card inputs (#host/#port/#folder). The legacy buildRequestBody() reads
+  // Sync host/port from Quick Checks into the LEGACY hidden Connection
+  // card inputs (#host/#port). The legacy buildRequestBody() reads
   // from those — without this sync, typing into Quick Checks and clicking
-  // Start Run would silently send empty host/port. Bidirectional so an
-  // imported config (which writes to the legacy ids) reflects back into QC.
-  setupLegacySync(hostEl,   'host');
-  setupLegacySync(portEl,   'port');
-  setupLegacySync(folderEl, 'folder');
+  // Start Run would silently send empty host/port. Folder is no longer
+  // synced from this card; the upload card writes through to #folder
+  // directly via upload-restructure.js.
+  setupLegacySync(hostEl, 'host');
+  setupLegacySync(portEl, 'port');
 
   setIdle();
 }

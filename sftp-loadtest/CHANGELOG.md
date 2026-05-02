@@ -558,6 +558,55 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.6] — 2026-05-02
+### UI — Target section redesign
+
+Operator feedback: the Target card was overly complex — three labeled
+fields per row stacked over a full-width TOFU toggle stacked over an
+empty "no recent connections" hint, burning ~440px even with empty
+inputs. The Folder field shouldn't have been there at all (it's a
+workload concern; the upload card already owns it).
+
+Cuts:
+- **Folder removed from Target.** Folder lives on the Upload card via
+  `upload-restructure.js`. The probe still reads from the legacy
+  hidden `#folder` input that the upload card writes through to —
+  same wire format, just no duplicate field.
+- **`(optional)` labels dropped.** One shared caption beneath the
+  credentials row reads *"Used by Test connection only — the real
+  run uses each load's user CSV."* The mental model is communicated
+  once instead of stamped on every label.
+- **TOFU full-width toggle → compact inline checkbox** next to Reset
+  / Save / Test. Carries the same protocol-aware label ("Auto-add
+  server key" for SFTP, "Trust this server cert" for FTPS).
+- **Empty-state for Recent connections hidden** until the operator
+  has at least one. The placeholder copy was adding a row of noise
+  on a fresh install.
+- **Panel header tightened** to one line: *"Target — host, port,
+  credentials. Validated by Test connection."* (was a two-line
+  title/subtitle pair).
+
+Adds:
+- **Password show/hide toggle.** Eye-icon button overlays the right
+  edge of the password input; click flips `type=password ↔ text`
+  in place. Operators can verify what they typed without retyping.
+- **Compact label-inline style** — fs-11 uppercase tertiary labels
+  above each input cut row height from ~110px to ~62px.
+
+Net result: same information surface, ~280px shorter, fewer labels
+to read, no duplicate concerns.
+
+### Internal
+- `internal/web/static/index.html` — Target section rewritten with
+  new `.target-row`, `.target-protocol/host/port/user/pass` flex
+  cells, `.input-pass-wrap`, `.target-actions`, `.check-inline`.
+- `internal/web/static/js/connection.js` — `folderEl` reads the
+  legacy `#folder` directly; reset no longer wipes folder; password
+  toggle handler.
+- `internal/web/static/styles/components.css` — new layout rules
+  for the redesigned Target card.
+- `main.go` `platformVersion` → `0.14.6`; `wails.json` synced.
+
 ## [v0.14.5] — 2026-05-02
 ### Live platform version visible in the UI
 

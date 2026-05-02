@@ -505,61 +505,61 @@
 
     <!-- SECONDARY — Quick checks. Test Connection is a small utility, not the
          product hero. Demoted visually: compact panel, secondary button. -->
-    <section class="panel panel-compact" data-component="connection" id="quick-checks">
-      <div class="panel-header">
+    <section class="panel panel-compact panel-target" data-component="connection" id="quick-checks">
+      <div class="panel-header panel-header-tight">
         <div class="panel-title-group">
-          <div class="panel-title">Quick checks</div>
-          <div class="panel-subtitle">Verify your SFTP target is reachable before configuring a run.</div>
+          <div class="panel-title">Target <span class="panel-title-hint">— host, port, credentials. Validated by Test connection.</span></div>
         </div>
       </div>
-      <div class="panel-body" style="gap:var(--sp-3)">
-        <!-- Protocol picker (v0.13.0). 3-way segmented control. Switching
-             snaps the port default and reveals/hides FTPS-specific fields.
-             SFTP stays first / default to keep existing keyboard flow. -->
-        <div class="field" data-role="protocol-picker-field">
-          <label class="label">Protocol</label>
-          <div class="segmented" data-role="protocol-picker" role="tablist" aria-label="Protocol">
-            <button type="button" class="seg-btn" data-value="sftp" aria-pressed="true">SFTP</button>
-            <button type="button" class="seg-btn" data-value="ftp"  aria-pressed="false">FTP</button>
-            <button type="button" class="seg-btn" data-value="ftps" aria-pressed="false">FTPS</button>
+      <div class="panel-body" style="gap:var(--sp-2)">
+        <!-- Protocol + host + port on one line. Protocol takes a fixed
+             280px so the host field absorbs the spare width on wide
+             windows; the picker keeps its segmented form on narrow ones
+             via the responsive flex-wrap. -->
+        <div class="target-row" data-role="protocol-picker-field">
+          <div class="target-protocol">
+            <label class="label-inline">Protocol</label>
+            <div class="segmented" data-role="protocol-picker" role="tablist" aria-label="Protocol">
+              <button type="button" class="seg-btn" data-value="sftp" aria-pressed="true">SFTP</button>
+              <button type="button" class="seg-btn" data-value="ftp"  aria-pressed="false">FTP</button>
+              <button type="button" class="seg-btn" data-value="ftps" aria-pressed="false">FTPS</button>
+            </div>
+            <input type="hidden" id="protocol" data-role="protocol-value" value="sftp">
           </div>
-          <input type="hidden" id="protocol" data-role="protocol-value" value="sftp">
-        </div>
-        <div class="field-row" style="--cols:3">
-          <div class="field">
-            <label class="label" for="conn-host">Host</label>
+          <div class="target-host">
+            <label class="label-inline" for="conn-host">Host</label>
             <input class="input" id="conn-host" data-role="host" type="text" placeholder="sftp.example.com" autocomplete="on">
           </div>
-          <div class="field">
-            <label class="label" for="conn-port">Port</label>
+          <div class="target-port">
+            <label class="label-inline" for="conn-port">Port</label>
             <input class="input" id="conn-port" data-role="port" type="number" value="22" min="1">
-          </div>
-          <div class="field">
-            <label class="label" for="conn-folder">Folder <span class="label-hint">(optional)</span></label>
-            <input class="input" id="conn-folder" data-role="folder" type="text" placeholder="inbox">
-            <div class="row-tight" style="margin-top:var(--sp-1)">
-              <button type="button" class="btn btn-sm btn-ghost" data-role="folder-preset" data-value="inbox">inbox</button>
-              <button type="button" class="btn btn-sm btn-ghost" data-role="folder-preset" data-value="incoming">incoming</button>
-              <button type="button" class="btn btn-sm btn-ghost" data-role="folder-preset" data-value="upload">upload</button>
-            </div>
-          </div>
-        </div>
-        <div class="field-row" style="--cols:2">
-          <div class="field">
-            <label class="label" for="conn-user">Username <span class="label-hint">(optional)</span></label>
-            <input class="input" id="conn-user" data-role="username" type="text" placeholder="up1" autocomplete="username">
-          </div>
-          <div class="field">
-            <label class="label" for="conn-pass">Password <span class="label-hint">(optional)</span></label>
-            <input class="input" id="conn-pass" data-role="password" type="password" placeholder="••••" autocomplete="current-password">
           </div>
         </div>
 
-        <label class="toggle">
-          <input type="checkbox" data-role="tofu" checked>
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="toggle-text">Trust on first connect (TOFU) — pins SSH host key for SFTP, leaf certificate for FTPS</span>
-        </label>
+        <!-- Credentials row — used ONLY by Test connection. The real run
+             pulls users from each load's CSV. One shared caption below
+             carries that mental model so we don't repeat (optional)
+             on every label. -->
+        <div class="target-row">
+          <div class="target-user">
+            <label class="label-inline" for="conn-user">Username</label>
+            <input class="input" id="conn-user" data-role="username" type="text" placeholder="up1" autocomplete="username">
+          </div>
+          <div class="target-pass">
+            <label class="label-inline" for="conn-pass">Password</label>
+            <div class="input-pass-wrap">
+              <input class="input" id="conn-pass" data-role="password" type="password" placeholder="••••" autocomplete="current-password">
+              <button type="button" class="btn-pass-toggle" data-role="pass-toggle"
+                      aria-label="Show password" title="Show / hide password">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M2 10s3-6 8-6 8 6 8 6-3 6-8 6-8-6-8-6z"/>
+                  <circle cx="10" cy="10" r="2.4"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <p class="target-creds-caption">Credentials are used by <b>Test connection</b> only — the real run uses each load's user CSV.</p>
 
         <!-- FTPS-specific fields. Hidden via CSS when the picker is on
              SFTP or FTP; the protocol-picker JS toggles
@@ -620,13 +620,19 @@
           </div>
         </details>
 
-        <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:var(--sp-3)">
-          <div class="row-tight" data-role="recent" aria-label="Recent connections"></div>
-          <div class="row-tight">
-            <button class="btn btn-ghost"     type="button" data-role="reset">Reset</button>
-            <button class="btn btn-ghost"     type="button" data-role="save-conn"
+        <div class="target-actions">
+          <div class="target-actions-left">
+            <label class="check-inline" title="On first connect, pin the server's SSH host key (SFTP) or leaf cert (FTPS). A changed key/cert is then refused as MITM.">
+              <input type="checkbox" data-role="tofu" checked>
+              <span data-role="tofu-text">Trust on first connect (TOFU)</span>
+            </label>
+            <div class="target-recents" data-role="recent" aria-label="Recent connections" hidden></div>
+          </div>
+          <div class="target-actions-right">
+            <button class="btn btn-ghost btn-sm" type="button" data-role="reset">Reset</button>
+            <button class="btn btn-ghost btn-sm" type="button" data-role="save-conn"
                     title="Save host / port / username / password as a named entry in the sidebar">Save…</button>
-            <button class="btn btn-secondary" type="button" data-role="submit">Test connection</button>
+            <button class="btn btn-secondary"    type="button" data-role="submit">Test connection</button>
           </div>
         </div>
 

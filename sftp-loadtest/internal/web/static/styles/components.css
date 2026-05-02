@@ -660,6 +660,128 @@
   letter-spacing: var(--tracking-tight);
   color: var(--text-primary);
 }
+/* v0.14.6 Target panel — compact two-row layout. The original three
+   stacked field-rows + full-width TOFU toggle + recent-connections
+   empty state burned ~440px of vertical real estate even with empty
+   credentials. The new layout is: Protocol+Host+Port → Username+Pass →
+   compact action row. Labels go ABOVE inputs but at fs-11 so each row
+   is ~62px instead of ~110px. */
+.panel-target .panel-header-tight {
+  padding-bottom: var(--sp-2);
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+.panel-title-hint {
+  font-weight: var(--fw-regular);
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
+  letter-spacing: 0;
+}
+.label-inline {
+  display: block;
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+.target-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  align-items: flex-end;
+}
+.target-row > * { min-width: 0; }
+.target-protocol { flex: 0 0 auto; }
+.target-host     { flex: 1 1 320px; }
+.target-port     { flex: 0 0 100px; }
+.target-user     { flex: 1 1 220px; }
+.target-pass     { flex: 1 1 240px; }
+.target-protocol .segmented {
+  /* Force the segmented buttons compact — they were inheriting full
+     line-height from the field-row default. */
+  height: 36px;
+}
+.target-creds-caption {
+  margin: 4px 0 0;
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
+}
+/* Password field with inline show/hide eye button. The button overlays
+   the right edge of the input via absolute positioning so it doesn't
+   eat horizontal space. */
+.input-pass-wrap {
+  position: relative;
+}
+.input-pass-wrap .input { padding-right: 36px; }
+.btn-pass-toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-2);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.btn-pass-toggle:hover { color: var(--text-primary); background: var(--action-hover); }
+.btn-pass-toggle:focus-visible { box-shadow: var(--focus-ring); outline: none; }
+.btn-pass-toggle.is-revealing { color: var(--accent); }
+
+/* Compact action row — TOFU checkbox on the left, Reset/Save/Test on
+   the right. Wraps gracefully on narrow widths. */
+.target-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+  padding-top: var(--sp-2);
+  border-top: var(--bw-1) solid var(--border-weak);
+  margin-top: var(--sp-1);
+}
+.target-actions-left,
+.target-actions-right {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: center;
+}
+.check-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.check-inline input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.target-recents {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  align-items: center;
+  margin-left: var(--sp-2);
+  padding-left: var(--sp-2);
+  border-left: var(--bw-1) solid var(--border-weak);
+}
+.target-recents[hidden] { display: none; }
+
 /* Live platform version next to the wordmark — fetched from
    /api/version on mount. Quiet monospace pill so it reads as a
    build identifier, not a feature claim. Hidden until the response
