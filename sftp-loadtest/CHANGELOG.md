@@ -558,6 +558,39 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.18] — 2026-05-02
+### Tracking-mode radios → segmented control
+
+Operator: *"simple options like calculate round trip track id or
+basefilename are so far [apart]"*. The two radio labels were styled
+as `flex:1` columns each taking 50% of card width, with bold titles
++ "(default)" hints stacked vertically — about 80px of card height
+for what's a one-of-two binary choice.
+
+- **Replaced with a segmented control** (same pattern as the
+  Protocol picker and the new layout sub-picker). Two compact pill
+  buttons inline with a small caps label — total width ~220px,
+  height ~32px. ~50px shaved from the card.
+- **Hidden radios kept** in DOM so `legacy.js`'s
+  `getDownloadMatchMode()` (which reads
+  `input[name="download_match_mode"]:checked`) keeps working
+  unchanged. Selection state is mirrored both ways:
+  segmented click → flips the radio + updates aria-pressed;
+  `setDownloadMatchMode(v)` (called by import-config) → updates
+  both the radio and the aria-pressed state.
+- New `.match-mode-row` CSS — flex layout that wraps cleanly on
+  narrow widths.
+
+### Internal
+- `internal/web/static/index.html` — radio block replaced with
+  segmented + hidden inputs.
+- `internal/web/static/js/legacy.js` — `setDownloadMatchMode` now
+  also flips aria-pressed on the segmented buttons; new
+  `wireMatchModePicker()` IIFE attaches the click handler.
+- `internal/web/static/styles/components.css` — new
+  `.match-mode-row` rule.
+- `main.go` `platformVersion` → `0.14.18`; `wails.json` synced.
+
 ## [v0.14.17] — 2026-05-02
 ### Drop the manual Advanced JSON reveal — layout picker covers it
 

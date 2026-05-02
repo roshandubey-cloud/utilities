@@ -3252,6 +3252,21 @@ button.primary:hover:not(:disabled),
   margin-top: var(--sp-2);
   width: 100%;
 }
+/* v0.14.18 — Round-trip tracking mode row. Was two flex:1 radio
+   labels splayed across the full card width with their bold titles
+   + "(default)" hints stacked vertically (~80px). Now: small caps
+   tertiary label + compact segmented control inline; whole control
+   takes ~220px and reads as one tight row instead of a half-card
+   split. */
+.match-mode-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin-top: var(--sp-2);
+}
+.match-mode-row .label-inline { margin-bottom: 0; }
+
 /* v0.14.17 — .src-advanced-toggle button removed. The layout picker
    (by-user / by-pattern / by-user-pattern) covers every routing case
    the JSON disclosure used to express; no manual reveal needed. The
