@@ -558,6 +558,32 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.2] — 2026-05-01
+### Added — mocksftp `-persist-content`
+End-to-end byte-fidelity validation for the v0.14 sources & sinks
+feature was impossible against the bundled mock: it stored only
+`{size, completedAt, trackID}` and synthesised zero-filled bytes on
+download. Sizes round-tripped, content didn't.
+
+- New `cmd/mockserver -persist-content` flag (and
+  `mocksftp.Options.PersistContent`). When set, `writeHandle` stores
+  uploaded bytes in `fileState.content`; `Fileread` returns
+  `bytes.NewReader(st.content)`; `promoteInboxesLocked` shares the
+  slice into the routed outbox and sender's sent/ entries.
+- Defaults **off** — high-throughput throughput-only runs keep their
+  zero-allocation download path. Turn ON for load tests that exercise
+  `local-files` / `local-dir` upload sources or `local-disk` download
+  sinks and want to checksum the round-trip.
+
+Validated locally against this build: 26 downloads from a
+`local-dir` source ↔ `local-disk` sink came back byte-identical to
+the source fixtures (4/4 distinct hashes match), and a `per_user`
+override for `alice` produced 18 `alice-special` downloads in dlA
+with zero leakage into dlB's 17 default-pool downloads.
+
+### Internal
+- `main.go` `platformVersion` → `0.14.2`.
+
 ## [v0.14.1] — 2026-05-01
 ### Added — sources & sinks UI (Phase 2)
 The v0.14.0 backend already accepted `normal_source` / `large_source` /
