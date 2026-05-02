@@ -574,9 +574,13 @@ async function poll() {
     } else {
       bn.style.display = 'none';
     }
-    // Also keep the top "Download CSV" button pointing at the current run so
-    // scheduled runs have a one-click report download once they finish.
-    if (s.run_id) $('csvBtn').href = `/api/report.csv?run=${encodeURIComponent(s.run_id)}`;
+    // Legacy: the top "Download CSV" button used to live in the hero
+    // actions row. Removed in v0.14.7 — runs-history shows per-row CSVs
+    // and the schedule banner already updates its own link below. This
+    // assignment stays guarded so an old build's cached HTML (no
+    // #csvBtn) doesn't throw.
+    const csvBtnEl = $('csvBtn');
+    if (csvBtnEl && s.run_id) csvBtnEl.href = `/api/report.csv?run=${encodeURIComponent(s.run_id)}`;
 
     $('m_elapsed').textContent = m.elapsed || '—';
     $('m_files').textContent = m.total_files || 0;
