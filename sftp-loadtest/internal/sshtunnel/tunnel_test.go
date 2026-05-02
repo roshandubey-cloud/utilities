@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -306,7 +305,7 @@ func TestSpawn_UploadEndToEnd(t *testing.T) {
 	// Local "binary" payload — the upload path streams whatever the file
 	// at LocalBinaryPath contains. Content doesn't matter; pkg/sftp will
 	// see Open succeed and Copy will run.
-	tmpDir, err := ioutil.TempDir("", "sshtunnel-bin-")
+	tmpDir, err := os.MkdirTemp("", "sshtunnel-bin-")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -184,18 +184,6 @@ func (p *disablePolicy) snapshot() []DisabledSnapshot {
 	return out
 }
 
-func (p *disablePolicy) allUploadDisabled() bool {
-	if p == nil || len(p.up) == 0 {
-		return false
-	}
-	for _, s := range p.up {
-		if !s.disabled.Load() {
-			return false
-		}
-	}
-	return true
-}
-
 // errCounters tracks failure counts by stable ErrorCode. Reads happen only on
 // status polls (low frequency) so a plain mutex is cheaper than a sync.Map.
 type errCounters struct {
