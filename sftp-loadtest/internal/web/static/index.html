@@ -905,7 +905,7 @@
               </div>
               <div class="src-warn" data-role="src-warn" role="status" aria-live="polite" hidden></div>
 
-              <details class="source-advanced">
+              <details class="source-advanced" data-role="src-advanced-disclosure" hidden>
                 <summary>Per-user / per-pattern overrides (advanced JSON)</summary>
                 <label class="label" for="normal_src_advanced_json">JSON object — keys "per_user" + "per_pattern"</label>
                 <textarea class="input mono" id="normal_src_advanced_json" data-role="src-advanced"
@@ -914,7 +914,8 @@
                 <div class="src-advanced-error" data-role="src-advanced-error" role="status" aria-live="polite" hidden></div>
                 <div class="hint">Most-specific wins: per_user → per_pattern → top-level kind above. Leave blank if you don't need overrides.</div>
               </details>
-              <div class="hint">Real-file sources override min/max MB with the actual file size. Filename is still pattern-generated so trackid round-trips work.</div>
+              <button type="button" class="src-advanced-toggle" data-role="src-advanced-toggle" hidden>Advanced JSON…</button>
+              <div class="hint" data-role="src-realfile-hint" hidden>Real-file sources override min/max MB with the actual file size. Filename is still pattern-generated so trackid round-trips work.</div>
             </div>
           </details>
         </div>
@@ -999,7 +1000,7 @@
               </div>
               <div class="src-warn" data-role="src-warn" role="status" aria-live="polite" hidden></div>
 
-              <details class="source-advanced">
+              <details class="source-advanced" data-role="src-advanced-disclosure" hidden>
                 <summary>Per-user / per-pattern overrides (advanced JSON)</summary>
                 <textarea class="input mono" id="large_src_advanced_json" data-role="src-advanced"
                           rows="6" spellcheck="false"
@@ -1007,6 +1008,8 @@
                 <div class="src-advanced-error" data-role="src-advanced-error" role="status" aria-live="polite" hidden></div>
                 <div class="hint">Most-specific wins: per_user → per_pattern → top-level kind above.</div>
               </details>
+              <button type="button" class="src-advanced-toggle" data-role="src-advanced-toggle" hidden>Advanced JSON…</button>
+              <div class="hint" data-role="src-realfile-hint" hidden>Real-file sources override min/max MB with the actual file size.</div>
             </div>
           </details>
         </div>
