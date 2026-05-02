@@ -128,6 +128,9 @@ function wireSourceDisclosure(root) {
   const dirInput   = root.querySelector('[data-role="src-dir"]');
   const advText    = root.querySelector('[data-role="src-advanced"]');
   const advError   = root.querySelector('[data-role="src-advanced-error"]');
+  const advDisclosure = root.querySelector('[data-role="src-advanced-disclosure"]');
+  const advToggleBtn  = root.querySelector('[data-role="src-advanced-toggle"]');
+  const realfileHint  = root.querySelector('[data-role="src-realfile-hint"]');
   const filesBrowse= root.querySelector('[data-role="src-files-browse"]');
   const dirBrowse  = root.querySelector('[data-role="src-dir-browse"]');
   const layoutPicker = root.querySelector('[data-role="src-layout"]');
@@ -146,6 +149,23 @@ function wireSourceDisclosure(root) {
     if (modeEl)  modeEl.hidden  = kind === 'synthetic';
     // Probe is only meaningful when the source actually points at disk.
     if (probeEl) probeEl.hidden = kind === 'synthetic';
+    // Trailing real-file hint only applies to disk-backed sources.
+    if (realfileHint) realfileHint.hidden = kind === 'synthetic';
+    // Advanced-JSON escape hatch: only useful when there's a real
+    // source. Synthetic has nothing to override per-user.
+    if (advToggleBtn) {
+      const advHasContent = (advText?.value || '').trim().length > 0;
+      advToggleBtn.hidden = kind === 'synthetic' && !advHasContent;
+    }
+    // If the operator flips to synthetic AND advanced JSON is empty,
+    // collapse the disclosure too — no override semantics apply.
+    if (advDisclosure && kind === 'synthetic') {
+      const advHasContent = (advText?.value || '').trim().length > 0;
+      if (!advHasContent) {
+        advDisclosure.hidden = true;
+        advDisclosure.open = false;
+      }
+    }
     refreshWarning();
   }
   kindPicker.querySelectorAll('button').forEach((btn) => {
@@ -252,6 +272,21 @@ function wireSourceDisclosure(root) {
   }
   advText?.addEventListener('input', refreshAdvError);
   refreshAdvError();
+
+  // Advanced-JSON escape hatch. The disclosure is hidden by default —
+  // 95% of operators reach the same outcome via the layout picker
+  // (by-user / by-pattern). Power users get the disclosure via this
+  // small toggle, OR it auto-reveals when an imported config carries
+  // per_user / per_pattern.
+  if (advToggleBtn && advDisclosure) {
+    advToggleBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      advDisclosure.hidden = false;
+      advDisclosure.open = true;
+      advToggleBtn.hidden = true; // one-shot — disclosure is now in charge
+      advText?.focus();
+    });
+  }
 
   // ---- Probe button. For non-flat layouts the backend wants a list of
   // sample users so it can resolve <root>/<username>/<glob> per row.
@@ -643,11 +678,23 @@ export function applySource(kind, src) {
   }
   // Advanced overrides round-trip through the JSON textarea.
   const adv = root.querySelector('[data-role="src-advanced"]');
+  const advDisclosure = root.querySelector('[data-role="src-advanced-disclosure"]');
+  const advToggleBtn  = root.querySelector('[data-role="src-advanced-toggle"]');
   if (adv) {
     const merged = {};
     if (src && src.per_user)    merged.per_user = src.per_user;
     if (src && src.per_pattern) merged.per_pattern = src.per_pattern;
     adv.value = Object.keys(merged).length ? JSON.stringify(merged, null, 2) : '';
+    // If the imported config carries overrides, auto-reveal the
+    // (otherwise hidden) disclosure so the operator can see and edit
+    // them. Hide the escape-hatch button — disclosure is now in
+    // charge.
+    if (advDisclosure) {
+      const hasOverrides = Object.keys(merged).length > 0;
+      advDisclosure.hidden = !hasOverrides;
+      if (hasOverrides) advDisclosure.open = true;
+      if (advToggleBtn) advToggleBtn.hidden = hasOverrides; // hide if disclosure is now visible
+    }
   }
   // Open the disclosure so the operator sees the populated state instead
   // of an unchanged "defaults to synthetic" closed summary.

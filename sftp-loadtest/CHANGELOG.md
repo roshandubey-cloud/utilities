@@ -558,6 +558,54 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.13] — 2026-05-02
+### Source body fully dynamic — only what applies, only when it applies
+
+The advanced-JSON disclosure was visible on every fresh form even
+though 95% of operators never need it (the v0.14.4 layout picker
+covers the same ground). Same for the trailing "Real-file sources
+override min/max MB" hint, which is meaningless when kind is synthetic.
+
+- **Advanced JSON disclosure now starts hidden.** A small
+  uppercase-tertiary "Advanced JSON…" toggle appears beneath the
+  source body when kind is local-dir / local-files; click promotes
+  the disclosure into view. Power users notice; default users
+  never see it.
+- **Auto-reveals on import.** `applySource()` checks the imported
+  config — if it carries `per_user` or `per_pattern`, the
+  disclosure unhides and opens automatically so the operator can
+  inspect/edit. The escape-hatch toggle stays hidden in that case
+  (disclosure is already in view).
+- **Trailing real-file hint gated on kind.** "Real-file sources
+  override min/max MB…" only shows for local-dir / local-files —
+  it's irrelevant for synthetic random bytes.
+- **Mode picker, probe button, advanced-toggle** all already
+  gated on kind; this pass tightens the rest of the body so the
+  source disclosure shrinks to exactly what each kind needs.
+
+### Net effect
+- **Synthetic kind** → source body is just the kind picker. No
+  dir/files/mode/probe/JSON/hint clutter.
+- **Local directory** → kind + dir + layout + mode + probe +
+  optional Advanced JSON link. Trailing hint visible.
+- **Imported config with `per_user` / `per_pattern`** → disclosure
+  auto-reveals + opens, populated.
+
+### Internal
+- `internal/web/static/index.html` — `<details
+  data-role="src-advanced-disclosure" hidden>` + new
+  `<button data-role="src-advanced-toggle" hidden>Advanced JSON…</button>`
+  + `<div data-role="src-realfile-hint" hidden>` on both Normal +
+  Large source disclosures.
+- `internal/web/static/js/sources-sinks.js` — `applyKind()` toggles
+  `realfileHint.hidden` and `advToggleBtn.hidden` based on kind +
+  whether advanced JSON has content. `applySource()` auto-reveals
+  the disclosure when imported overrides exist.
+- `internal/web/static/styles/components.css` — new
+  `.src-advanced-toggle` style: small uppercase tertiary link with
+  hover affordance, no chrome until interaction.
+- `main.go` `platformVersion` → `0.14.13`; `wails.json` synced.
+
 ## [v0.14.12] — 2026-05-02
 ### Source picker simplified + smart auto-link source→sink
 
