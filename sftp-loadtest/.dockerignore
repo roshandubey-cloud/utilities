@@ -1,0 +1,35 @@
+# Build artifacts that shouldn't ship into the build context.
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Pre-built host binaries from `go build .` runs.
+sftp-loadtest-mac-*
+sftp-loadtest-linux-*
+sftp-loadtest-windows-*
+mockserver
+mockserver.exe
+mockftpserver
+mockftpserver.exe
+
+# Release archives.
+*.zip
+*.tar.gz
+
+# Runtime state.
+**/reports/
+**/schedules/
+
+# E2E + Wails desktop scaffolding (webui image doesn't need these).
+e2e/
+cmd/desktop/build/
+cmd/desktop/wailsjs/
+desktop/
+
+# Editor + tooling clutter.
+.DS_Store
+.vscode/
+.idea/
+test-results/

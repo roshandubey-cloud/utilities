@@ -1,0 +1,23 @@
+version: 2
+updates:
+  # Go modules in the sftp-loadtest module. Weekly so reviewers don't
+  # drown in PR noise; security patches still arrive immediately via
+  # GitHub's separate "security update" pipeline.
+  - package-ecosystem: gomod
+    directory: /sftp-loadtest
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, go]
+    groups:
+      golang-x:
+        patterns: ["golang.org/x/*"]
+
+  # GitHub Actions used by release.yml + test.yml. Quarterly cadence
+  # tracks the Node-version cutovers (we already hit one on Node 20).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    labels: [dependencies, github-actions]
