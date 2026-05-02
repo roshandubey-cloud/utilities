@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "comment": "Demonstrates the v0.14 source + sink overrides. Uploads pull real PDF files from /tmp/upload-fixtures (round-robin). Downloads land on disk under /tmp/loadtest-pulls/<user>/<trackid>_<filename>. Replace the Files/Dir/Root paths with your own before running. Per-user override 'alice' shows how to give one user a different file pool.",
+  "config": {
+    "host": "127.0.0.1",
+    "port": 12222,
+    "protocol": "sftp",
+    "upload_folder": "/inbox",
+    "parallel_streams": 4,
+    "duration_hours": 0.0167,
+    "poll_seconds": 2,
+    "track_id_timeout_seconds": 60,
+    "max_consecutive_failures": 3,
+
+    "normal_enabled": true,
+    "files_per_minute": 60,
+    "normal_min_mb": 1,
+    "normal_max_mb": 1,
+    "normal_content_type": "binary",
+    "normal_users_csv": "alice,p1,invoice*\nbob,p2,claim*\n",
+    "normal_source": {
+      "kind": "local-dir",
+      "dir": "/tmp/upload-fixtures",
+      "mode": "round-robin",
+      "per_user": {
+        "alice": {
+          "kind": "local-files",
+          "files": ["/tmp/alice-files/special-batch.pdf"],
+          "mode": "round-robin"
+        }
+      }
+    },
+
+    "large_enabled": false,
+
+    "download_enabled": true,
+    "download_folder": "/outbox",
+    "download_parallel_streams": 2,
+    "download_match_mode": "trackid",
+    "download_users_csv": "alice,p1,*\nbob,p2,*\n",
+    "download_sink": {
+      "kind": "local-disk",
+      "root": "/tmp/loadtest-pulls",
+      "template": "{user}/{trackid}_{filename}",
+      "overwrite": false
+    }
+  }
+}

@@ -23,6 +23,8 @@ import (
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/metrics"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/persist"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/proc"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/sink"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/source"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/protocol"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/report"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/sftpx"
@@ -617,6 +619,17 @@ type Run struct {
 	// has TLSTrustOnFirstUse=true, an unknown cert on first contact is
 	// auto-added to the store; subsequent dials verify strictly.
 	tlsStore *hostkeys.TLSStore
+
+	// normalSource / largeSource resolve the right upload byte source
+	// per (user, pattern). Built at Start time from cfg.Normal.Source +
+	// cfg.LargeFile.Source. Nil = synthetic default — drop-in for the
+	// pre-v0.14 generator path.
+	normalSource *source.Resolver
+	largeSource  *source.Resolver
+
+	// downloadSink is where bytes pulled by the download phase land.
+	// Nil = discard default. Built at Start time from cfg.Download.Sink.
+	downloadSink sink.FileSink
 }
 
 // ReportStreamPath returns the on-disk CSV being streamed (empty if not
@@ -752,6 +765,81 @@ func (p *clientPool) closeAll() {
 }
 
 // Start is kept for callers that don't need persistence.
+// buildSourceResolver translates a config.SourceConfig (with its
+// per-user / per-pattern overrides) into a runtime *source.Resolver
+// the upload path can call Resolve() on. Nil cfg returns nil — the
+// runner then uses Synthetic{} as the fallback.
+func buildSourceResolver(c *config.SourceConfig) (*source.Resolver, error) {
+	if c == nil {
+		return nil, nil
+	}
+	def, err := buildSourceLeaf(c)
+	if err != nil {
+		return nil, err
+	}
+	res := &source.Resolver{Default: def}
+	if len(c.PerPattern) > 0 {
+		res.PerPattern = make(map[string]source.FileSource, len(c.PerPattern))
+		for pat, sub := range c.PerPattern {
+			leaf, err := buildSourceLeaf(sub)
+			if err != nil {
+				return nil, fmt.Errorf("per_pattern[%s]: %w", pat, err)
+			}
+			if leaf != nil {
+				res.PerPattern[pat] = leaf
+			}
+		}
+	}
+	if len(c.PerUser) > 0 {
+		res.PerUser = make(map[string]source.FileSource, len(c.PerUser))
+		for u, sub := range c.PerUser {
+			leaf, err := buildSourceLeaf(sub)
+			if err != nil {
+				return nil, fmt.Errorf("per_user[%s]: %w", u, err)
+			}
+			if leaf != nil {
+				res.PerUser[u] = leaf
+			}
+		}
+	}
+	return res, nil
+}
+
+// buildSourceLeaf builds one source from a config (no override walk).
+// Used recursively from buildSourceResolver for each per-* override.
+func buildSourceLeaf(c *config.SourceConfig) (source.FileSource, error) {
+	if c == nil {
+		return nil, nil
+	}
+	mode := source.PickMode(c.Mode)
+	switch c.Kind {
+	case "", "synthetic":
+		return source.Synthetic{}, nil
+	case "local-files":
+		return source.NewLocalFiles(c.Files, mode)
+	case "local-dir":
+		return source.NewLocalDir(c.Dir, mode)
+	default:
+		return nil, fmt.Errorf("unknown source kind %q", c.Kind)
+	}
+}
+
+// buildSink translates a config.SinkConfig into a runtime sink.FileSink.
+// Nil returns Discard{} — the throughput-only default.
+func buildSink(c *config.SinkConfig) (sink.FileSink, error) {
+	if c == nil {
+		return sink.Discard{}, nil
+	}
+	switch c.Kind {
+	case "", "discard":
+		return sink.Discard{}, nil
+	case "local-disk":
+		return sink.NewLocalDisk(c.Root, c.Template, c.Overwrite)
+	default:
+		return nil, fmt.Errorf("unknown sink kind %q", c.Kind)
+	}
+}
+
 func Start(parent context.Context, cfg *config.RunConfig) (*Run, error) {
 	return StartWithPersistAndTLS(parent, cfg, "", nil)
 }
@@ -810,6 +898,36 @@ func StartWithPersistAndTLS(parent context.Context, cfg *config.RunConfig, repor
 		sharedAuth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
 	}
 	r.sharedAuth = sharedAuth
+
+	// Build upload byte sources + download sink from the run config.
+	// Each is nil-safe: a nil cfg.*.Source / cfg.Download.Sink skips
+	// the resolver build and falls through to the synthetic / discard
+	// defaults at use-time. Construction failures (missing files etc.)
+	// abort the run with a clear error before any goroutines launch.
+	if cfg.Normal != nil {
+		res, err := buildSourceResolver(cfg.Normal.Source)
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("normal source: %w", err)
+		}
+		r.normalSource = res
+	}
+	if cfg.LargeFile != nil {
+		res, err := buildSourceResolver(cfg.LargeFile.Source)
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("large-file source: %w", err)
+		}
+		r.largeSource = res
+	}
+	if cfg.Download != nil && cfg.Download.Sink != nil {
+		s, err := buildSink(cfg.Download.Sink)
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("download sink: %w", err)
+		}
+		r.downloadSink = s
+	}
 
 	// Open the streaming CSV writer up front so records are sealed to disk
 	// as they finalize. Keeps RAM flat on long runs.
@@ -1209,17 +1327,46 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 				r.errCounts.inc("DOWNLOAD")
 				r.disable.onFailureFor(u.Username, "download", "DOWNLOAD", basename)
 			} else {
-				n, derr := protocol.Drain(c, path.Join(folder, name))
-				result.EndTime = time.Now()
-				result.SizeBytes = n
-				if derr != nil {
-					slot.markDead()
-					result.Error = derr.Error()
+				// Pick the destination writer for these download bytes.
+				// nil sink = io.Discard default (the v0.13.x behaviour).
+				// Any sink errors (path-template render failed, file
+				// already exists with overwrite=false, etc.) count as
+				// download failures so the operator sees them in the
+				// per-user error chips.
+				dlSink := r.downloadSink
+				if dlSink == nil {
+					dlSink = sink.Discard{}
+				}
+				// trackid extracted from the file name (trackid mode) or
+				// the marker (filename mode) so the sink template can
+				// route bytes by it.
+				trackID := basename
+				if filenameMode {
+					trackID = marker
+				}
+				wc, sinkErr := dlSink.Open(sink.Request{
+					User: u.Username, Filename: basename,
+					TrackID: trackID, RunID: r.ID, StartedAt: start,
+				})
+				if sinkErr != nil {
+					result.EndTime = time.Now()
+					result.Error = sinkErr.Error()
 					r.errCounts.inc("DOWNLOAD")
 					r.disable.onFailureFor(u.Username, "download", "DOWNLOAD", basename)
 				} else {
-					result.SpeedMBps = report.RawSpeedMBps(n, result.EndTime.Sub(start))
-					r.disable.onSuccess(u.Username, "download")
+					n, derr := protocol.DrainTo(c, path.Join(folder, name), wc)
+					_ = wc.Close()
+					result.EndTime = time.Now()
+					result.SizeBytes = n
+					if derr != nil {
+						slot.markDead()
+						result.Error = derr.Error()
+						r.errCounts.inc("DOWNLOAD")
+						r.disable.onFailureFor(u.Username, "download", "DOWNLOAD", basename)
+					} else {
+						result.SpeedMBps = report.RawSpeedMBps(n, result.EndTime.Sub(start))
+						r.disable.onSuccess(u.Username, "download")
+					}
 				}
 			}
 			// Attribute back to the originating upload row. Trackid mode
@@ -1557,7 +1704,34 @@ func (r *Run) uploadOne(u config.UserCreds, size int64, kind string, intendedSta
 	if dialDur > 0 {
 		r.DialLatency.Add(dialDur)
 	}
-	n, stage, err := c.Upload(remote, generator.FastReader(size, content), size)
+
+	// Resolve the upload byte source for this (user, pattern, kind).
+	// Default = Synthetic{} when no per-user / per-pattern / global
+	// override is configured. Real-file sources override the requested
+	// size with the actual file size and update the record so the
+	// wire-level transfer + ExpectedSize agree with what's on disk.
+	var resolver *source.Resolver
+	if kind == "large" {
+		resolver = r.largeSource
+	} else {
+		resolver = r.normalSource
+	}
+	srcReq := source.Request{
+		User: u.Username, Pattern: pat, Kind: kind,
+		SizeBytes: size, ContentType: content,
+	}
+	srcRes, srcErr := resolver.Resolve(srcReq).Next(srcReq)
+	if srcErr != nil {
+		recordFailure(rec, "SOURCE", srcErr.Error(), 0)
+		return
+	}
+	defer srcRes.Close()
+	if srcRes.Size > 0 && srcRes.Size != size {
+		size = srcRes.Size
+		rec.ExpectedSize = size
+	}
+
+	n, stage, err := c.Upload(remote, srcRes.Reader, size)
 	end := time.Now()
 	rec.EndTime = end
 	if err != nil {

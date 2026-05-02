@@ -80,6 +80,11 @@ type NormalLoad struct {
 	MinSizeMB      int    // inclusive, must be >= 1
 	MaxSizeMB      int    // inclusive, >= MinSizeMB
 	ContentType    string // "binary" (default), "ascii", or "random" (mix per file)
+	// Source, when non-nil, supplies real-on-disk files instead of
+	// synthetic random bytes. Per-user and per-pattern overrides let
+	// the operator route specific filename patterns ("invoice*") at
+	// specific input directories. Nil = default synthetic behaviour.
+	Source *SourceConfig `json:"source,omitempty"`
 }
 
 type LargeFileLoad struct {
@@ -87,6 +92,10 @@ type LargeFileLoad struct {
 	MaxSize         int    // in chosen Unit, >= MinSize
 	Unit            string // "MB" or "GB"
 	IntervalMinutes int
+	// Source — same shape as NormalLoad.Source. Lets large-file uploads
+	// pull from a separate pool of real files (typical for "stress with
+	// real ZIP archives" scenarios).
+	Source *SourceConfig `json:"source,omitempty"`
 }
 
 // DownloadLoad is an optional test phase that pulls uploaded files back down
@@ -120,6 +129,138 @@ type DownloadLoad struct {
 	//                filename in transit. The track-id watcher is
 	//                bypassed entirely in this mode.
 	MatchMode string
+
+	// Sink, when non-nil, persists downloaded bytes to disk instead of
+	// the default io.Discard. The path template lets the operator
+	// shape the on-disk layout (per-user, per-trackid, per-date) to
+	// match downstream analysis pipelines. Nil = throughput-only
+	// default behaviour.
+	Sink *SinkConfig `json:"sink,omitempty"`
+}
+
+// SourceConfig picks where upload bytes come from. Hierarchy:
+//
+//   PerUser[username]      — most specific, wins outright.
+//   PerPattern[patternStr] — second-most specific.
+//   This struct's top level — fallback default.
+//   nil                    — fall through to synthetic random bytes.
+//
+// Validate() rejects malformed combinations (kind=local-files with
+// no Files, kind=local-dir with non-existent Dir, etc.) so the
+// runner never sees a half-configured source.
+type SourceConfig struct {
+	// Kind is one of "synthetic", "local-files", "local-dir".
+	// Empty defaults to "synthetic".
+	Kind string `json:"kind,omitempty"`
+
+	// Files is the explicit pool for kind="local-files". Each entry
+	// must be a readable regular file at run-start time.
+	Files []string `json:"files,omitempty"`
+
+	// Dir is the directory to scan for kind="local-dir". Only top-level
+	// regular files are picked up; subdirs and dotfiles are skipped.
+	Dir string `json:"dir,omitempty"`
+
+	// Mode selects how the pool is sampled per Next() call:
+	// "round-robin" (default), "random", or "sequential" (errors on
+	// pool exhaustion).
+	Mode string `json:"mode,omitempty"`
+
+	// PerPattern overrides — pattern string (e.g. "invoice*") to its
+	// own SourceConfig. Looked up after PerUser, before this struct's
+	// top-level fields.
+	PerPattern map[string]*SourceConfig `json:"per_pattern,omitempty"`
+
+	// PerUser overrides — username to its own SourceConfig. Most
+	// specific, wins outright when matched.
+	PerUser map[string]*SourceConfig `json:"per_user,omitempty"`
+}
+
+// SinkConfig picks where downloaded bytes go.
+//
+//   Kind="discard"    — default, writes go to io.Discard.
+//   Kind="local-disk" — writes to <Root>/<rendered Template>.
+//
+// Template variables: {user}, {filename}, {basename}, {ext}, {trackid},
+// {run_id}, {date}, {datetime}. Path-component sanitisation prevents
+// any rendered value containing "/" or ".." from escaping <Root>.
+type SinkConfig struct {
+	Kind      string `json:"kind,omitempty"`      // "discard" | "local-disk" — default "discard"
+	Root      string `json:"root,omitempty"`      // base dir for local-disk; auto-mkdir
+	Template  string `json:"template,omitempty"`  // path template; default "{user}/{filename}"
+	Overwrite bool   `json:"overwrite,omitempty"` // false = O_EXCL, error if file exists
+}
+
+// Validate enforces structural invariants on a SourceConfig at run-start.
+// Walks per-user / per-pattern overrides too so a deeply-nested mistake
+// is caught before the runner spawns its first goroutine. The label is
+// prepended to error messages ("normal" / "large-file" / etc.) so a
+// failure points at the right config section.
+//
+// Nil receiver is fine — returns nil. The runner will fall through to
+// the synthetic default.
+func (s *SourceConfig) Validate(label string) error {
+	if s == nil {
+		return nil
+	}
+	kind := s.Kind
+	if kind == "" {
+		kind = "synthetic"
+	}
+	switch kind {
+	case "synthetic":
+		// no further fields to validate
+	case "local-files":
+		if len(s.Files) == 0 {
+			return errors.New(label + " source kind=local-files requires non-empty files[]")
+		}
+	case "local-dir":
+		if s.Dir == "" {
+			return errors.New(label + " source kind=local-dir requires dir")
+		}
+	default:
+		return errors.New(label + ` source kind must be "synthetic", "local-files", or "local-dir"`)
+	}
+	switch s.Mode {
+	case "", "round-robin", "random", "sequential":
+		// ok
+	default:
+		return errors.New(label + ` source mode must be "round-robin", "random", or "sequential"`)
+	}
+	for pat, sub := range s.PerPattern {
+		if err := sub.Validate(label + ".per_pattern[" + pat + "]"); err != nil {
+			return err
+		}
+	}
+	for u, sub := range s.PerUser {
+		if err := sub.Validate(label + ".per_user[" + u + "]"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Validate enforces structural invariants on a SinkConfig.
+// Nil receiver returns nil — the runner falls through to discard.
+func (s *SinkConfig) Validate() error {
+	if s == nil {
+		return nil
+	}
+	kind := s.Kind
+	if kind == "" {
+		kind = "discard"
+	}
+	switch kind {
+	case "discard":
+		// nothing to check
+	case "local-disk":
+		if s.Root == "" {
+			return errors.New(`download sink kind=local-disk requires root`)
+		}
+	default:
+		return errors.New(`download sink kind must be "discard" or "local-disk"`)
+	}
+	return nil
 }
 
 // MatchMode constants for DownloadLoad.MatchMode.
@@ -227,6 +368,9 @@ func (c *RunConfig) Validate() error {
 		default:
 			return errors.New(`normal content_type must be "binary", "ascii", or "random"`)
 		}
+		if err := c.Normal.Source.Validate("normal"); err != nil {
+			return err
+		}
 	}
 	if c.LargeFile != nil {
 		if len(c.LargeFileUsers) == 0 {
@@ -244,6 +388,9 @@ func (c *RunConfig) Validate() error {
 		if c.LargeFile.IntervalMinutes <= 0 {
 			return errors.New("interval_minutes must be > 0")
 		}
+		if err := c.LargeFile.Source.Validate("large-file"); err != nil {
+			return err
+		}
 	}
 	if c.Download != nil {
 		if len(c.DownloadUsers) == 0 {
@@ -254,6 +401,9 @@ func (c *RunConfig) Validate() error {
 		}
 		if c.Download.Folder == "" {
 			c.Download.Folder = c.UploadFolder
+		}
+		if err := c.Download.Sink.Validate(); err != nil {
+			return err
 		}
 	}
 	if c.PollInterval == 0 {

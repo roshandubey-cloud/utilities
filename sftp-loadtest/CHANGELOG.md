@@ -558,9 +558,81 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.0] — 2026-05-01
+### Added — sources & sinks
+Major new feature surface. Until now uploads always sent random bytes
+(fast, throughput-only) and downloads always drained into io.Discard
+(no on-disk persistence). v0.14 lets the operator swap either side
+for real files — without sacrificing the synthetic default.
+
+**Upload sources** (`NormalLoad.Source`, `LargeFileLoad.Source`):
+- `kind: "synthetic"` — random bytes of the configured size. **Default.**
+- `kind: "local-files"` — pool of explicit file paths.
+- `kind: "local-dir"` — walks a directory ONCE at run start; every
+  top-level regular file becomes a pool member (dotfiles + subdirs
+  skipped for determinism).
+- `mode: "round-robin" | "random" | "sequential"` — pick policy.
+- `per_user[username]` — most-specific override; wins outright.
+- `per_pattern[pattern]` — second-most-specific override.
+
+Resolution hierarchy: PerUser → PerPattern → top-level Source → Synthetic.
+
+**Download sinks** (`DownloadLoad.Sink`):
+- `kind: "discard"` — `io.Discard`. **Default.**
+- `kind: "local-disk"` — writes to `<root>/<rendered template>` with
+  mode 0600. `mkdir -p` is automatic.
+- `template` — path template with substitutions: `{user}`, `{filename}`,
+  `{basename}`, `{ext}`, `{trackid}`, `{run_id}`, `{date}`, `{datetime}`.
+  Default: `{user}/{filename}`.
+- `overwrite: false` (default) → `O_EXCL`, errors if the file exists.
+  `overwrite: true` → clobber.
+
+**Security:** path-component sanitisation escapes `/` and `..` in
+template variables to `_`. Defence-in-depth `filepath.Rel` check
+confirms the resolved path stays under `root`. A hostile remote
+filename can never punch out.
+
+**New packages:**
+- `internal/source` — `FileSource`, `Synthetic`, `LocalFiles`, `LocalDir`,
+  `Resolver` (per-user/per-pattern/default chain).
+- `internal/sink` — `FileSink`, `Discard`, `LocalDisk` (template renderer).
+
+**Wire-up:**
+- `config.SourceConfig` + `config.SinkConfig` with `Validate()` methods.
+- `RunConfig.Validate()` rejects malformed combinations at run start.
+- `runner.uploadOne` resolves the source per (user, pattern, kind).
+  Real-file sources override the requested size with the actual file
+  size and update `ExpectedSize` so the wire-level transfer + record
+  agree.
+- Download fetch path replaces `protocol.Drain` with `protocol.DrainTo`,
+  copying bytes into the sink-supplied `WriteCloser`.
+- `/api/start` accepts `normal_source` / `large_source` / `download_sink`
+  fields. Nil keeps the v0.13.x defaults exactly.
+
+### Added — examples + docs
+- `examples/sources-and-sinks.json` — local-dir upload pool with a
+  per-user override + local-disk download with the
+  `{user}/{trackid}_{filename}` template.
+- New ⌘K Help guide: "Real-file uploads + on-disk downloads
+  (v0.14 sources & sinks)" — full reference for kinds, modes,
+  template variables, override hierarchy, security guards.
+
+### Verified
+- New unit suites: `internal/source` (round-robin / sequential /
+  resolver hierarchy / directory rejection / dotfile skip),
+  `internal/sink` (discard / template rendering / traversal
+  rejection / O_EXCL semantics).
+- All 13 packages green under `go test -race -timeout 5m ./...`.
+
+### Compatibility
+- Pure additive: existing configs without source/sink keys behave
+  identically to v0.13.30.
+- Phase 2 (UI form sections so operators can build these configs
+  without hand-editing JSON) lands in a follow-up.
+
 ## [Unreleased]
 
-(no changes since v0.13.30)
+(no changes since v0.14.0)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -679,7 +751,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.30...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.14.0...HEAD
+[v0.14.0]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.14.0
 [v0.13.30]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.30
 [v0.13.29]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.29
 [v0.13.28]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.28

@@ -782,6 +782,14 @@ type startReq struct {
 	// PrivateKeyPassphrase decrypts encrypted PEMs.
 	PrivateKeyPEM        string `json:"private_key_pem"`
 	PrivateKeyPassphrase string `json:"private_key_passphrase"`
+
+	// v0.14 — per-load source / sink overrides. The structs are defined
+	// in internal/config and accept JSON-passed-through verbatim. nil
+	// in any of them keeps the v0.13.x defaults (synthetic upload bytes
+	// + io.Discard download bytes).
+	NormalSource    *config.SourceConfig `json:"normal_source,omitempty"`
+	LargeSource     *config.SourceConfig `json:"large_source,omitempty"`
+	DownloadSink    *config.SinkConfig   `json:"download_sink,omitempty"`
 }
 
 // buildRunConfig converts a startReq to a RunConfig, parsing the embedded
@@ -810,6 +818,7 @@ func buildRunConfig(req startReq) (*config.RunConfig, error) {
 			MinSizeMB:      req.NormalMinMB,
 			MaxSizeMB:      req.NormalMaxMB,
 			ContentType:    req.NormalContentType,
+			Source:         req.NormalSource, // nil-safe; keeps synthetic default
 		}
 		users, err := config.ParseUsersCSV(strings.NewReader(req.NormalUsersCSV))
 		if err != nil {
@@ -823,6 +832,7 @@ func buildRunConfig(req startReq) (*config.RunConfig, error) {
 			MaxSize:         req.LargeMax,
 			Unit:            req.LargeUnit,
 			IntervalMinutes: req.IntervalMinutes,
+			Source:          req.LargeSource,
 		}
 		users, err := config.ParseUsersCSV(strings.NewReader(req.LargeUsersCSV))
 		if err != nil {
@@ -835,6 +845,7 @@ func buildRunConfig(req startReq) (*config.RunConfig, error) {
 			Folder:          req.DownloadFolder,
 			ParallelStreams: req.DownloadParallelStreams,
 			MatchMode:       req.DownloadMatchMode,
+			Sink:            req.DownloadSink,
 		}
 		users, err := config.ParseUsersCSV(strings.NewReader(req.DownloadUsersCSV))
 		if err != nil {

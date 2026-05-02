@@ -1259,6 +1259,70 @@ function helpEntries() {
     },
 
     {
+      id: 'help.sources-and-sinks',
+      section: 'Help',
+      icon: '?',
+      label: 'Real-file uploads + on-disk downloads (v0.14 sources & sinks)',
+      description: 'How to push specific local files instead of synthetic random bytes, and how to land downloaded bytes on disk under a per-user / per-trackid template.',
+      keywords: ['source', 'sink', 'upload', 'download', 'real', 'local', 'file', 'fixture', 'path', 'template', 'per-user', 'per-pattern'],
+      action: () => {},
+      detail: {
+        title: 'Sources & Sinks (v0.14)',
+        lede: 'By default uploads send random bytes (fast, throughput-only) and downloads stream into io.Discard (no disk writes). v0.14 lets you swap either side for real files.',
+        body: [
+          { kind: 'h', text: 'Upload sources (NormalLoad.Source / LargeFileLoad.Source)' },
+          { kind: 'kv', rows: [
+            ['kind: synthetic', 'Default. Random bytes of the configured size. Pre-v0.14 behaviour.'],
+            ['kind: local-files', 'Pool of explicit file paths. Each upload reads from one (round-robin / random / sequential pick mode).'],
+            ['kind: local-dir',  'Walks a directory ONCE at run start; every regular file is a pool member. Hidden files + subdirs skipped for determinism.'],
+            ['mode',             '"round-robin" (default), "random", or "sequential" (errors on pool exhaustion).'],
+          ]},
+          { kind: 'h', text: 'Override hierarchy' },
+          { kind: 'list', items: [
+            'PerUser["alice"] — most specific, wins outright when matched.',
+            'PerPattern["invoice*"] — second-most specific.',
+            'Top-level Source — fallback default for the kind (normal/large).',
+            'Nil — Synthetic. Drop-in for the v0.13 generator path.',
+          ]},
+          { kind: 'h', text: 'What changes when you use real files' },
+          { kind: 'list', items: [
+            'File size = whatever the file is on disk. The configured min/max MB is ignored.',
+            'Filename = still synthesised from the pattern + a marker (so trackid + filename round-trip still work). The bytes come from your file; the name is generated.',
+            'Throughput is bounded by your local disk read speed. Use synthetic for raw-network tests; use real-files when server-side validators care about content.',
+          ]},
+
+          { kind: 'h', text: 'Download sinks (DownloadLoad.Sink)' },
+          { kind: 'kv', rows: [
+            ['kind: discard',    'Default. io.Discard wrapped as a WriteCloser. Zero-cost.'],
+            ['kind: local-disk', 'Writes to <root>/<rendered template>. Mode 0600. Mkdir-as-needed.'],
+            ['root',             'Base directory. Auto-created.'],
+            ['template',         'Path template — see variables below. Default: {user}/{filename}.'],
+            ['overwrite',        'false (default) → second pull of the same path errors (O_EXCL). true → clobber.'],
+          ]},
+          { kind: 'h', text: 'Template variables' },
+          { kind: 'kv', rows: [
+            ['{user}',     'Download user that pulled this file.'],
+            ['{filename}', 'Original basename including extension.'],
+            ['{basename}', 'Filename without extension.'],
+            ['{ext}',      'Extension WITH leading dot (".pdf"); empty if none.'],
+            ['{trackid}',  'Track ID (filename mode = injected marker; trackid mode = the id).'],
+            ['{run_id}',   'Current run id (run-<unix-ts>).'],
+            ['{date}',     'YYYY-MM-DD when the download landed.'],
+            ['{datetime}', 'YYYY-MM-DD_HH-MM-SS when the download landed.'],
+          ]},
+          { kind: 'h', text: 'Security' },
+          { kind: 'list', items: [
+            'Path-component sanitisation: rendered values containing "/" or ".." are escaped to underscore. A hostile remote filename can never punch out of root.',
+            'Defence-in-depth filepath.Rel check confirms the resolved path stays under root.',
+            'Files are written 0600 (owner read/write only).',
+          ]},
+          { kind: 'h', text: 'Examples' },
+          { kind: 'code', text: 'examples/sources-and-sinks.json — local-dir upload pool + per-user override, local-disk download with {user}/{trackid}_{filename} template.' },
+        ],
+      },
+    },
+
+    {
       id: 'help.cluster-spawn',
       section: 'Help',
       icon: '?',

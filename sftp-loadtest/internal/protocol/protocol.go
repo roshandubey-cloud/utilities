@@ -432,12 +432,22 @@ func (c *countingReader) Read(p []byte) (int, error) {
 // without materialising the file locally. Same shape sftpx.Client.Download
 // had pre-v0.13.0 so the runner code stays one-line at the call site.
 func Drain(c Conn, remotePath string) (int64, error) {
+	return DrainTo(c, remotePath, io.Discard)
+}
+
+// DrainTo copies the remote file to a caller-supplied destination and
+// returns the byte count. The runner uses this with a sink.FileSink
+// when the operator configured kind=local-disk for downloads —
+// downloaded bytes land on disk under the rendered template instead
+// of being thrown away. dst is NOT closed here (callers Close their
+// own writers — the sink may want to track bytes-written separately).
+func DrainTo(c Conn, remotePath string, dst io.Writer) (int64, error) {
 	rc, err := c.Get(remotePath)
 	if err != nil {
 		return 0, err
 	}
 	defer rc.Close()
-	return io.Copy(io.Discard, rc)
+	return io.Copy(dst, rc)
 }
 
 // Compile-time interface assertions. If sftp.Client gains a new method we
