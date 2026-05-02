@@ -188,9 +188,32 @@ Three follow-ups from the v0.13.7 validation pass.
   buys parity between the binary version and the rendered UI version.
   JSON API endpoints were already non-cacheable.
 
+## [v0.13.16] — 2026-05-01
+### Fixed
+- **Pre-Run probe in `legacy.js` no longer says "SSH handshake failed"
+  on FTPS targets.** The Run button calls `start()`, which calls
+  `ensureHostKeyTrusted(host, port)` to confirm SSH host-key trust
+  before posting `/api/start`. That helper built its probe body as
+  `{host, port, username, password}` — with NO `protocol` field — so
+  the server defaulted to SFTP and tried an SSH handshake against the
+  user's FTPS port. The handshake failure surfaced as the misleading
+  message, even though `/api/start` would have succeeded if it had
+  been allowed to fire (and it actually did fire — the function
+  returns `true` on non-host-key probe failures).
+- `ensureHostKeyTrusted` now early-returns `true` for any non-SFTP
+  protocol — host-key consent only makes sense for SSH; FTPS cert
+  trust is handled run-side by the v0.13.13 `tls_trust_on_first_use`
+  plumbing.
+- `probeConnection` (legacy "Test connection" button, still wired in
+  the legacy DOM as a fallback) now reads `protocol`, `tls_mode`,
+  `tls_server_name`, `tls_insecure_skip_verify` from the form so it
+  routes to the correct probe path. Also picks up the unified TOFU
+  toggle (`data-role="tofu"`) instead of the legacy `#probe_tofu`
+  ID, which was retired in the workbench redesign.
+
 ## [Unreleased]
 
-(no changes since v0.13.15)
+(no changes since v0.13.16)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -309,7 +332,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.15...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.16...HEAD
+[v0.13.16]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.16
 [v0.13.15]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.15
 [v0.13.14]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.14
 [v0.13.13]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.13

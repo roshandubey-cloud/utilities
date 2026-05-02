@@ -181,8 +181,22 @@ async function probeConnection() {
   }
   const cred = firstUser(getCsvRaw('normal_users')) || firstUser(getCsvRaw('download_users'));
   const folder = $('folder').value.trim();
-  const tofu = $('probe_tofu') && $('probe_tofu').checked;
+  const tofu = ($('probe_tofu') && $('probe_tofu').checked) ||
+               !!document.querySelector('[data-role="tofu"]')?.checked;
   const body = { host, port };
+  // Protocol + TLS knobs — without these, /api/probe defaults to sftp and
+  // tries an SSH handshake against an FTPS port, which surfaces as the
+  // misleading "SSH handshake failed" error. Read the same form elements
+  // submitForm uses so the probe and the run agree on what they're hitting.
+  const protocol = (document.getElementById('protocol')?.value || 'sftp').toLowerCase();
+  body.protocol = protocol;
+  if (protocol === 'ftps') {
+    const tlsMode = (document.getElementById('tls_mode')?.value || '').toLowerCase();
+    if (tlsMode) body.tls_mode = tlsMode;
+    const tlsServer = (document.getElementById('tls_server_name')?.value || '').trim();
+    if (tlsServer) body.tls_server_name = tlsServer;
+    if (document.getElementById('tls_skip_verify')?.checked) body.tls_insecure_skip_verify = true;
+  }
   if (cred) { body.username = cred.user; body.password = cred.pass; body.folder = folder; }
   if (tofu) { body.trust_on_first_use = true; }
   try {
@@ -335,6 +349,15 @@ restoreConfig();
 // /api/start can run and surface its own error — we only intercept the
 // specific case where TLS/SSH host-key trust is missing.
 async function ensureHostKeyTrusted(host, port) {
+  // Only meaningful for SFTP — the SSH host-key consent flow that this
+  // function drives doesn't apply to FTP/FTPS. For FTPS, the run-side
+  // TOFU plumbing in protocol.go handles cert trust automatically.
+  // Skipping the pre-flight probe here also avoids the misleading
+  // "SSH handshake failed" message on FTPS ports (TLS cert probed
+  // without protocol field defaulted to sftp).
+  const protocol = (document.getElementById('protocol')?.value || 'sftp').toLowerCase();
+  if (protocol !== 'sftp') return true;
+
   function firstUser(raw) {
     if (!raw) return null;
     for (const line of raw.split('\n')) {
@@ -350,7 +373,7 @@ async function ensureHostKeyTrusted(host, port) {
                firstUser(getCsvRaw('download_users'));
   if (!cred) return true; // no creds, /api/start will fail validation with a useful message
 
-  const probeBody = { host, port, username: cred.user, password: cred.pass };
+  const probeBody = { host, port, username: cred.user, password: cred.pass, protocol: 'sftp' };
   let r;
   try {
     r = await (await apiFetch('/api/probe', {
