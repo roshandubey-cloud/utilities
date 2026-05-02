@@ -36,36 +36,12 @@ export function mountMasthead(rootSelector) {
     pollHealth(dot, text);
   }
 
-  // Surface the platform version next to the wordmark AND in the
-  // bottom status-bar cell. /api/version is unauthenticated +
-  // Cache-Control:no-store, so an upgraded binary shows its real
-  // version on the very next page load — no stale WebKit cache,
-  // no auth probe. One fetch updates both pills.
-  const ver = root.querySelector('[data-role="brand-version"]');
-  // Status-bar cell lives outside the masthead root, so query the
-  // document. Hidden until the response arrives so we never flash
-  // a placeholder.
-  const statusVer = document.querySelector('[data-role="status-version"]');
-  if (ver || statusVer) {
-    apiFetch('/api/version', { cache: 'no-store' })
-      .then((r) => r.ok ? r.json() : null)
-      .then((j) => {
-        if (!j || !j.version) return;
-        const label = 'v' + j.version;
-        const tooltip = `Platform v${j.version} — started ${j.started_at || ''}`;
-        if (ver) {
-          ver.textContent = label;
-          ver.hidden = false;
-          ver.title = tooltip;
-        }
-        if (statusVer) {
-          statusVer.textContent = label;
-          statusVer.hidden = false;
-          statusVer.title = tooltip;
-        }
-      })
-      .catch(() => {});
-  }
+  // v0.14.19 — version is now server-rendered into the HTML by the
+  // indexVersionInjector Go middleware. The masthead pill and the
+  // status-bar cell both already carry the correct text the moment
+  // the page parses; no fetch needed. The previous async path failed
+  // silently in some Wails AssetServer scenarios, leaving both pills
+  // blank. Server rendering removed the failure mode entirely.
 }
 
 async function pollHealth(dot, text) {

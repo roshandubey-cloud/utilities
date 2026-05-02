@@ -3,7 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SFTP Load Test</title>
+<!-- v0.14.19 — server-rendered platform version. The Go middleware
+     substitutes __SFTPL_VERSION__ at serve time. shell.js and
+     masthead.js read this meta tag synchronously on mount, no fetch,
+     no race, no failure mode. -->
+<meta name="sftpl-version" content="__SFTPL_VERSION__">
+<title>SFTP Load Test v__SFTPL_VERSION__</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/favicon.svg">
 
@@ -436,7 +441,7 @@
           <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 4.5L20.5 19.5H3.5z"/></svg>
         </span>
         <span class="brand-name">SFTP Load Test</span>
-        <span class="brand-version" data-role="brand-version" title="Platform version" hidden></span>
+        <span class="brand-version" data-role="brand-version" title="Platform v__SFTPL_VERSION__">v__SFTPL_VERSION__</span>
       </a>
       <div class="masthead-actions">
         <span class="masthead-status" title="Server status">

@@ -18,6 +18,27 @@
 import { apiFetch } from './api.js';
 import { getTheme, setTheme } from './theme.js';
 
+// Read the server-rendered platform version from the meta tag. The Go
+// middleware substitutes __SFTPL_VERSION__ at serve time, so this is
+// already the correct value the moment the page parses. No async fetch
+// needed. Returns "v0.14.19" or empty string if the meta tag is
+// missing (which would only happen on a build serving stale HTML).
+function serverVersionLabel() {
+  const meta = document.querySelector('meta[name="sftpl-version"]');
+  const raw = meta?.getAttribute('content') || '';
+  if (!raw || raw.includes('__SFTPL_VERSION__')) return '';
+  return 'v' + raw;
+}
+
+// Minimal HTML-escape for content interpolated into the shell template.
+// Version strings are tightly controlled (set by Go const) but we still
+// escape defensively so a future change to platformVersion can't inject.
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
 // SVG icons used in the sidebar primary nav.
 const ICONS = {
   workbench: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13l4-7 3 5 5-9"/><path d="M2 13h12"/></svg>',
@@ -181,7 +202,7 @@ export function mountShell() {
       </span>
       <span class="shell-statusbar-spacer"></span>
       <span class="shell-statusbar-cell" data-role="status-runid" title="Active run id">—</span>
-      <span class="shell-statusbar-cell" title="Platform version" data-role="status-version" hidden></span>
+      <span class="shell-statusbar-cell" title="Platform version" data-role="status-version">${escapeHtml(serverVersionLabel())}</span>
     </footer>`;
 
   // Adopt every existing body child into .shell-main (preserves IDs).

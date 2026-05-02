@@ -558,6 +558,71 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.19] — 2026-05-02
+### Version display — server-rendered, no async fetch race
+
+Operator: *"the app does not show the version… your job is to make
+sure on all platform all interface we have same information and
+everything is wired."*
+
+The previous implementation (v0.14.5 + v0.14.8) relied on an async
+`/api/version` fetch from masthead.js. When that fetch failed
+silently — and the `.catch(() => {})` block ensured it would —
+both the masthead pill AND the status-bar cell stayed empty. The
+operator never saw a version.
+
+Fix: **render the version directly into the HTML server-side**. No
+fetch, no race, no failure mode.
+
+- **New `indexVersionInjector` middleware** in `internal/web/web.go`
+  intercepts requests for `/` and `/index.html`, reads the embedded
+  `index.html`, replaces every literal `__SFTPL_VERSION__` token with
+  the running binary's `platformVersion`, and serves the result with
+  `Cache-Control: no-store`.
+- **Four substitution sites** in `index.html`:
+  1. `<meta name="sftpl-version" content="__SFTPL_VERSION__">` in
+     `<head>` — synchronous read source for any JS that needs it.
+  2. `<title>SFTP Load Test v__SFTPL_VERSION__</title>` — the
+     window title bar now carries the version too.
+  3. `<span class="brand-version">v__SFTPL_VERSION__</span>` in
+     the masthead — the orange pill next to the wordmark.
+  4. Status-bar cell in `shell.js` — reads `serverVersionLabel()`
+     which pulls the meta tag content synchronously at template
+     interpolation time.
+- **`masthead.js` simplified.** Dropped the entire `apiFetch
+  ('/api/version')` block. The element is already populated when the
+  page parses; nothing async to do.
+- **`/api/version` endpoint kept** for programmatic consumers (CI
+  scripts, monitoring, the cluster master pinging worker versions);
+  the UI just doesn't depend on it anymore.
+
+### Why this is better
+
+Async fetches in a single-process Wails app SHOULD work. They
+sometimes don't — the WebKit AssetServer routes static-asset requests
+differently from `/api/*` requests, and a subtle handler-chain change
+broke the path silently. Server-rendering removes that whole class
+of failure: the byte sequence the WebView receives ALREADY contains
+the version. Nothing to fetch, nothing to fail.
+
+### Net result
+- Window title bar: *"SFTP Load Test v0.14.19"*
+- Masthead pill: *v0.14.19* (next to wordmark, accent tint)
+- Status bar (bottom right): *v0.14.19*
+- All three populated **before any JS runs**.
+
+### Internal
+- `internal/web/web.go` — new `indexVersionInjector` middleware,
+  imported `strings` (already imported).
+- `internal/web/static/index.html` — three `__SFTPL_VERSION__` tokens
+  in `<head>`, `<title>`, and the masthead pill.
+- `internal/web/static/js/shell.js` — `serverVersionLabel()` +
+  `escapeHtml()` helpers; status-bar cell template interpolates the
+  version at shell-construction time.
+- `internal/web/static/js/masthead.js` — removed the async fetch
+  block (~30 lines).
+- `main.go` `platformVersion` → `0.14.19`; `wails.json` synced.
+
 ## [v0.14.18] — 2026-05-02
 ### Tracking-mode radios → segmented control
 

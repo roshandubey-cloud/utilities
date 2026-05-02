@@ -810,17 +810,12 @@ func (s *Server) Routes() http.Handler {
 
 	sub, _ := fs.Sub(staticFS, "static")
 	// Wrap the static file server so every asset response carries
-	// Cache-Control: no-store. The Wails desktop app reuses the same
-	// embedded HTML / CSS / JS, and WebKit on macOS persists a per-app
-	// cache under ~/Library/WebKit/<bundle-id>/ that survives across
-	// app launches AND across .app rebuilds. Without an explicit
-	// no-store, an upgraded binary's fresh JS is silently shadowed by
-	// stale cached bytes for hours — visible symptom is the run form
-	// using the previous build's serializer (e.g. shipping
-	// tls_trust_on_first_use:false even though the new HTML defaults
-	// the toggle on). We pay one extra fetch per page load in exchange
-	// for parity with the binary that's running.
-	mux.Handle("/", noStoreAssets(http.FileServer(http.FS(sub))))
+	// Cache-Control: no-store. v0.14.19 — also intercepts requests
+	// for "/" and "/index.html" to substitute __SFTPL_VERSION__ with
+	// the running binary's platformVersion. This eliminates the async
+	// /api/version fetch race that had the version pill show up empty
+	// when the fetch failed silently in the WebKit AssetServer.
+	mux.Handle("/", noStoreAssets(s.indexVersionInjector(http.FileServer(http.FS(sub)))))
 
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/api/host", s.handleHost)
@@ -1609,6 +1604,40 @@ func friendlyFTPError(proto protocol.Protocol, err error) string {
 	default:
 		return tag + " connection failed — see server log for details."
 	}
+}
+
+// indexVersionInjector intercepts requests for "/" and "/index.html"
+// and substitutes the literal `__SFTPL_VERSION__` token with the
+// running binary's platformVersion. Other asset paths pass through
+// unchanged. v0.14.19 — was an async /api/version fetch that failed
+// silently in some Wails AssetServer paths, leaving the masthead +
+// status-bar version cells blank. Server-rendering removes the
+// failure mode entirely: the byte the browser receives ALREADY has
+// the version stamped in, no JS race, no fetch.
+func (s *Server) indexVersionInjector(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" && r.URL.Path != "/index.html" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Pull the embedded index.html ourselves so we can substitute
+		// before sending. Going through the next handler would commit
+		// headers + bytes before we can edit.
+		sub, _ := fs.Sub(staticFS, "static")
+		raw, err := fs.ReadFile(sub, "index.html")
+		if err != nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		ver := s.getVersion()
+		if ver == "" {
+			ver = "dev"
+		}
+		body := strings.ReplaceAll(string(raw), "__SFTPL_VERSION__", ver)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write([]byte(body))
+	})
 }
 
 // noStoreAssets wraps a handler with Cache-Control: no-store so the
