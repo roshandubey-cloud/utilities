@@ -9,6 +9,12 @@ on:
     paths:
       - 'sftp-loadtest/**'
       - '.github/workflows/test.yml'
+  # Daily run at 07:13 UTC catches vulnerabilities that land in the
+  # vuln.go.dev DB AFTER the last push — a clean PR yesterday can be
+  # vulnerable HEAD today if a new CVE is published against a function
+  # we already call. Off-the-hour minute spreads load on the GH runners.
+  schedule:
+    - cron: '13 7 * * *'
 
 jobs:
   test:
@@ -25,7 +31,16 @@ jobs:
       - name: vet
         run: go vet ./...
       - name: build
-        run: go build ./...
+        # Build every package AND emit named binaries we'll feed to
+        # govulncheck's binary-mode scanner. Binary-mode walks the
+        # actual symbol set and catches vulns reachable through the
+        # CALLED-functions graph — strictly more thorough than the
+        # source-mode pass that follows it.
+        run: |
+          mkdir -p /tmp/scan
+          go build ./...
+          go build -o /tmp/scan/sftp-loadtest .
+          go build -o /tmp/scan/mocksftp ./cmd/mockserver
       - name: test
         # -race catches data races on the hot dispatch + flush paths;
         # cheap on this codebase. -timeout matches the longest test
@@ -35,7 +50,15 @@ jobs:
       # closure. We surfaced a real CVE (GO-2025-3487 in x/crypto) on
       # 2026-05-01 by running this; making it a CI step prevents
       # regressions when dependabot opens an update PR.
+      #
+      # Pinned to v1.1.4 (current stable) so a future govulncheck
+      # release can't break our pipeline silently. Bump explicitly when
+      # a new govulncheck version ships with features we want.
       - name: install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      - name: govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+      - name: govulncheck (source mode — full module graph)
         run: $(go env GOPATH)/bin/govulncheck ./...
+      - name: govulncheck (binary mode — sftp-loadtest CLI/server)
+        run: $(go env GOPATH)/bin/govulncheck -mode=binary /tmp/scan/sftp-loadtest
+      - name: govulncheck (binary mode — mocksftp)
+        run: $(go env GOPATH)/bin/govulncheck -mode=binary /tmp/scan/mocksftp
