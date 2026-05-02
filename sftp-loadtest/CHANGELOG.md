@@ -444,9 +444,36 @@ Three follow-ups from the v0.13.7 validation pass.
   parent `data-expanded="false|true"` CSS rule, so JS just toggles
   one attribute instead of rebuilding the DOM.
 
+## [v0.13.26] — 2026-05-01
+### Fixed
+- v0.13.25's in-place "Show N more" toggle had two real problems
+  surfaced by the user:
+  1. The toggle text got clipped by the sidebar's left chrome
+     ("HOW EWER" instead of "SHOW FEWER") because its CSS padding
+     was a sibling, not a child of `.shell-sidebar-row`.
+  2. Expanding the list inside the sidebar still pushed primary nav
+     off the bottom on smaller laptops — the original problem
+     v0.13.25 was supposed to solve.
+
+### Changed
+- Sidebar list sections (Recent runs / Trusted hosts / Saved presets)
+  now show ONLY the latest 3 entries, full stop. When there are more,
+  a footer row reads "View all N runs →" / "View all N trusted hosts →"
+  / "View all N presets in ⌘K →" and routes the operator to the
+  dedicated panel where the full list lives:
+  - Recent runs   → clicks the sidebar's `[data-view="runs"]` row
+                    (full History view with latency, analysis, CSV).
+  - Trusted hosts → clicks the sidebar's `[data-view="trust"]` row
+                    (Trust panel with fingerprints + bulk Add/Remove).
+  - Saved presets → opens the command palette filtered to presets
+                    (canonical "load preset" surface with descriptions).
+- The new "View all" rows reuse the existing `.shell-sidebar-row`
+  template so padding / alignment can never drift; they're styled
+  italic + sidebar-mute with an arrow on the right.
+
 ## [Unreleased]
 
-(no changes since v0.13.25)
+(no changes since v0.13.26)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -565,7 +592,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.25...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.26...HEAD
+[v0.13.26]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.26
 [v0.13.25]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.25
 [v0.13.24]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.24
 [v0.13.23]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.23

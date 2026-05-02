@@ -358,30 +358,32 @@ body.wails-linux {
 /* ---- Primary nav section (no header) ---- */
 .shell-sidebar-section { margin: 0 0 var(--sp-2); }
 
-/* ── Collapsible overflow rows ────────────────────────────────────
-   Recent runs / Trusted hosts / Saved presets sections cap visible
-   rows at SIDEBAR_PREVIEW_N (3) by default. Rows past that index
-   carry data-overflow="true"; their visibility is controlled by the
-   parent slot's data-expanded attribute. The "Show N more" / "Show
-   fewer" toggle row appears below when there's overflow to reveal. */
-[data-role="content"][data-expanded="false"] .shell-sidebar-row[data-overflow="true"] {
-  display: none;
-}
-.shell-sidebar-toggle {
-  padding: 4px var(--sp-3);
-  margin: 2px 0 0;
-  font-size: var(--fs-11);
+/* ── "View all in <panel>" row ─────────────────────────────────────
+   Sidebar list sections (Recent runs / Trusted hosts / Saved presets)
+   cap at the latest 3 entries by default. When more exist, this row
+   appears at the bottom and routes the operator to the dedicated
+   panel where the full list lives. Looks like a normal row but with
+   muted color + arrow on the right. Reuses .shell-sidebar-row sizing
+   so padding/alignment can't drift. */
+.shell-sidebar-row-more {
   color: var(--sidebar-mute);
+  font-size: var(--fs-12);
   cursor: pointer;
-  user-select: none;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  border-radius: var(--r-2);
-  transition: background var(--t-fast), color var(--t-fast);
+  margin-top: 2px;
 }
-.shell-sidebar-toggle:hover {
+.shell-sidebar-row-more .row-label {
+  font-style: italic;
+}
+.shell-sidebar-row-more .row-meta {
+  color: var(--sidebar-mute);
+  font-family: var(--font-mono);
+}
+.shell-sidebar-row-more:hover {
   color: var(--sidebar-fg);
   background: var(--sidebar-hover-bg);
+}
+.shell-sidebar-row-more:hover .row-meta {
+  color: var(--sidebar-active-fg);
 }
 .shell-sidebar-section + .shell-sidebar-section {
   border-top: var(--bw-1) solid var(--sidebar-divider);
