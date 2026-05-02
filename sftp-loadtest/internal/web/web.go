@@ -590,7 +590,18 @@ func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 
 	sub, _ := fs.Sub(staticFS, "static")
-	mux.Handle("/", http.FileServer(http.FS(sub)))
+	// Wrap the static file server so every asset response carries
+	// Cache-Control: no-store. The Wails desktop app reuses the same
+	// embedded HTML / CSS / JS, and WebKit on macOS persists a per-app
+	// cache under ~/Library/WebKit/<bundle-id>/ that survives across
+	// app launches AND across .app rebuilds. Without an explicit
+	// no-store, an upgraded binary's fresh JS is silently shadowed by
+	// stale cached bytes for hours — visible symptom is the run form
+	// using the previous build's serializer (e.g. shipping
+	// tls_trust_on_first_use:false even though the new HTML defaults
+	// the toggle on). We pay one extra fetch per page load in exchange
+	// for parity with the binary that's running.
+	mux.Handle("/", noStoreAssets(http.FileServer(http.FS(sub))))
 
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/api/host", s.handleHost)
@@ -1356,6 +1367,17 @@ func friendlyFTPError(proto protocol.Protocol, err error) string {
 	default:
 		return tag + " connection failed — see server log for details."
 	}
+}
+
+// noStoreAssets wraps a handler with Cache-Control: no-store so the
+// WebKit / WKWebView per-app cache doesn't shadow newer embedded
+// assets after a binary upgrade. Applied to the static-file handler
+// only — JSON API endpoints are already non-cacheable by content type.
+func noStoreAssets(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

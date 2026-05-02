@@ -171,9 +171,26 @@ Three follow-ups from the v0.13.7 validation pass.
   The `ssh: handshake failed` branch also gained an FTPS-suggestion
   hint so the message reads useful even on the genuine SSH path.
 
+## [v0.13.15] — 2026-05-01
+### Fixed
+- **WebKit no longer serves stale JS/HTML after a desktop-app upgrade.**
+  Tracking down "even after I rebuilt, the SSH-handshake error still
+  fires" surfaced a deeper problem: the static-asset handler returned
+  no `Cache-Control` headers, so WKWebView on macOS happily kept the
+  old build's JavaScript in its per-app cache (under
+  `~/Library/WebKit/com.roshandubey.sftp-loadtest-desktop/` and
+  `~/Library/Caches/com.roshandubey.sftp-loadtest-desktop/`) for hours
+  after the binary upgrade. The user-visible symptom was a v0.13.13
+  binary running v0.13.10's serializer (TOFU never sent, FTPS probe
+  always took the SFTP path).
+- Static asset handler now wraps `http.FileServer` with a
+  `Cache-Control: no-store` shim. Single fetch-per-page-load cost
+  buys parity between the binary version and the rendered UI version.
+  JSON API endpoints were already non-cacheable.
+
 ## [Unreleased]
 
-(no changes since v0.13.14)
+(no changes since v0.13.15)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -292,7 +309,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.14...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.15...HEAD
+[v0.13.15]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.15
 [v0.13.14]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.14
 [v0.13.13]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.13
 [v0.13.12]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.12
