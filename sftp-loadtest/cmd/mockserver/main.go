@@ -19,13 +19,15 @@ func main() {
 	delay := flag.Duration("trackid-delay", 2*time.Second, "delay before appending #trackid and routing")
 	pairs := flag.String("pairs", "", `routing pairs, e.g. "up1=dl1,up2=dl2"; unpaired users self-loop`)
 	failUsers := flag.String("fail-users", "", "comma-separated usernames whose uploads always fail (test harness)")
+	persist := flag.Bool("persist-content", false, "store uploaded bytes and replay them on download (byte-faithful round trip; off → zero-filled downloads, lower memory)")
 	flag.Parse()
 
 	srv, err := mocksftp.Start(mocksftp.Options{
-		Addr:      *addr,
-		Delay:     *delay,
-		Pairs:     mocksftp.ParsePairs(*pairs),
-		FailUsers: mocksftp.ParseFailUsers(*failUsers),
+		Addr:           *addr,
+		Delay:          *delay,
+		Pairs:          mocksftp.ParsePairs(*pairs),
+		FailUsers:      mocksftp.ParseFailUsers(*failUsers),
+		PersistContent: *persist,
 	})
 	if err != nil {
 		log.Fatalf("mocksftp start: %v", err)

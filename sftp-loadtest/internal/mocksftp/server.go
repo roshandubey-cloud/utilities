@@ -18,6 +18,7 @@
 package mocksftp
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/hex"
@@ -43,6 +44,12 @@ type Options struct {
 	Pairs     map[string]string  // upload-user → download-user
 	FailUsers map[string]bool    // uploads from these users always fail (test harness)
 	Logger    *log.Logger        // nil → log.Default()
+	// PersistContent makes the mock retain uploaded bytes in memory and
+	// stream them back verbatim on download. Off by default — the v0.13
+	// behaviour of synthesising zero-filled downloads keeps high-throughput
+	// load runs cheap. Turn ON when validating round-trip byte fidelity
+	// (e.g. local-files / local-disk source-and-sink testing).
+	PersistContent bool
 }
 
 // Server is a running mock SFTP listener.
@@ -111,6 +118,7 @@ func Start(opts Options) (*Server, error) {
 	if opts.FailUsers != nil {
 		fs.failUsers = opts.FailUsers
 	}
+	fs.persist = opts.PersistContent
 
 	l, err := net.Listen("tcp", opts.Addr)
 	if err != nil {
@@ -231,6 +239,11 @@ type fileState struct {
 	size        int64
 	completedAt time.Time // zero while upload in progress
 	trackID     string    // empty until assigned
+	// content holds the uploaded bytes when the server is started with
+	// PersistContent=true. Nil otherwise (saves memory on throughput runs
+	// where bytes don't matter). Routed copies share the slice — the
+	// upload owner never mutates after Close.
+	content []byte
 }
 
 type mockFS struct {
@@ -239,6 +252,7 @@ type mockFS struct {
 	delay     time.Duration
 	routes    map[string]string // up-user → dl-user (unpaired self-loops)
 	failUsers map[string]bool   // test-harness: writes from these users fail
+	persist   bool              // store + replay upload bytes; off → zero-filled downloads
 }
 
 func newMockFS(delay time.Duration, routes map[string]string) *mockFS {
@@ -289,6 +303,10 @@ func (v *userView) Fileread(r *sftp.Request) (io.ReaderAt, error) {
 		// silently completing a 0-byte download. This is what a real SFTP
 		// server does when a user reads a path outside their own outbox.
 		return nil, os.ErrNotExist
+	}
+	if v.fs.persist && st.content != nil {
+		// Byte-faithful replay: download stream is exactly what was uploaded.
+		return bytes.NewReader(st.content), nil
 	}
 	// Synthesise zero-filled content of recorded size so download speed is measurable.
 	return &zeroReader{size: st.size}, nil
@@ -395,6 +413,7 @@ func (fs *mockFS) promoteInboxesLocked() {
 			size:        st.size,
 			completedAt: now,
 			trackID:     tid,
+			content:     st.content, // share slice; immutable after upload close
 		}
 
 		// 3. record in sender's sent/ (size only, no content needed)
@@ -403,6 +422,7 @@ func (fs *mockFS) promoteInboxesLocked() {
 			size:        st.size,
 			completedAt: now,
 			trackID:     tid,
+			content:     st.content,
 		}
 	}
 }
@@ -414,8 +434,9 @@ type writeHandle struct {
 	key  string
 	user string
 
-	mu   sync.Mutex
-	size int64
+	mu      sync.Mutex
+	size    int64
+	content []byte // populated only when fs.persist is true
 }
 
 func (w *writeHandle) WriteAt(p []byte, off int64) (int, error) {
@@ -424,6 +445,17 @@ func (w *writeHandle) WriteAt(p []byte, off int64) (int, error) {
 	if end > w.size {
 		w.size = end
 	}
+	if w.fs.persist {
+		// Grow buffer to fit the highest offset seen, then copy the chunk
+		// at the right position. SFTP clients often write in order, but
+		// the protocol allows arbitrary offsets so we don't assume.
+		if int64(len(w.content)) < end {
+			grown := make([]byte, end)
+			copy(grown, w.content)
+			w.content = grown
+		}
+		copy(w.content[off:end], p)
+	}
 	w.mu.Unlock()
 	return len(p), nil
 }
@@ -431,11 +463,13 @@ func (w *writeHandle) WriteAt(p []byte, off int64) (int, error) {
 func (w *writeHandle) Close() error {
 	w.mu.Lock()
 	size := w.size
+	content := w.content
 	w.mu.Unlock()
 	w.fs.mu.Lock()
 	if st, ok := w.fs.files[w.key]; ok {
 		st.size = size
 		st.completedAt = time.Now()
+		st.content = content
 	}
 	w.fs.mu.Unlock()
 	return nil
