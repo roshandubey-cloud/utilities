@@ -47,6 +47,7 @@ function wireSourceDisclosure(root) {
   const probeEl    = root.querySelector('[data-role="src-probe-fields"]');
   const probeBtn   = root.querySelector('[data-role="src-probe"]');
   const probeOut   = root.querySelector('[data-role="src-probe-out"]');
+  const probeMatrix= root.querySelector('[data-role="src-probe-matrix"]');
   const warnEl     = root.querySelector('[data-role="src-warn"]');
   const filesText  = root.querySelector('[data-role="src-files"]');
   const dirInput   = root.querySelector('[data-role="src-dir"]');
@@ -54,6 +55,9 @@ function wireSourceDisclosure(root) {
   const advError   = root.querySelector('[data-role="src-advanced-error"]');
   const filesBrowse= root.querySelector('[data-role="src-files-browse"]');
   const dirBrowse  = root.querySelector('[data-role="src-dir-browse"]');
+  const layoutPicker = root.querySelector('[data-role="src-layout"]');
+  const layoutValue  = root.querySelector('[data-role="src-layout-value"]');
+  const layoutHelp   = root.querySelector('[data-role="src-layout-help"]');
   if (!kindPicker || !kindValue) return;
 
   function applyKind(kind) {
@@ -87,6 +91,29 @@ function wireSourceDisclosure(root) {
         });
       });
     });
+  }
+
+  // ---- Layout picker (only meaningful for kind=local-dir) — drives the
+  // "n users, n files" knob: flat / by-user / by-pattern / by-user-pattern.
+  if (layoutPicker && layoutValue) {
+    function applyLayout(layout) {
+      layoutValue.value = layout;
+      layoutPicker.querySelectorAll('button').forEach((b) => {
+        b.setAttribute('aria-pressed', b.dataset.value === layout ? 'true' : 'false');
+      });
+      if (layoutHelp) {
+        layoutHelp.querySelectorAll('[data-layout-help]').forEach((s) => {
+          s.hidden = s.dataset.layoutHelp !== layout;
+        });
+      }
+    }
+    layoutPicker.querySelectorAll('button').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        applyLayout(btn.dataset.value);
+      });
+    });
+    applyLayout(layoutValue.value || 'flat');
   }
 
   // ---- Wails native pickers — only show when desktop bindings exist.
@@ -151,20 +178,30 @@ function wireSourceDisclosure(root) {
   advText?.addEventListener('input', refreshAdvError);
   refreshAdvError();
 
-  // ---- Probe button.
+  // ---- Probe button. For non-flat layouts the backend wants a list of
+  // sample users so it can resolve <root>/<username>/<glob> per row.
+  // We pull them from the same load's CSV textarea — operator already
+  // typed them up there, no point asking twice.
   if (probeBtn && probeOut) {
     probeBtn.addEventListener('click', async (ev) => {
       ev.preventDefault();
       probeOut.textContent = 'Probing…';
+      if (probeMatrix) { probeMatrix.hidden = true; probeMatrix.innerHTML = ''; }
       const cfg = readSource(root.dataset.kind) || { kind: kindValue.value };
+      const layout = (cfg.kind === 'local-dir') ? (cfg.layout || 'flat') : 'flat';
+      const sampleUsers = (layout !== 'flat') ? readSampleUsers(root.dataset.kind) : [];
+      const body = (layout !== 'flat')
+        ? { source: cfg, users: sampleUsers }
+        : cfg;
       try {
         const r = await fetch('/api/probe-source', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'sftp-loadtest' },
-          body: JSON.stringify(cfg),
+          body: JSON.stringify(body),
         });
         const j = await r.json();
         probeOut.textContent = formatProbeResult(j);
+        if (j.users && probeMatrix) renderProbeMatrix(probeMatrix, j);
       } catch (e) {
         probeOut.textContent = 'Probe failed: ' + e.message;
       }
@@ -339,6 +376,71 @@ function humanBytes(n) {
   return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
 }
 
+// readSampleUsers parses the relevant load's user CSV textarea into the
+// {username, pattern} pairs /api/probe-source needs. Each user contributes
+// one entry per pattern (the runner picks patterns round-robin per upload,
+// so probing every pattern matches what the runtime will actually do).
+// Returns [] when the textarea is empty so the backend can still answer
+// with a "supply users" hint instead of erroring.
+function readSampleUsers(kind /* "normal" | "large" */) {
+  const id = kind === 'large' ? 'large_users' : 'normal_users';
+  const ta = document.getElementById(id);
+  if (!ta) return [];
+  const out = [];
+  const seen = new Set();
+  (ta.value || '').split('\n').forEach((line) => {
+    const cols = line.split(',').map((s) => s.trim()).filter(Boolean);
+    if (cols.length < 3) return;
+    const username = cols[0];
+    cols.slice(2).forEach((pattern) => {
+      const k = username + '|' + pattern;
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.push({ username, pattern });
+    });
+  });
+  return out;
+}
+
+// renderProbeMatrix turns the per-user response from /api/probe-source
+// into a compact table inside the disclosure: one row per (user,
+// pattern) with file count + total size, or the friendly error when
+// the resolution failed for that account.
+function renderProbeMatrix(host, j) {
+  if (!j.users || !j.users.length) {
+    host.hidden = true;
+    host.innerHTML = '';
+    return;
+  }
+  const head = `<div class="probe-matrix-head">
+    <span>Account</span><span>Pattern</span><span>Files</span><span>Total</span>
+  </div>`;
+  const rows = j.users.map((u) => {
+    if (!u.ok) {
+      return `<div class="probe-matrix-row probe-matrix-row-err">
+        <span class="mono">${escapeHtml(u.username || '—')}</span>
+        <span class="mono">${escapeHtml(u.pattern || '—')}</span>
+        <span colspan="2" class="probe-matrix-err">${escapeHtml(u.error || 'unresolved')}</span>
+      </div>`;
+    }
+    const n = (u.files || []).length;
+    return `<div class="probe-matrix-row">
+      <span class="mono">${escapeHtml(u.username)}</span>
+      <span class="mono">${escapeHtml(u.pattern || '—')}</span>
+      <span>${n}</span>
+      <span>${humanBytes(u.total_bytes || 0)}</span>
+    </div>`;
+  }).join('');
+  host.innerHTML = head + rows;
+  host.hidden = false;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
 // ---------- read field state into the JSON payload ----------
 
 // readSource returns the SourceConfig for the disclosure with the
@@ -361,6 +463,11 @@ export function readSource(kind /* "normal" | "large" */) {
     if (!dir) return null;
     out.dir = dir;
     out.mode = root.querySelector('[data-role="src-mode-value"]')?.value || 'round-robin';
+    // Layout drives the "n users, n files" knob. Omit when "flat" so
+    // the wire format stays identical to v0.14.0–3 for unchanged
+    // configs.
+    const layout = root.querySelector('[data-role="src-layout-value"]')?.value || 'flat';
+    if (layout && layout !== 'flat') out.layout = layout;
   } else {
     // synthetic — only emit the config when there are advanced overrides
     // OR a non-default mode. Otherwise return null so the backend uses
@@ -417,6 +524,20 @@ export function applySource(kind, src) {
   if (src && k === 'local-dir') {
     const dirEl = root.querySelector('[data-role="src-dir"]');
     if (dirEl) dirEl.value = src.dir || '';
+    // Restore layout (defaults to flat when omitted) so the segmented
+    // picker + the right teaching-copy span both reflect the imported
+    // state.
+    const layout = src.layout || 'flat';
+    const lv = root.querySelector('[data-role="src-layout-value"]');
+    const lp = root.querySelector('[data-role="src-layout"]');
+    const lh = root.querySelector('[data-role="src-layout-help"]');
+    if (lv) lv.value = layout;
+    if (lp) lp.querySelectorAll('button').forEach((b) => {
+      b.setAttribute('aria-pressed', b.dataset.value === layout ? 'true' : 'false');
+    });
+    if (lh) lh.querySelectorAll('[data-layout-help]').forEach((s) => {
+      s.hidden = s.dataset.layoutHelp !== layout;
+    });
   }
   if (src && src.mode) {
     const mv = root.querySelector('[data-role="src-mode-value"]');

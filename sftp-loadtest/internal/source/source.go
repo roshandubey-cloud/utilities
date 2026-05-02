@@ -213,6 +213,183 @@ func NewLocalDir(dir string, mode PickMode) (*LocalDir, error) {
 	return &LocalDir{LocalFiles: lf}, nil
 }
 
+// Layout names the strategies LocalTree understands. Documented in the
+// SourceConfig comment in internal/config/config.go.
+type Layout string
+
+const (
+	LayoutFlat            Layout = "flat"
+	LayoutByUser          Layout = "by-user"
+	LayoutByPattern       Layout = "by-pattern"
+	LayoutByUserAndPattern Layout = "by-user-pattern"
+)
+
+// LocalTree resolves a per-user / per-pattern file pool against a single
+// root directory. Lazy: the file list for (user, pattern) is built on
+// first use and cached for the rest of the run, so an N-account test
+// against `<root>/<account>/*` is cheap even when N is large.
+//
+// Layouts:
+//   - flat               — <root>/* (one shared pool; identical to LocalDir)
+//   - by-user            — <root>/<username>/*
+//   - by-pattern         — <root>/* filtered by filepath.Match(pattern, basename)
+//   - by-user-pattern    — <root>/<username>/* filtered by filepath.Match
+//
+// Hidden files (leading dot) and subdirectories are skipped at every
+// layer. An empty resolved pool fails the upload — operators see the
+// pattern mismatch immediately instead of falling back to synthetic.
+type LocalTree struct {
+	root   string
+	layout Layout
+	mode   PickMode
+	mu     sync.Mutex
+	pools  map[string]*LocalFiles
+}
+
+// NewLocalTree validates the root directory exists and returns a
+// LocalTree. Per-(user, pattern) resolution is deferred to Next().
+func NewLocalTree(root string, layout Layout, mode PickMode) (*LocalTree, error) {
+	if root == "" {
+		return nil, errors.New("local-tree: root is required")
+	}
+	ap, err := filepath.Abs(root)
+	if err != nil {
+		return nil, fmt.Errorf("local-tree: resolve %q: %w", root, err)
+	}
+	fi, err := os.Stat(ap)
+	if err != nil {
+		return nil, fmt.Errorf("local-tree: stat %q: %w", ap, err)
+	}
+	if !fi.IsDir() {
+		return nil, fmt.Errorf("local-tree: %q is not a directory", ap)
+	}
+	if layout == "" {
+		layout = LayoutFlat
+	}
+	switch layout {
+	case LayoutFlat, LayoutByUser, LayoutByPattern, LayoutByUserAndPattern:
+		// ok
+	default:
+		return nil, fmt.Errorf("local-tree: unknown layout %q", layout)
+	}
+	if mode == "" {
+		mode = ModeRoundRobin
+	}
+	return &LocalTree{
+		root:   ap,
+		layout: layout,
+		mode:   mode,
+		pools:  map[string]*LocalFiles{},
+	}, nil
+}
+
+func (l *LocalTree) Next(req Request) (Result, error) {
+	pool, err := l.poolFor(req)
+	if err != nil {
+		return Result{}, err
+	}
+	return pool.Next(req)
+}
+
+func (l *LocalTree) poolFor(req Request) (*LocalFiles, error) {
+	key := string(l.layout) + "|" + req.User + "|" + req.Pattern
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if p, ok := l.pools[key]; ok {
+		return p, nil
+	}
+	files, err := l.resolveFor(req)
+	if err != nil {
+		return nil, err
+	}
+	p, err := NewLocalFiles(files, l.mode)
+	if err != nil {
+		return nil, err
+	}
+	l.pools[key] = p
+	return p, nil
+}
+
+// resolveFor expands the layout to a concrete (dir, pattern) pair and
+// returns the matching files. Errors here are friendly enough to land
+// in /api/probe-source output verbatim.
+func (l *LocalTree) resolveFor(req Request) ([]string, error) {
+	dir := l.root
+	var glob string
+	switch l.layout {
+	case LayoutByUser:
+		if req.User == "" {
+			return nil, errors.New("local-tree by-user: empty username (CSV row missing username column?)")
+		}
+		dir = filepath.Join(l.root, req.User)
+	case LayoutByPattern:
+		glob = req.Pattern
+	case LayoutByUserAndPattern:
+		if req.User == "" {
+			return nil, errors.New("local-tree by-user-pattern: empty username")
+		}
+		dir = filepath.Join(l.root, req.User)
+		glob = req.Pattern
+	}
+	return readDirGlob(dir, glob)
+}
+
+// readDirGlob lists dir's top-level regular files (skipping dotfiles
+// and subdirs) and optionally filters by a filepath.Match glob against
+// the basename. An empty match is an error so an operator who typoed a
+// pattern doesn't silently get an empty pool.
+func readDirGlob(dir, glob string) ([]string, error) {
+	fi, err := os.Stat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("local-tree: stat %q: %w", dir, err)
+	}
+	if !fi.IsDir() {
+		return nil, fmt.Errorf("local-tree: %q is not a directory", dir)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("local-tree: read %q: %w", dir, err)
+	}
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		if glob != "" {
+			ok, err := filepath.Match(glob, e.Name())
+			if err != nil {
+				return nil, fmt.Errorf("local-tree: bad pattern %q: %w", glob, err)
+			}
+			if !ok {
+				continue
+			}
+		}
+		out = append(out, filepath.Join(dir, e.Name()))
+	}
+	if len(out) == 0 {
+		if glob != "" {
+			return nil, fmt.Errorf("local-tree: no files in %q match pattern %q", dir, glob)
+		}
+		return nil, fmt.Errorf("local-tree: %q contains no regular files", dir)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// FilesFor exposes resolveFor to /api/probe-source so the UI can
+// preview the per-user file list before the operator commits to a run.
+// Returns nil + the friendly error verbatim on failure.
+func (l *LocalTree) FilesFor(user, pattern string) ([]string, error) {
+	return l.resolveFor(Request{User: user, Pattern: pattern})
+}
+
+// Layout returns the configured layout — useful for the probe UI to
+// decide whether to render a per-user matrix or a single pool view.
+func (l *LocalTree) LayoutName() Layout { return l.layout }
+
+// Root returns the configured root directory.
+func (l *LocalTree) Root() string { return l.root }
+
 // openFile wraps an os.File so the runner can stream upload bytes
 // directly from disk without buffering the whole file in memory.
 // Close is wired through Result so the runner releases the fd as

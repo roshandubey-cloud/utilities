@@ -157,9 +157,29 @@ type SourceConfig struct {
 	// must be a readable regular file at run-start time.
 	Files []string `json:"files,omitempty"`
 
-	// Dir is the directory to scan for kind="local-dir". Only top-level
-	// regular files are picked up; subdirs and dotfiles are skipped.
+	// Dir is the directory to scan for kind="local-dir".
 	Dir string `json:"dir,omitempty"`
+
+	// Layout (kind="local-dir" only) decides how Dir is sliced across
+	// the user CSV — the "n users, n files" knob. Without this every
+	// user shares one flat pool of <Dir>'s top-level files.
+	//
+	//   "flat"            (default) — every user picks from <Dir>/*.
+	//   "by-user"         — <Dir>/<username>/*. Each account pulls
+	//                       from its own named subdir; the test fails
+	//                       fast if the subdir is missing or empty.
+	//   "by-pattern"      — <Dir>/* filtered by filepath.Match against
+	//                       each user's CSV pattern (e.g. pattern
+	//                       "invoice-*" picks files named "invoice-*"
+	//                       in the flat root). Different accounts
+	//                       carve up the same pool by their patterns.
+	//   "by-user-pattern" — <Dir>/<username>/* further filtered by
+	//                       the user's pattern. The strictest layout;
+	//                       use it when each account has its own subdir
+	//                       AND distinct file types.
+	//
+	// Subdirs and dotfiles are skipped at every layer.
+	Layout string `json:"layout,omitempty"`
 
 	// Mode selects how the pool is sampled per Next() call:
 	// "round-robin" (default), "random", or "sequential" (errors on
@@ -217,6 +237,12 @@ func (s *SourceConfig) Validate(label string) error {
 	case "local-dir":
 		if s.Dir == "" {
 			return errors.New(label + " source kind=local-dir requires dir")
+		}
+		switch s.Layout {
+		case "", "flat", "by-user", "by-pattern", "by-user-pattern":
+			// ok
+		default:
+			return errors.New(label + ` source layout must be "flat", "by-user", "by-pattern", or "by-user-pattern"`)
 		}
 	default:
 		return errors.New(label + ` source kind must be "synthetic", "local-files", or "local-dir"`)

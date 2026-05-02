@@ -818,7 +818,14 @@ func buildSourceLeaf(c *config.SourceConfig) (source.FileSource, error) {
 	case "local-files":
 		return source.NewLocalFiles(c.Files, mode)
 	case "local-dir":
-		return source.NewLocalDir(c.Dir, mode)
+		// Layout="" or "flat" keeps the v0.14.0 single-pool behaviour
+		// (eager LocalDir). Any other layout switches to LocalTree
+		// which resolves per-(user, pattern) lazily — required for
+		// "n users, n files" account-folder / pattern-glob conventions.
+		if c.Layout == "" || c.Layout == "flat" {
+			return source.NewLocalDir(c.Dir, mode)
+		}
+		return source.NewLocalTree(c.Dir, source.Layout(c.Layout), mode)
 	default:
 		return nil, fmt.Errorf("unknown source kind %q", c.Kind)
 	}

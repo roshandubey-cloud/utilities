@@ -569,47 +569,122 @@ func (s *Server) probeFTP(w http.ResponseWriter, out map[string]any, proto proto
 
 // /api/probe-source — local-only validation of a SourceConfig before a
 // real run. Resolves the kind to the same constructors the runner uses
-// (NewLocalFiles / NewLocalDir), then returns the file list with sizes.
-// No network I/O — purely a "did the operator point at a real folder /
-// existing files?" check so the desktop UI can surface "12 files,
-// 3.4 MB" before they commit to a long run.
+// (NewLocalFiles / NewLocalDir / NewLocalTree), then returns the file
+// list with sizes. No network I/O — purely a "did the operator point
+// at a real folder / existing files?" check so the desktop UI can
+// surface "12 files, 3.4 MB" before they commit to a long run.
 //
-// Body: {kind, files, dir, mode}. Synthetic returns ok:true with no
-// files. Misconfigured paths return ok:false + a friendly error.
+// Body shape:
+//
+//	{
+//	  "source": { ...SourceConfig... },
+//	  "users":  [{"username":"alice","pattern":"invoice-*"}, ...]   // optional
+//	}
+//
+// The legacy v0.14.3 shape — a bare SourceConfig at the body root — is
+// still accepted for backwards compat. When `users` is provided AND the
+// kind is "local-dir" with a non-flat Layout, the response carries a
+// per-user matrix instead of a single file list so an operator running
+// "by-user" / "by-pattern" / "by-user-pattern" can verify each
+// account's pool resolves before they kick off the run.
 func (s *Server) handleProbeSource(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST required", http.StatusMethodNotAllowed)
 		return
 	}
-	var req config.SourceConfig
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSON(w, map[string]any{"ok": false, "error": "read body: " + err.Error()})
+		return
+	}
+	// Try the new envelope first; fall through to bare SourceConfig.
+	var env struct {
+		Source *config.SourceConfig `json:"source"`
+		Users  []struct {
+			Username string `json:"username"`
+			Pattern  string `json:"pattern"`
+		} `json:"users"`
+	}
+	if err := json.Unmarshal(body, &env); err == nil && env.Source != nil {
+		writeJSON(w, probeSourceResolved(*env.Source, env.Users))
+		return
+	}
+	var legacy config.SourceConfig
+	if err := json.Unmarshal(body, &legacy); err != nil {
 		writeJSON(w, map[string]any{"ok": false, "error": "bad json: " + err.Error()})
 		return
 	}
-	out := map[string]any{"ok": true, "kind": req.Kind, "files": []any{}, "total_bytes": int64(0)}
-	switch req.Kind {
+	writeJSON(w, probeSourceResolved(legacy, nil))
+}
+
+// probeSourceResolved is the body of /api/probe-source — split out so
+// the legacy bare-config and new {source, users} envelopes can share it.
+func probeSourceResolved(cfg config.SourceConfig, users []struct {
+	Username string `json:"username"`
+	Pattern  string `json:"pattern"`
+}) map[string]any {
+	out := map[string]any{"ok": true, "kind": cfg.Kind, "files": []any{}, "total_bytes": int64(0)}
+	switch cfg.Kind {
 	case "", "synthetic":
-		// Nothing to probe — runner will generate random bytes.
 		out["note"] = "synthetic source — random bytes generated per upload"
+		return out
 	case "local-files":
-		lf, err := source.NewLocalFiles(req.Files, source.PickMode(req.Mode))
+		lf, err := source.NewLocalFiles(cfg.Files, source.PickMode(cfg.Mode))
 		if err != nil {
-			writeJSON(w, map[string]any{"ok": false, "kind": req.Kind, "error": err.Error()})
-			return
+			return map[string]any{"ok": false, "kind": cfg.Kind, "error": err.Error()}
 		}
 		out["files"], out["total_bytes"] = statFiles(lf.Files())
+		return out
 	case "local-dir":
-		ld, err := source.NewLocalDir(req.Dir, source.PickMode(req.Mode))
-		if err != nil {
-			writeJSON(w, map[string]any{"ok": false, "kind": req.Kind, "error": err.Error()})
-			return
+		// Flat layout (default) → eager pool, single list for all users.
+		if cfg.Layout == "" || cfg.Layout == "flat" {
+			ld, err := source.NewLocalDir(cfg.Dir, source.PickMode(cfg.Mode))
+			if err != nil {
+				return map[string]any{"ok": false, "kind": cfg.Kind, "error": err.Error()}
+			}
+			out["layout"] = "flat"
+			out["files"], out["total_bytes"] = statFiles(ld.Files())
+			return out
 		}
-		out["files"], out["total_bytes"] = statFiles(ld.Files())
+		// Per-user / per-pattern layouts need sample users to resolve
+		// against. Build the LocalTree and probe each (user, pattern).
+		lt, err := source.NewLocalTree(cfg.Dir, source.Layout(cfg.Layout), source.PickMode(cfg.Mode))
+		if err != nil {
+			return map[string]any{"ok": false, "kind": cfg.Kind, "layout": cfg.Layout, "error": err.Error()}
+		}
+		out["layout"] = string(lt.LayoutName())
+		out["root"] = lt.Root()
+		if len(users) == 0 {
+			out["note"] = "supply users[{username,pattern}] in the body to resolve per-user pools"
+			return out
+		}
+		matrix := make([]map[string]any, 0, len(users))
+		var grandTotal int64
+		var grandCount int
+		for _, u := range users {
+			row := map[string]any{"username": u.Username, "pattern": u.Pattern}
+			files, ferr := lt.FilesFor(u.Username, u.Pattern)
+			if ferr != nil {
+				row["ok"] = false
+				row["error"] = ferr.Error()
+				matrix = append(matrix, row)
+				continue
+			}
+			fileEntries, total := statFiles(files)
+			row["ok"] = true
+			row["files"] = fileEntries
+			row["total_bytes"] = total
+			matrix = append(matrix, row)
+			grandTotal += total
+			grandCount += len(fileEntries)
+		}
+		out["users"] = matrix
+		out["total_bytes"] = grandTotal
+		out["total_files"] = grandCount
+		return out
 	default:
-		writeJSON(w, map[string]any{"ok": false, "error": "unknown kind: " + req.Kind})
-		return
+		return map[string]any{"ok": false, "error": "unknown kind: " + cfg.Kind}
 	}
-	writeJSON(w, out)
 }
 
 // statFiles stats every path in the pool and returns a list of
