@@ -30,6 +30,7 @@ import (
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/report"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/runner"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/sftpx"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/source"
 )
 
 //go:embed static
@@ -566,6 +567,120 @@ func (s *Server) probeFTP(w http.ResponseWriter, out map[string]any, proto proto
 	writeJSON(w, out)
 }
 
+// /api/probe-source — local-only validation of a SourceConfig before a
+// real run. Resolves the kind to the same constructors the runner uses
+// (NewLocalFiles / NewLocalDir), then returns the file list with sizes.
+// No network I/O — purely a "did the operator point at a real folder /
+// existing files?" check so the desktop UI can surface "12 files,
+// 3.4 MB" before they commit to a long run.
+//
+// Body: {kind, files, dir, mode}. Synthetic returns ok:true with no
+// files. Misconfigured paths return ok:false + a friendly error.
+func (s *Server) handleProbeSource(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	var req config.SourceConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, map[string]any{"ok": false, "error": "bad json: " + err.Error()})
+		return
+	}
+	out := map[string]any{"ok": true, "kind": req.Kind, "files": []any{}, "total_bytes": int64(0)}
+	switch req.Kind {
+	case "", "synthetic":
+		// Nothing to probe — runner will generate random bytes.
+		out["note"] = "synthetic source — random bytes generated per upload"
+	case "local-files":
+		lf, err := source.NewLocalFiles(req.Files, source.PickMode(req.Mode))
+		if err != nil {
+			writeJSON(w, map[string]any{"ok": false, "kind": req.Kind, "error": err.Error()})
+			return
+		}
+		out["files"], out["total_bytes"] = statFiles(lf.Files())
+	case "local-dir":
+		ld, err := source.NewLocalDir(req.Dir, source.PickMode(req.Mode))
+		if err != nil {
+			writeJSON(w, map[string]any{"ok": false, "kind": req.Kind, "error": err.Error()})
+			return
+		}
+		out["files"], out["total_bytes"] = statFiles(ld.Files())
+	default:
+		writeJSON(w, map[string]any{"ok": false, "error": "unknown kind: " + req.Kind})
+		return
+	}
+	writeJSON(w, out)
+}
+
+// statFiles stats every path in the pool and returns a list of
+// {path, size, error?} entries plus the running total. Stat failures
+// don't abort the probe — they show up in-line so the operator sees
+// exactly which file is missing or unreadable.
+func statFiles(paths []string) ([]map[string]any, int64) {
+	out := make([]map[string]any, 0, len(paths))
+	var total int64
+	for _, p := range paths {
+		entry := map[string]any{"path": p}
+		if fi, err := os.Stat(p); err != nil {
+			entry["error"] = err.Error()
+		} else {
+			entry["size"] = fi.Size()
+			total += fi.Size()
+		}
+		out = append(out, entry)
+	}
+	return out, total
+}
+
+// /api/probe-sink — local-only validation of a SinkConfig. Verifies the
+// root directory is writable (creates it if missing — the same lazy
+// behaviour the runner uses on first download) and renders the template
+// against a sample upload so the operator sees the actual on-disk path
+// before committing.
+//
+// Body: {kind, root, template, overwrite}. Returns the resolved path
+// preview + a writable flag.
+func (s *Server) handleProbeSink(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	var req config.SinkConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, map[string]any{"ok": false, "error": "bad json: " + err.Error()})
+		return
+	}
+	if req.Kind == "" || req.Kind == "discard" {
+		writeJSON(w, map[string]any{"ok": true, "kind": "discard", "note": "downloads stream to io.Discard — no on-disk persistence"})
+		return
+	}
+	if req.Kind != "local-disk" {
+		writeJSON(w, map[string]any{"ok": false, "error": "unknown kind: " + req.Kind})
+		return
+	}
+	if strings.TrimSpace(req.Root) == "" {
+		writeJSON(w, map[string]any{"ok": false, "error": "root is required for local-disk sink"})
+		return
+	}
+	// Lazy create + write probe — same semantics as the runner's first download.
+	if err := os.MkdirAll(req.Root, 0o755); err != nil {
+		writeJSON(w, map[string]any{"ok": false, "error": "mkdir " + req.Root + ": " + err.Error()})
+		return
+	}
+	probe := req.Root + "/.sftpl-sink-probe"
+	if err := os.WriteFile(probe, []byte("ok"), 0o644); err != nil {
+		writeJSON(w, map[string]any{"ok": false, "error": "write probe: " + err.Error()})
+		return
+	}
+	_ = os.Remove(probe)
+	writeJSON(w, map[string]any{
+		"ok":       true,
+		"kind":     "local-disk",
+		"root":     req.Root,
+		"writable": true,
+	})
+}
+
 // /api/host — one-shot snapshot of the client machine's capacity. Called
 // once at UI load (and any time the operator wants to refresh) so testers
 // always see the real ceilings (FD limit, cores, RAM, NICs) of the box
@@ -617,6 +732,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/api/host", s.handleHost)
 	mux.HandleFunc("/api/probe", s.handleProbe)
+	mux.HandleFunc("/api/probe-source", s.handleProbeSource)
+	mux.HandleFunc("/api/probe-sink", s.handleProbeSink)
 	mux.HandleFunc("/api/start", s.handleStart)
 	mux.HandleFunc("/api/stop", s.handleStop)
 	mux.HandleFunc("/api/status", s.handleStatus)

@@ -244,6 +244,18 @@ type Resolver struct {
 	PerPattern map[string]FileSource
 }
 
+// Files returns the resolved absolute paths in the LocalFiles pool —
+// exposed so the /api/probe-source UI can preview what the runner
+// would actually upload before the operator commits to a real run.
+func (l *LocalFiles) Files() []string {
+	if l == nil {
+		return nil
+	}
+	out := make([]string, len(l.files))
+	copy(out, l.files)
+	return out
+}
+
 // Resolve returns the source the runner should call Next() on for this
 // upload. Falls through user → pattern → default → Synthetic.
 func (r *Resolver) Resolve(req Request) FileSource {
