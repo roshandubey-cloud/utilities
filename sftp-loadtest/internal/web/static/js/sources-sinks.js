@@ -1,3 +1,5 @@
+import { guideRequiredFields } from './guidance.js';
+
 // sources-sinks.js — v0.14 Phase 2 wiring for the source/sink form
 // disclosures inside Normal load / Large load / Download cards.
 //
@@ -185,6 +187,19 @@ function wireSourceDisclosure(root) {
   if (probeBtn && probeOut) {
     probeBtn.addEventListener('click', async (ev) => {
       ev.preventDefault();
+      // Empty-field guidance — the picker can be on local-files /
+      // local-dir but if the textarea / dir input is blank,
+      // readSource() returns null and the probe used to fire with
+      // an empty config that the backend friendly-rejected. Catch
+      // that here so the operator gets pointed at the right field.
+      const k = kindValue.value;
+      if (k === 'local-files') {
+        if (!guideRequiredFields([{ el: filesText, label: 'Files (one path per line)' }],
+            { action: 'probe the source' })) return;
+      } else if (k === 'local-dir') {
+        if (!guideRequiredFields([{ el: dirInput, label: 'Directory' }],
+            { action: 'probe the source' })) return;
+      }
       probeOut.textContent = 'Probing…';
       if (probeMatrix) { probeMatrix.hidden = true; probeMatrix.innerHTML = ''; }
       const cfg = readSource(root.dataset.kind) || { kind: kindValue.value };
@@ -313,6 +328,12 @@ function wireSinkDisclosure(root) {
   if (probeBtn && probeOut) {
     probeBtn.addEventListener('click', async (ev) => {
       ev.preventDefault();
+      // Empty-root guidance for local-disk sink — discard kind has
+      // no field requirements so always passes through.
+      if (kindValue.value === 'local-disk') {
+        if (!guideRequiredFields([{ el: rootInput, label: 'Root directory' }],
+            { action: 'probe the sink' })) return;
+      }
       probeOut.textContent = 'Probing…';
       const cfg = readSink() || { kind: kindValue.value, root: (rootInput?.value || '').trim() };
       try {

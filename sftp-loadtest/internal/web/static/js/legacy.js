@@ -413,8 +413,73 @@ async function ensureHostKeyTrusted(host, port) {
   return true;
 }
 
+// startRunGuidance — pre-flight check that surfaces friendly toasts
+// instead of letting Start run silently POST a half-baked config to
+// the backend. Reads the same form fields buildRequestBody() will,
+// returns false (after focusing + pulsing the offender) when the
+// run can't possibly succeed.
+//
+// Layered checks:
+//   1. Host + Port must be filled (the connection card OR the legacy
+//      hidden inputs that mirror it).
+//   2. At least one workload (Normal / Large / Download) must be
+//      enabled — otherwise /api/start would 400.
+//   3. Each enabled workload must have a non-empty users CSV.
+//
+// Uses window.__guide which is wired by guidance.js on app load.
+function startRunGuidance() {
+  const g = (typeof window !== 'undefined') ? window.__guide : null;
+  if (!g) return true; // module import failed; let backend errors fall through
+  // The visible host/port inputs live on the new Quick Checks card
+  // (#conn-host / #conn-port). The legacy hidden #host / #port mirror
+  // them — we focus the visible ones so the operator sees the cursor
+  // jump.
+  const hostEl = document.getElementById('conn-host') || $('host');
+  const portEl = document.getElementById('conn-port') || $('port');
+  if (!g.guideRequiredFields([
+    { el: hostEl, label: 'Host' },
+    { el: portEl, label: 'Port' },
+  ], { action: 'start the run' })) return false;
+
+  const normalOn   = $('normal_enabled')?.checked;
+  const largeOn    = $('large_enabled')?.checked;
+  const downloadOn = $('download_enabled')?.checked;
+  if (!normalOn && !largeOn && !downloadOn) {
+    g.guideCondition(false, 'Enable at least one workload (Normal, Large, or Download) to start the run.', {
+      focusEl: $('normal_enabled'),
+    });
+    return false;
+  }
+
+  // Each enabled workload needs users. Empty users CSV → backend 400
+  // with a cryptic "no rows" error far from the textarea.
+  const checks = [
+    { on: normalOn,   id: 'normal_users',   label: 'Normal users CSV' },
+    { on: largeOn,    id: 'large_users',    label: 'Large users CSV' },
+    { on: downloadOn, id: 'download_users', label: 'Download users CSV' },
+  ];
+  for (const c of checks) {
+    if (!c.on) continue;
+    const raw = (typeof getCsvRaw === 'function') ? getCsvRaw(c.id) : ($(c.id)?.value || '');
+    const hasRow = raw.split('\n').map((s) => s.trim()).filter(Boolean).some((line) => line.split(',').length >= 3);
+    if (!hasRow) {
+      g.guideCondition(false, `Add at least one user (username,password,pattern) to ${c.label} to start the run.`, {
+        focusEl: $(c.id),
+      });
+      return false;
+    }
+  }
+  return true;
+}
+
 async function start() {
   $('err').textContent = '';
+  // Pre-flight guidance: a click on Start run with empty Host /
+  // Port / no enabled workload / empty users CSV used to silently
+  // POST to /api/start and surface a backend error far from the
+  // field that needed attention. Now the operator gets a focused
+  // field + accent pulse + toast that names exactly what's missing.
+  if (!startRunGuidance()) return;
   saveConfig();
   const body = buildRequestBody();
   try {

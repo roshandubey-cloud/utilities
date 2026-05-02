@@ -19,6 +19,7 @@
 import { apiFetch } from './api.js';
 import { pushToast } from './toast.js';
 import { form as formModal, confirm as confirmModal } from './modal.js';
+import { guideRequiredFields } from './guidance.js';
 
 const KEY = 'sftp-loadtest-workers-v1';
 
@@ -502,12 +503,13 @@ async function promptAddWorker() {
       const testBtn = body.querySelector('[data-role="step-test-tcp"]');
       const testLog = body.querySelector('[data-role="step-test-tcp-log"]');
       testBtn.addEventListener('click', async () => {
+        // Wizard's mid-step "Probe TCP" — host empty was a toast-only
+        // message far from the field. Now we focus + pulse the host
+        // input to match the guidance pattern used everywhere else.
+        if (!guideRequiredFields([{ el: hostInput, label: 'Worker SSH host' }],
+            { action: 'probe TCP' })) return;
         const host = hostInput.value.trim();
         const port = (portInput.value || '22').trim();
-        if (!host) {
-          pushToast('Enter a host first', 'error');
-          return;
-        }
         testLog.hidden = false;
         testLog.innerHTML = '<div class="cluster-ssh-spawn-log-row"><span class="status">⏳</span><span class="label">Probing TCP…</span></div>';
         testBtn.disabled = true;
@@ -1122,7 +1124,14 @@ async function promptAddWorker() {
       // URL flow.
       if (wizState.step === 'url') {
         const url = (wizState.values.url || '').trim();
-        if (!url) return;
+        // Empty URL was a silent no-op. Now: focus the URL field +
+        // toast so the operator knows what to fill in.
+        if (!url) {
+          const urlInput = wizModal.querySelector('[name="url"]');
+          guideRequiredFields([{ el: urlInput, label: 'Worker URL' }],
+            { action: 'add the worker' });
+          return;
+        }
         if (!/^https?:\/\//i.test(url)) {
           pushToast('Worker URL must start with http:// or https://', 'error');
           return;
@@ -1134,7 +1143,14 @@ async function promptAddWorker() {
       }
       // SSH wizard advance.
       if (wizState.step === 's1') {
-        if (!(wizState.values.host || '').trim()) return;
+        if (!(wizState.values.host || '').trim()) {
+          // Step 1 is "Where does the worker live?" — needs Host.
+          // Was silently returning; now guided.
+          const hostInput = wizModal.querySelector('[name="host"]');
+          guideRequiredFields([{ el: hostInput, label: 'Worker SSH host' }],
+            { action: 'continue to credentials' });
+          return;
+        }
         wizState.completed.add('s1');
         wizState.step = 's2';
         render();
@@ -1143,8 +1159,21 @@ async function promptAddWorker() {
       if (wizState.step === 's2') {
         const haveCreds = (wizState.values.auth_method === 'password' && wizState.values.password)
                        || (wizState.values.auth_method === 'key' && wizState.values.key);
-        if (!(wizState.values.user || '').trim() || !haveCreds) {
-          pushToast('User + password (or private key) required', 'error');
+        if (!(wizState.values.user || '').trim()) {
+          // Pull the operator straight to the User field.
+          const userInput = wizModal.querySelector('[name="user"]');
+          guideRequiredFields([{ el: userInput, label: 'SSH user' }],
+            { action: 'continue' });
+          return;
+        }
+        if (!haveCreds) {
+          // User filled in but credentials missing — point at the
+          // credential field that matches the chosen auth method.
+          const credName = wizState.values.auth_method === 'key' ? 'key' : 'password';
+          const credInput = wizModal.querySelector(`[name="${credName}"]`);
+          const label = credName === 'key' ? 'SSH private key' : 'SSH password';
+          guideRequiredFields([{ el: credInput, label }],
+            { action: 'continue' });
           return;
         }
         wizState.completed.add('s2');

@@ -558,6 +558,71 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.9] — 2026-05-02
+### No click is ever silently ignored
+
+Operator-driven UX pass. Every primary CTA now either does its job or
+tells the operator exactly what's missing — no more "I clicked Test
+connection / Start run / Probe and nothing happened."
+
+A subagent audit found six silent-ignore patterns across the four
+busiest screens. All closed.
+
+### New helper — `internal/web/static/js/guidance.js`
+Shared module exporting:
+- **`guideRequiredFields([{el, label}, …], { action })`** — when any
+  entry is empty, focuses the first one, pulses an accent ring
+  around all of them for ~1.5s, and toasts
+  *"Fill in Host and Port to test the connection."* (or whatever the
+  action verb-phrase is). Returns `false` so the calling handler can
+  bail.
+- **`guideCondition(ok, message, { focusEl })`** — predicate variant
+  for "no workload enabled" / "users CSV empty" rules.
+- **`pulseField(el)`** — primitive used by both helpers; pure-CSS
+  `@keyframes sftpl-field-pulse` animation.
+- Bridged onto `window.__guide` so the legacy non-module
+  `legacy.js` can use it without an import.
+
+### Wiring (six gaps closed)
+
+| Where | Before | After |
+|---|---|---|
+| **Test connection** ([connection.js:386](internal/web/static/js/connection.js)) | Silent return on empty Host/Port; field focused but no toast | `guideRequiredFields([Host, Port], action: 'test the connection')` — focus + pulse + toast |
+| **Start run** ([legacy.js:start()](internal/web/static/js/legacy.js)) | Silently POSTed to `/api/start`; backend 400 surfaced far from the field | Pre-flight `startRunGuidance()`: gates Host/Port, no-workload-enabled, empty users CSV per enabled workload |
+| **Probe source** (sources-sinks.js) | Local-files / local-dir picked but textarea/dir empty → fired with null cfg, opaque backend response | `guideRequiredFields` on the right field per kind |
+| **Probe sink** (sources-sinks.js) | Local-disk picked but root empty → opaque "root is required" response | `guideRequiredFields` on Root directory |
+| **SSH wizard URL / S1 / S2 / Probe TCP** (cluster-ui.js) | Silent returns or toast-only without focus jump | All four steps: focus + pulse + toast naming the missing field |
+
+### `Test connection` got a gentle accent
+
+Switched from `btn-secondary` (neutral grey) to a new `btn-accent-soft`
+variant — soft accent tint background, accent foreground, gloss halo
+on hover. Same visual vocabulary the v0.14.8 segmented selection
+update introduced. Reads as *"clearly an action, clearly tied to the
+workflow"* without competing with Start run's filled-accent
+`btn-primary`. CSS:
+
+```css
+.btn-accent-soft {
+  background-color: var(--sidebar-active-bg);
+  background-image: var(--gloss-button-bg);
+  color: var(--sidebar-active-fg);
+  box-shadow: var(--gloss-top-edge);
+}
+```
+
+### Internal
+- New `internal/web/static/js/guidance.js`.
+- `app.js` adds a side-effect import so `window.__guide` is wired
+  before `legacy.js` (loaded after as a non-module script) reaches
+  for it.
+- `connection.js`, `sources-sinks.js`, `cluster-ui.js` import the
+  helper directly.
+- `legacy.js` adds `startRunGuidance()` near `start()`.
+- `components.css` adds `.btn-accent-soft` + `@keyframes
+  sftpl-field-pulse` + `.field-pulse`.
+- `main.go` `platformVersion` → `0.14.9`; `wails.json` synced.
+
 ## [v0.14.8] — 2026-05-02
 ### Two visual-polish fixes from operator feedback
 
