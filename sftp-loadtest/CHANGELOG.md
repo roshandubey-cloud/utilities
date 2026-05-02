@@ -246,9 +246,40 @@ Three follow-ups from the v0.13.7 validation pass.
 - Test harness updated: `fakeSSHServer` now answers `echo $HOME` /
   `whoami` so the darwin spawn path can be exercised end-to-end.
 
+## [v0.13.19] — 2026-05-01
+### Changed
+- **Cmd+K command palette is now guide-class.** The previous palette
+  rendered single-line entries (label + tiny hint), nothing on an
+  empty query, and silently vanished on any miss. Operators rightly
+  read this as "search shows nothing." Replaced with a richer shape:
+  - Every entry has an icon, primary label, one-line description,
+    optional keyboard shortcut, and optional meta (host, time-since,
+    "active" badge).
+  - Empty-query view shows curated **First steps**, all run controls,
+    the top 2 most-recent presets / connections / runs, plus inline
+    Help cards — never blank.
+  - Per-section empty states show a CTA instead of disappearing
+    ("No presets yet — Cmd+S to save the current config").
+  - Token-based subsequence matching: every space-delimited query
+    token must hit somewhere in `label + description + section +
+    keywords + meta`. Matched substrings render highlighted.
+  - **New sections:** Connections (saved host:port:user via
+    `saved-connections.js`), Recent runs (last 6 from `/api/runs`),
+    Help (TOFU explainer, cluster mode, fpm meaning, protocol
+    picker, where reports live).
+  - Onboarding banner above the input on first open
+    ("Type to filter · ↑↓ navigate · ↵ run · Esc close — searches
+    commands, presets, saved connections, recent runs, and help.").
+    Dismissed via the × button; localStorage flag
+    `sftpl-cmdk-onboard-v2` remembers the choice.
+- New CSS for the rich row template (`.cmdk-result-rich`,
+  `.cmdk-result-icon`, `.cmdk-result-body`, `.cmdk-result-desc`,
+  `.cmdk-result-trail`, `.cmdk-banner*`). Backwards compatible — old
+  thin rows still render identically if some code path emits them.
+
 ## [Unreleased]
 
-(no changes since v0.13.18)
+(no changes since v0.13.19)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -367,7 +398,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.18...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.19...HEAD
+[v0.13.19]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.19
 [v0.13.18]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.18
 [v0.13.17]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.17
 [v0.13.16]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.16
