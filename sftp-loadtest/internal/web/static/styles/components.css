@@ -724,13 +724,16 @@
   color: var(--text-tertiary);
   letter-spacing: 0;
 }
+/* Field-level label (Target / source / sink). Same family as
+   .cfg-section-eyebrow — uppercase tertiary medium — but no leading
+   accent rule so it reads as one rung quieter in the hierarchy. */
 .label-inline {
   display: block;
   font-size: var(--fs-11);
-  font-weight: var(--fw-semibold);
+  font-weight: var(--fw-medium);
   color: var(--text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.10em;
   margin-bottom: 4px;
 }
 .target-row {
@@ -2416,13 +2419,31 @@ button.primary:hover:not(:disabled),
   padding-bottom: var(--sp-2);
   border-bottom: var(--bw-1) solid var(--border-weak);
 }
+/* Eyebrow pattern (v0.14.11). Subtle accent rule fades into the
+   tertiary uppercase label so the section markers feel like a
+   typographic system instead of bold headings. The same shape and
+   colour family is reused by .label-inline for field-level labels —
+   one visual vocabulary for "here's a category" across the form. */
 .cfg-section-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-size: var(--fs-11);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-tertiary);
-  font-weight: var(--fw-semibold);
-  margin-bottom: 4px;
+  font-weight: var(--fw-medium);
+  margin-bottom: var(--sp-2);
+}
+.cfg-section-eyebrow::before {
+  content: '';
+  display: inline-block;
+  width: 22px;
+  height: 1px;
+  background: linear-gradient(to right,
+    color-mix(in oklab, var(--accent) 55%, transparent),
+    color-mix(in oklab, var(--accent) 0%,  transparent));
+  flex-shrink: 0;
 }
 .cfg-section-title {
   font-size: var(--fs-18);

@@ -558,6 +558,33 @@ Three follow-ups from the v0.13.7 validation pass.
   double-dispatching the event during the input → focus transfer
   window.
 
+## [v0.14.11] — 2026-05-02
+### UI — minimalist label pattern + drop "Implicit (TLS from byte 0)"
+
+**Eyebrow pattern.** The `1 · Target` / `2 · Workload` / `3 · Resource
+limits` markers picked up a subtle leading accent rule that fades to
+transparent — small visual flourish that ties the three sections into
+one typographic system without shouting. Weight dialled back from
+semibold → medium, letter-spacing widened from 0.08em → 0.14em so
+the small caps read as a refined pattern rather than a heading.
+
+**Label vocabulary unified.** `.label-inline` (used by the Target
+card's Protocol / Host / Port / Username / Password mini-labels)
+now shares the same uppercase-tertiary-medium family — same
+letter-spacing scale, no leading rule (one rung quieter than the
+section eyebrow). One vocabulary for "here's a category" across
+the form.
+
+**Dropped enterprise-grade-explanations.** The TLS-mode segmented
+buttons used to read *"Explicit (AUTH TLS)"* / *"Implicit (TLS
+from byte 0)"*. Now just *"Explicit"* / *"Implicit"*. The full
+explanation lives in the button title (hover tooltip) for the
+operator who actually needs it. Enterprise-grade products don't
+explain themselves in the chrome.
+
+### Internal
+- `main.go` `platformVersion` → `0.14.11`; `wails.json` synced.
+
 ## [v0.14.10] — 2026-05-02
 ### UI — drop chatty section titles in Configure
 
