@@ -75,9 +75,19 @@ Three follow-ups from the v0.13.7 validation pass.
   than `InsecureSkipVerify` alone — unknown certs without TOFU still
   refuse.
 
+## [v0.13.9] — 2026-05-01
+### Fixed
+- CI: linux-arm64-desktop job lost both v0.13.7 and v0.13.8 to a stale
+  `ports.ubuntu.com` index (404s on `gstreamer1.0-plugins-base`,
+  `libgstreamer-gl1.0-0`, etc. when the apt mirror was mid-refresh).
+  apt install now uses `--no-install-recommends` (drops the gstreamer
+  plugin set Wails doesn't need at build time) + `--fix-missing` and a
+  3-attempt retry with linear backoff. Same fix applied to the linux
+  amd64 job for symmetry. Also bumped Go to 1.25.
+
 ## [Unreleased]
 
-(no changes since v0.13.8)
+(no changes since v0.13.9)
 
 ## [v0.13.6] — 2026-05-01
 ### Fixed
@@ -196,7 +206,8 @@ assets). Cluster reliability + UI workbench scaffolding.
 - v0.9.1: Apple-TV sidebar, view switcher, modal system.
 - v0.9.0: polish + 75-spec Playwright lock-down.
 
-[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.8...HEAD
+[Unreleased]: https://github.com/roshandubey-cloud/utilities/compare/v0.13.9...HEAD
+[v0.13.9]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.9
 [v0.13.8]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.8
 [v0.13.7]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.7
 [v0.13.6]: https://github.com/roshandubey-cloud/utilities/releases/tag/v0.13.6
