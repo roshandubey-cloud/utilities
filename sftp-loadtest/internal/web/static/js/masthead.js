@@ -35,6 +35,24 @@ export function mountMasthead(rootSelector) {
   if (dot && text) {
     pollHealth(dot, text);
   }
+
+  // Surface the platform version next to the wordmark. /api/version is
+  // unauthenticated + Cache-Control:no-store, so an upgraded binary
+  // shows its real version on the very next page load — no stale
+  // WebKit cache, no auth probe.
+  const ver = root.querySelector('[data-role="brand-version"]');
+  if (ver) {
+    apiFetch('/api/version', { cache: 'no-store' })
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => {
+        if (j && j.version) {
+          ver.textContent = 'v' + j.version;
+          ver.hidden = false;
+          ver.title = `Platform v${j.version} — started ${j.started_at || ''}`;
+        }
+      })
+      .catch(() => {});
+  }
 }
 
 async function pollHealth(dot, text) {

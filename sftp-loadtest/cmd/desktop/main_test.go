@@ -7,12 +7,60 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 )
+
+// TestWailsProductVersionMatchesPlatform guards against the failure mode
+// the user hit in v0.14.4: cmd/desktop/wails.json's "productVersion" was
+// stuck at "0.4.0-dev" while main.go's platformVersion was bumped on every
+// release, so the macOS About dialog showed a stale version even on a
+// fresh install. This test reads wails.json and fails CI if it drifts
+// from the platformVersion constant — bump them together, always.
+func TestWailsProductVersionMatchesPlatform(t *testing.T) {
+	// Locate wails.json relative to this _test.go file (cmd/desktop/).
+	_, thisFile, _, _ := runtime.Caller(0)
+	wailsJSON := filepath.Join(filepath.Dir(thisFile), "wails.json")
+	raw, err := os.ReadFile(wailsJSON)
+	if err != nil {
+		t.Fatalf("read wails.json: %v", err)
+	}
+	var cfg struct {
+		Info struct {
+			ProductVersion string `json:"productVersion"`
+		} `json:"info"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatalf("parse wails.json: %v", err)
+	}
+	// Read platformVersion from the sibling main.go const without
+	// importing it (the desktop main package can't import its own
+	// loadtest-server cousin). Look for the literal const line.
+	platformMain := filepath.Join(filepath.Dir(thisFile), "..", "..", "main.go")
+	mainBytes, err := os.ReadFile(platformMain)
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	const marker = `const platformVersion = "`
+	idx := strings.Index(string(mainBytes), marker)
+	if idx < 0 {
+		t.Fatalf("could not locate platformVersion in main.go")
+	}
+	rest := string(mainBytes)[idx+len(marker):]
+	end := strings.Index(rest, `"`)
+	if end < 0 {
+		t.Fatalf("malformed platformVersion line")
+	}
+	platformVer := rest[:end]
+	if cfg.Info.ProductVersion != platformVer {
+		t.Errorf("wails.json productVersion=%q drifted from main.go platformVersion=%q — bump them together",
+			cfg.Info.ProductVersion, platformVer)
+	}
+}
 
 // TestDesktopDataDir verifies desktopDataDir returns a non-empty path
 // rooted at the platform's user-config dir, with our app namespace
