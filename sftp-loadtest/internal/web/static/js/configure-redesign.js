@@ -251,10 +251,18 @@ export function mountConfigureRedesign() {
   const fTimeout   = fieldFor('timeout_min');
   const fMaxFails  = fieldFor('max_fails');
   const fDParallel = fieldFor('dparallel');
+  // v0.18.0 — quality-control knobs land in the Run controls
+  // section: a numeric floor with its warmup, plus a checkbox for
+  // SHA-256 round-trip verification. fieldFor walks up to the
+  // enclosing .row > <div> wrapper exactly the same way the
+  // pre-existing extractions do, so the labels follow.
+  const fSpeedFloor   = fieldFor('speed_floor_percent');
+  const fSpeedWarmup  = fieldFor('speed_floor_warmup_sec');
+  const fVerifyHashes = fieldFor('verify_hashes');
 
   if (fParallel)  upSlot.appendChild(fParallel);
   if (fDParallel) dlSlot.appendChild(fDParallel);
-  for (const f of [fDuration, fPoll, fTimeout, fMaxFails]) {
+  for (const f of [fDuration, fPoll, fTimeout, fMaxFails, fSpeedFloor, fSpeedWarmup, fVerifyHashes]) {
     if (f) runSlot.appendChild(f);
   }
 

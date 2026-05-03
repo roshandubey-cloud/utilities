@@ -10,6 +10,19 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.18.1] — 2026-05-03
+### Fixed
+- **Speed-floor + Verify-SHA-256 UI controls were invisible.** v0.18.0
+  shipped the backend wiring and added the input rows to the legacy
+  `index.html`, but the modern Configure shell (configure-redesign.js)
+  re-homes specific legacy field IDs into its layout — and the new
+  IDs weren't in its extraction list, so the rows sat in the
+  `.configure-legacy-residue` block, which is hidden by default.
+  Added `speed_floor_percent`, `speed_floor_warmup_sec`, and
+  `verify_hashes` to the redesign's Run controls extraction so they
+  surface alongside Duration / Poll / Track-ID timeout / Disable
+  threshold.
+
 ## [v0.18.0] — 2026-05-03
 ### Added
 - **Speed-floor auto-stop.** New "Speed-floor auto-stop (%)" + "Floor
