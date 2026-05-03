@@ -270,12 +270,14 @@ const CFG_KEYS = ['host','port','folder','parallel','duration','poll','timeout_m
   // (bastion_pass, bastion_passphrase) flow through the same
   // shouldSavePasswords() guard already used for CSV creds.
   'tls_server_name','bastion_host','bastion_port','bastion_user',
-  'bastion_pass','bastion_pem','bastion_passphrase'];
+  'bastion_pass','bastion_pem','bastion_passphrase',
+  // v0.18.0 — speed-floor numerics.
+  'speed_floor_percent','speed_floor_warmup_sec'];
 // v0.17.2 — checkboxes/dropdowns that need persistence too. tls_policy
 // is a <select>; tls_skip_verify is a checkbox. tls_mode is a
 // segmented control backed by a hidden #tls_mode input.
 const SELECT_KEYS = ['tls_policy','tls_mode'];
-const TOGGLES = ['normal_enabled','large_enabled','download_enabled','ramp_enabled','tls_skip_verify'];
+const TOGGLES = ['normal_enabled','large_enabled','download_enabled','ramp_enabled','tls_skip_verify','verify_hashes'];
 const LS_KEY = 'sftp-loadtest-config-v1';
 const SAVE_PWD_KEY = 'sftp-loadtest-save-passwords-v1';
 
@@ -924,6 +926,10 @@ function buildRequestBody() {
     bastion_pass:             document.getElementById('bastion_pass')?.value || '',
     bastion_private_key_pem:  document.getElementById('bastion_pem')?.value || '',
     bastion_passphrase:       document.getElementById('bastion_passphrase')?.value || '',
+    // v0.18.0 — speed-floor auto-stop + hash verification.
+    speed_floor_percent:    parseInt(document.getElementById('speed_floor_percent')?.value || '0') || 0,
+    speed_floor_warmup_sec: parseInt(document.getElementById('speed_floor_warmup_sec')?.value || '60') || 60,
+    verify_hashes:          !!document.getElementById('verify_hashes')?.checked,
     // v0.14 source/sink fields. readSource / readSink return null when
     // the operator left the picker on the default (synthetic / discard)
     // — the backend then uses the v0.13.x defaults exactly. Only one
@@ -1129,6 +1135,11 @@ function importConfigPayload(cfg) {
   bSet('bastion_pass',        cfg.bastion_pass);
   bSet('bastion_pem',         cfg.bastion_private_key_pem);
   bSet('bastion_passphrase',  cfg.bastion_passphrase);
+  // v0.18.0 — speed-floor + hash verify restore.
+  bSet('speed_floor_percent',    cfg.speed_floor_percent);
+  bSet('speed_floor_warmup_sec', cfg.speed_floor_warmup_sec);
+  const vh = document.getElementById('verify_hashes');
+  if (vh) vh.checked = !!cfg.verify_hashes;
   // Auto-open the bastion disclosure when the imported config has any
   // bastion fields populated — operators don't have to hunt for them.
   if (cfg.bastion_host) {

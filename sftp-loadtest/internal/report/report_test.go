@@ -40,6 +40,59 @@ func TestStore_AttachDownloadByFilenameID_RoundTrip(t *testing.T) {
 	}
 }
 
+// v0.18.0 — when both sides hashed and the values agree, HashMatch
+// flips true and the row reports a clean download. This is the happy
+// path for VerifyHashes runs.
+func TestStore_AttachDownload_HashMatchSetsTrue(t *testing.T) {
+	s := NewStore()
+	now := time.Now()
+	hash := "abcd1234"
+	s.AddUpload(FileRecord{
+		User: "u1", Filename: "x_slt_marker_.csv", FilenameID: "marker",
+		StartTime: now, EndTime: now.Add(10 * time.Millisecond), SizeBytes: 64,
+		UploadSHA256: hash,
+	})
+	if !s.AttachDownloadByFilenameID("marker", DownloadResult{
+		DownloadUser: "d1", StartTime: now.Add(20 * time.Millisecond),
+		EndTime: now.Add(30 * time.Millisecond), SizeBytes: 64, SHA256: hash,
+	}) {
+		t.Fatal("attach should succeed")
+	}
+	got := s.Snapshot()[0]
+	if !got.HashMatch {
+		t.Errorf("HashMatch=true expected; got false (upload=%s download=%s)", got.UploadSHA256, got.DownloadSHA256)
+	}
+	if got.DownloadError != "" {
+		t.Errorf("clean match should leave DownloadError empty; got %q", got.DownloadError)
+	}
+}
+
+// v0.18.0 — mismatch path: download produced a different hash than
+// upload. Row keeps both hashes for forensics; DownloadError is
+// stamped HASH_MISMATCH so the operator finds it via normal error chips.
+func TestStore_AttachDownload_HashMismatchSetsError(t *testing.T) {
+	s := NewStore()
+	now := time.Now()
+	s.AddUpload(FileRecord{
+		User: "u1", Filename: "x_slt_marker2_.csv", FilenameID: "marker2",
+		StartTime: now, EndTime: now.Add(10 * time.Millisecond), SizeBytes: 64,
+		UploadSHA256: "expected",
+	})
+	if !s.AttachDownloadByFilenameID("marker2", DownloadResult{
+		DownloadUser: "d1", StartTime: now.Add(20 * time.Millisecond),
+		EndTime: now.Add(30 * time.Millisecond), SizeBytes: 64, SHA256: "actually-different",
+	}) {
+		t.Fatal("attach should succeed even on hash mismatch")
+	}
+	got := s.Snapshot()[0]
+	if got.HashMatch {
+		t.Errorf("HashMatch=false expected for differing hashes")
+	}
+	if got.DownloadError != "HASH_MISMATCH" {
+		t.Errorf("DownloadError=HASH_MISMATCH expected; got %q", got.DownloadError)
+	}
+}
+
 func TestStore_AttachDownloadByFilenameID_OrphanReturnsFalse(t *testing.T) {
 	s := NewStore()
 	s.AddUpload(FileRecord{Filename: "a", FilenameID: "id-a"})

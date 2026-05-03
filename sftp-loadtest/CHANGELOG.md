@@ -10,6 +10,52 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.18.0] — 2026-05-03
+### Added
+- **Speed-floor auto-stop.** New "Speed-floor auto-stop (%)" + "Floor
+  warmup (sec)" inputs in the Configure panel. When set to a non-zero
+  percentage, the runner samples 1-minute throughput against the run's
+  observed peak; once the warmup window passes, a current rate below
+  `peak * floor / 100` cancels the dispatchers, captures a labelled
+  reason, and surfaces a human-readable line in both the analysis CSV
+  trailer and `RunMeta.StopReason` / `StopDetail`. Example detail
+  emitted: `transfer speed dropped to 12.40 Mbps (15% of peak 82.70
+  Mbps), below the configured speed floor of 50%`. Alerts fire on
+  the new `stop_reason="speed-floor"` event so configured Slack /
+  webhook / email channels surface the early stop without operator
+  re-running. Default 0 = disabled (legacy behaviour).
+- **End-to-end SHA-256 verification.** New "Verify upload/download
+  SHA-256" checkbox. When ticked, the runner streams a SHA-256 over
+  every uploaded file (via `io.TeeReader`) and over every matched
+  download (via `io.MultiWriter`), then compares them at attachment
+  time. New CSV columns: `upload_sha256`, `download_sha256`,
+  `hash_match`. Mismatches stamp `download_error="HASH_MISMATCH"` and
+  increment `RunMeta.HashMismatch`; matches increment `HashVerified`.
+  Alerts fire on `hash_mismatch > 0` so a single corrupted file in
+  a 10k-row run is impossible to miss. Streaming hashing runs at
+  `<1%` overhead on typical load-test throughputs (sha256 has SIMD
+  on arm64/amd64).
+- **`RunMeta.StopReason` + `StopDetail`** fields capture why the
+  dispatchers shut down — one of `duration` (planned), `user`
+  (operator clicked Stop), `speed-floor` (auto-stop triggered), or
+  `max-failures` (every user disabled by the failure policy). The
+  CSV analysis trailer renders both lines. Empty `StopDetail` is
+  fine for `duration` / `user`; populated for the labelled stops.
+
+### Internal
+- `runner.Run.stopReason` / `stopDetail` are atomic.Pointer[string];
+  first-writer-wins so a Stop click after a sampler trip doesn't
+  overwrite the analyzer-friendly "speed-floor" label.
+- `report.DownloadResult.SHA256` carries the download-side hash from
+  the worker into `AttachDownloadBy{Basename,FilenameID}`, which now
+  derives `FileRecord.HashMatch` and stamps `HASH_MISMATCH` when the
+  values diverge.
+- Hash counters are derived at seal time by walking the sealed
+  record snapshot — keeps the upload/download hot paths free of an
+  extra atomic per file.
+- Tests: `internal/report` adds `TestStore_AttachDownload_HashMatchSetsTrue`
+  and `TestStore_AttachDownload_HashMismatchSetsError`.
+
 ## [v0.17.2] — 2026-05-03
 ### Removed
 - **Server-quirk profile dropdown** in the Configure panel. The

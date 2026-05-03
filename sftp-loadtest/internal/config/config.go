@@ -34,6 +34,29 @@ type RunConfig struct {
 	// 0 = never auto-disable (keep the current behaviour).
 	MaxConsecutiveFailures int
 
+	// SpeedFloorPercent (v0.18.0) — when > 0, the runner samples
+	// post-warmup throughput against the run's peak window MB/s; if
+	// the current rate falls below (peak * SpeedFloorPercent / 100)
+	// the run cancels its dispatchers, marks RunMeta.StopReason as
+	// "speed-floor", and writes a human-readable detail line into
+	// the analysis trailer. 0 = disabled (legacy behaviour).
+	//
+	// SpeedFloorWarmupSec defers the evaluator long enough for the
+	// throughput to actually stabilise — without it, the very first
+	// 5-second window would always trigger the stop because peak
+	// has barely moved past 0. Defaults to 60 when unset.
+	SpeedFloorPercent   int `json:"speed_floor_percent,omitempty"`
+	SpeedFloorWarmupSec int `json:"speed_floor_warmup_sec,omitempty"`
+
+	// VerifyHashes (v0.18.0) — when true, the runner streams a
+	// SHA-256 hash over every uploaded file and every downloaded
+	// file, then matches them by track-id (trackid mode) or by
+	// embedded marker (filename mode). Mismatches stamp
+	// download_error="HASH_MISMATCH" on the row and increment
+	// RunMeta.HashMismatch. Per-record hashes land in two new CSV
+	// columns: upload_sha256, download_sha256.
+	VerifyHashes bool `json:"verify_hashes,omitempty"`
+
 	// PrivateKeyPEM, when non-empty, switches every SFTP user in the run
 	// from password auth to public-key auth using THIS shared key. v1
 	// model: one key for the whole run. CSV password columns are ignored

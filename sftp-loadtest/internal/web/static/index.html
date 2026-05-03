@@ -873,6 +873,27 @@
             <div><label for="timeout_min">Track-ID timeout (min)</label><input id="timeout_min" type="number" value="10" min="1"></div>
             <div><label for="max_fails" title="Disable a user account after this many consecutive failed ops. 0 = off.">Disable user after (fails)</label><input id="max_fails" type="number" value="3" min="0"></div>
           </div>
+          <!-- v0.18.0 — speed-floor auto-stop. 0 = disabled. When set,
+               the runner cancels dispatchers if the latest 1-minute
+               throughput falls below (peak * floor / 100) after the
+               warmup window has elapsed. Stop reason + a human
+               sentence land in the analysis trailer. -->
+          <div class="row">
+            <div>
+              <label for="speed_floor_percent" title="Auto-stop the run when the live throughput drops below this fraction of the peak observed during the run. Captures partner-side rate limits or congestion as a clean stop with a labelled reason. 0 = disabled.">Speed-floor auto-stop (%) <span class="badge-mini">v0.18</span></label>
+              <input id="speed_floor_percent" type="number" value="0" min="0" max="100" placeholder="0 = off">
+            </div>
+            <div>
+              <label for="speed_floor_warmup_sec" title="Skip the speed-floor check for this many seconds after the run starts so the metric has time to stabilise. Default 60.">Floor warmup (sec)</label>
+              <input id="speed_floor_warmup_sec" type="number" value="60" min="10">
+            </div>
+            <div>
+              <label class="toggle-label" style="margin-top:var(--sp-3)" title="When ticked, the runner streams a SHA-256 hash over every uploaded file and over every matched download, then compares them. Mismatches surface as download_error=HASH_MISMATCH and the meta JSON carries verified/mismatch counters.">
+                <input type="checkbox" id="verify_hashes">
+                Verify upload/download SHA-256 <span class="badge-mini">v0.18</span>
+              </label>
+            </div>
+          </div>
           <div class="hint">
             Set the track-ID timeout to however long your SFTP server might take to process a file. The tool polls patiently and records the <b>actual</b> processing time once the server renames the file; a file only gets the <code>TRACKID_TIMEOUT</code> error code if it never shows up before this limit. <b>Wall-clock cost:</b> after the upload phase ends, the run keeps draining for up to this much longer to give pending track-IDs time to resolve — a 4 h timeout means the run can stay "active" up to ~4 h past its scheduled end.
           </div>

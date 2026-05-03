@@ -54,6 +54,17 @@ type FileRecord struct {
 	DownloadSpeedMBps float64
 	DownloadWait      time.Duration // from TrackIDAt to DownloadStartTime
 	DownloadError     string
+
+	// UploadSHA256 / DownloadSHA256 (v0.18.0) — populated only when
+	// the run was started with VerifyHashes=true. Hex-encoded SHA-256
+	// of the bytes that were physically streamed in / out (the runner
+	// wraps both source and sink with hashing copies). HashMatch is
+	// derived: true when both sides produced a hash and they match.
+	// Zero values are the default; CSV writer renders them as "" for
+	// rows that didn't participate in hashing.
+	UploadSHA256   string
+	DownloadSHA256 string
+	HashMatch      bool
 }
 
 type DownloadResult struct {
@@ -64,6 +75,12 @@ type DownloadResult struct {
 	SpeedMBps    float64
 	AvailableAt  time.Time
 	Error        string
+
+	// SHA256 (v0.18.0) — hex-encoded SHA-256 of the bytes streamed
+	// from the server. Empty when the run had VerifyHashes off.
+	// AttachDownloadBy* copies this into the matching FileRecord and
+	// derives FileRecord.HashMatch from comparison with UploadSHA256.
+	SHA256 string
 }
 
 // Per-file raw speed is stored as bytes/duration — always computed, so the
@@ -194,6 +211,23 @@ func (s *Store) AttachDownloadByFilenameID(marker string, d DownloadResult) bool
 	r.DownloadSizeBytes = d.SizeBytes
 	r.DownloadSpeedMBps = d.SpeedMBps
 	r.DownloadError = d.Error
+	// v0.18.0 — hash verification. d.SHA256 is empty when the run
+	// disabled VerifyHashes; in that case both sides stay empty
+	// strings and HashMatch stays false (which CSV renders as
+	// "false" for those rows — readable for verify-off runs).
+	if d.SHA256 != "" {
+		r.DownloadSHA256 = d.SHA256
+		if r.UploadSHA256 != "" {
+			r.HashMatch = r.UploadSHA256 == r.DownloadSHA256
+			if !r.HashMatch && r.DownloadError == "" {
+				// Override an otherwise-clean download with a
+				// HASH_MISMATCH so the row's error column tells
+				// the operator something failed end-to-end even
+				// when the bytes themselves arrived.
+				r.DownloadError = "HASH_MISMATCH"
+			}
+		}
+	}
 	if !d.AvailableAt.IsZero() && !d.StartTime.IsZero() {
 		r.DownloadWait = d.StartTime.Sub(d.AvailableAt)
 	}
@@ -222,6 +256,23 @@ func (s *Store) AttachDownloadByBasename(basename string, d DownloadResult) bool
 	r.DownloadSizeBytes = d.SizeBytes
 	r.DownloadSpeedMBps = d.SpeedMBps
 	r.DownloadError = d.Error
+	// v0.18.0 — hash verification. d.SHA256 is empty when the run
+	// disabled VerifyHashes; in that case both sides stay empty
+	// strings and HashMatch stays false (which CSV renders as
+	// "false" for those rows — readable for verify-off runs).
+	if d.SHA256 != "" {
+		r.DownloadSHA256 = d.SHA256
+		if r.UploadSHA256 != "" {
+			r.HashMatch = r.UploadSHA256 == r.DownloadSHA256
+			if !r.HashMatch && r.DownloadError == "" {
+				// Override an otherwise-clean download with a
+				// HASH_MISMATCH so the row's error column tells
+				// the operator something failed end-to-end even
+				// when the bytes themselves arrived.
+				r.DownloadError = "HASH_MISMATCH"
+			}
+		}
+	}
 	if !d.AvailableAt.IsZero() && !d.StartTime.IsZero() {
 		r.DownloadWait = d.StartTime.Sub(d.AvailableAt)
 	}
@@ -246,6 +297,23 @@ func (s *Store) AttachDownload(user, filename string, d DownloadResult) {
 	r.DownloadSizeBytes = d.SizeBytes
 	r.DownloadSpeedMBps = d.SpeedMBps
 	r.DownloadError = d.Error
+	// v0.18.0 — hash verification. d.SHA256 is empty when the run
+	// disabled VerifyHashes; in that case both sides stay empty
+	// strings and HashMatch stays false (which CSV renders as
+	// "false" for those rows — readable for verify-off runs).
+	if d.SHA256 != "" {
+		r.DownloadSHA256 = d.SHA256
+		if r.UploadSHA256 != "" {
+			r.HashMatch = r.UploadSHA256 == r.DownloadSHA256
+			if !r.HashMatch && r.DownloadError == "" {
+				// Override an otherwise-clean download with a
+				// HASH_MISMATCH so the row's error column tells
+				// the operator something failed end-to-end even
+				// when the bytes themselves arrived.
+				r.DownloadError = "HASH_MISMATCH"
+			}
+		}
+	}
 	if !d.AvailableAt.IsZero() && !d.StartTime.IsZero() {
 		r.DownloadWait = d.StartTime.Sub(d.AvailableAt)
 	}
@@ -447,6 +515,11 @@ var CSVHeader = []string{
 	"download_user", "download_available_at", "download_start", "download_end",
 	"download_wait_sec", "download_duration_sec", "download_size_bytes",
 	"download_mbps", "download_mbps_source", "download_error",
+	// v0.18.0 — hash-verification trio. Empty when VerifyHashes was
+	// off for the run; non-empty rows always carry both hashes (or
+	// the upload hash plus a HASH_MISMATCH download_error when the
+	// download produced something different).
+	"upload_sha256", "download_sha256", "hash_match",
 }
 
 // buildRow is the single source of truth for a CSV line. Used by both
@@ -498,6 +571,13 @@ func buildRow(r FileRecord, slowdownMins map[int64]bool, eff EffectiveSpeedFn) [
 		strconv.FormatFloat(dlSpeed, 'f', 3, 64),
 		dlSource,
 		r.DownloadError,
+		// v0.18.0 — hash trio. hash_match defaults to "false" and
+		// only flips to "true" when both sides hashed AND the values
+		// agree, which keeps the column readable for verify-off runs
+		// (everything stays empty + false).
+		r.UploadSHA256,
+		r.DownloadSHA256,
+		strconv.FormatBool(r.HashMatch),
 	}
 }
 

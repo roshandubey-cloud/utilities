@@ -80,7 +80,14 @@ type Event struct {
 	P99LatencyMS float64   `json:"p99_latency_ms"`
 	DispatchSkips int64    `json:"dispatch_skips"`
 	ErrorRate    float64   `json:"error_rate_pct"`
-	Reasons      []string  `json:"reasons"` // human-readable list of triggers fired
+	// v0.18.0 — populated when the run was started with stop-reason
+	// or hash verification active. StopReason is one of "duration",
+	// "user", "speed-floor", "max-failures". HashMismatch is the
+	// number of rows whose download SHA-256 differed from upload's.
+	StopReason   string  `json:"stop_reason,omitempty"`
+	StopDetail   string  `json:"stop_detail,omitempty"`
+	HashMismatch int64   `json:"hash_mismatch,omitempty"`
+	Reasons      []string `json:"reasons"` // human-readable list of triggers fired
 }
 
 // ShouldFire decides whether the given event matches any of the
@@ -99,6 +106,21 @@ func (c Config) ShouldFire(ev Event) []string {
 	}
 	if c.AlertOnErrorRatePct > 0 && ev.ErrorRate > c.AlertOnErrorRatePct {
 		reasons = append(reasons, fmt.Sprintf("error_rate=%.2f%% (>%.2f%%)", ev.ErrorRate, c.AlertOnErrorRatePct))
+	}
+	// v0.18.0 — speed-floor and hash-mismatch are always-on triggers
+	// when the operator opts into the underlying feature: the floor is
+	// configured per-run, and verify_hashes implies "I want to know
+	// when bytes don't match end-to-end". Both are urgent enough that
+	// gating them behind another checkbox just adds friction.
+	if ev.StopReason == "speed-floor" {
+		if ev.StopDetail != "" {
+			reasons = append(reasons, "speed-floor: "+ev.StopDetail)
+		} else {
+			reasons = append(reasons, "speed-floor stop")
+		}
+	}
+	if ev.HashMismatch > 0 {
+		reasons = append(reasons, fmt.Sprintf("hash_mismatch=%d", ev.HashMismatch))
 	}
 	return reasons
 }

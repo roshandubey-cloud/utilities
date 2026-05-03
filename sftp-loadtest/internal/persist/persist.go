@@ -75,6 +75,29 @@ type RunMeta struct {
 	PeakWindowMBps float64 `json:"peak_window_mbps,omitempty"`
 	NumCPU         int     `json:"num_cpu,omitempty"`
 
+	// StopReason (v0.18.0) is the short stable code for why the
+	// dispatchers shut down. Operators reading "duration" know the
+	// run hit its planned deadline; "user" means an operator clicked
+	// Stop; "speed-floor" means the speed-floor evaluator tripped;
+	// "max-failures" means the disable policy zeroed out every user.
+	// Empty when the meta was sealed before any reason was captured.
+	StopReason string `json:"stop_reason,omitempty"`
+
+	// StopDetail is the human-readable explanation paired with
+	// StopReason — the line we recommend the operator paste into the
+	// "why did the run stop early?" Slack thread. Filled only for
+	// reasons that have something specific to say (currently
+	// "speed-floor"); empty for "duration" / "user".
+	StopDetail string `json:"stop_detail,omitempty"`
+
+	// HashVerified / HashMismatch (v0.18.0) — populated when the run
+	// was started with VerifyHashes=true. HashVerified is the count
+	// of round-trips where upload SHA-256 == download SHA-256.
+	// HashMismatch is the count of mismatches; same rows also carry
+	// download_error="HASH_MISMATCH" in the CSV.
+	HashVerified int64 `json:"hash_verified,omitempty"`
+	HashMismatch int64 `json:"hash_mismatch,omitempty"`
+
 	// ConcurrentRunsAtPeak (v0.17.0) records the highest concurrent-run
 	// count observed by the sampler during this run's lifetime.
 	// Without it, a multi-run setup where the box was shared between N

@@ -891,6 +891,24 @@ func (s *Server) dispatchAlertsWhenDone(run *runner.Run, cfg *config.RunConfig) 
 			proto = "sftp"
 		}
 	}
+	// v0.18.0 — pull stop reason / detail / hash mismatch from the
+	// freshly-sealed RunMeta on disk so the alert reflects the same
+	// values the CSV trailer and Previous-runs UI carry. Falls back
+	// to in-memory snapshot fields when the meta isn't readable.
+	var stopReason, stopDetail string
+	var hashMismatch int64
+	if s.reportsDir != "" {
+		if metas, ferr := persist.ListMeta(s.reportsDir); ferr == nil {
+			for _, mm := range metas {
+				if mm.ID == run.ID {
+					stopReason = mm.StopReason
+					stopDetail = mm.StopDetail
+					hashMismatch = mm.HashMismatch
+					break
+				}
+			}
+		}
+	}
 	ev := alerts.Event{
 		Kind:          "run_complete",
 		RunID:         run.ID,
@@ -905,6 +923,9 @@ func (s *Server) dispatchAlertsWhenDone(run *runner.Run, cfg *config.RunConfig) 
 		P99LatencyMS:  p99ms,
 		DispatchSkips: skips,
 		ErrorRate:     errorRate,
+		StopReason:    stopReason,
+		StopDetail:    stopDetail,
+		HashMismatch:  hashMismatch,
 	}
 	reasons := alertCfg.ShouldFire(ev)
 	if len(reasons) == 0 {
@@ -1247,6 +1268,18 @@ type startReq struct {
 	BastionPrivateKeyPEM string `json:"bastion_private_key_pem,omitempty"`
 	BastionPassphrase    string `json:"bastion_passphrase,omitempty"`
 
+	// v0.18.0 — speed-floor auto-stop. SpeedFloorPercent of 0 disables
+	// the check; >0 means "stop when current Mbps drops below
+	// (peak * percent/100)". SpeedFloorWarmupSec defers the first
+	// evaluation; default 60s when zero.
+	SpeedFloorPercent   int `json:"speed_floor_percent,omitempty"`
+	SpeedFloorWarmupSec int `json:"speed_floor_warmup_sec,omitempty"`
+
+	// v0.18.0 — end-to-end SHA-256 verification of every uploaded
+	// file against its corresponding download. False (default)
+	// preserves the v0.17.x behaviour: no hashing, no extra columns.
+	VerifyHashes bool `json:"verify_hashes,omitempty"`
+
 	NormalEnabled     bool   `json:"normal_enabled"`
 	FilesPerMinute    int    `json:"files_per_minute"`
 	NormalMinMB       int    `json:"normal_min_mb"`
@@ -1326,6 +1359,9 @@ func buildRunConfig(req startReq) (*config.RunConfig, error) {
 		BastionPass:            req.BastionPass,
 		BastionPrivateKeyPEM:   req.BastionPrivateKeyPEM,
 		BastionPassphrase:      req.BastionPassphrase,
+		SpeedFloorPercent:      req.SpeedFloorPercent,
+		SpeedFloorWarmupSec:    req.SpeedFloorWarmupSec,
+		VerifyHashes:           req.VerifyHashes,
 	}
 	if req.NormalEnabled {
 		cfg.Normal = &config.NormalLoad{

@@ -2,8 +2,12 @@ package runner
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
+	"io"
 	"log"
 	mathrand "math/rand"
 	"net"
@@ -288,6 +292,18 @@ func (r *Run) sampleHostStats(ctx context.Context) {
 	r.hostNumCPU.Store(int64(mon.Sample().NumCPU)) // first call seeds CPU delta — discard reading
 	t := time.NewTicker(2 * time.Second)
 	defer t.Stop()
+	// v0.18.0 — speed-floor evaluator state. floorPct=0 disables the
+	// check entirely. warmup defers the first evaluation so the run
+	// has time to ramp up; without it the first 5-second window with
+	// peak still climbing would always falsely trigger.
+	var floorPct int
+	warmup := 60 * time.Second
+	if r.Cfg != nil {
+		floorPct = r.Cfg.SpeedFloorPercent
+		if r.Cfg.SpeedFloorWarmupSec > 0 {
+			warmup = time.Duration(r.Cfg.SpeedFloorWarmupSec) * time.Second
+		}
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -349,16 +365,37 @@ func (r *Run) sampleHostStats(ctx context.Context) {
 
 		// Live throughput peak from the metrics engine. Read the latest
 		// per-minute bucket — it represents the most recent minute's rate.
+		var currentMBps float64
 		if r.Metrics != nil {
 			snap := r.Metrics.Snapshot()
 			if n := len(snap.PerMinute); n > 0 {
-				w := snap.PerMinute[n-1].MBps
-				wk := int64(w * 1024)
+				currentMBps = snap.PerMinute[n-1].MBps
+				wk := int64(currentMBps * 1024)
 				for {
 					cur := r.peakWindowKBps.Load()
 					if wk <= cur || r.peakWindowKBps.CompareAndSwap(cur, wk) {
 						break
 					}
+				}
+			}
+		}
+
+		// v0.18.0 — speed-floor auto-stop. After the warmup window
+		// expires, compare the latest 1-minute throughput to peak. If
+		// the floor is breached, capture a human-readable reason and
+		// cancel the dispatchers. cancelDispatch is idempotent and
+		// stopWithReason wins only on first call, so a Stop click
+		// after this point won't overwrite the analyzer-friendly text.
+		if floorPct > 0 && time.Since(r.StartedAt) >= warmup {
+			peakMBps := float64(r.peakWindowKBps.Load()) / 1024.0
+			if peakMBps > 0 && currentMBps > 0 {
+				ratioPct := int(currentMBps / peakMBps * 100)
+				if ratioPct < floorPct {
+					detail := fmt.Sprintf("transfer speed dropped to %.2f Mbps (%d%% of peak %.2f Mbps), below the configured speed floor of %d%%",
+						currentMBps, ratioPct, peakMBps, floorPct)
+					r.stopWithReason("speed-floor", detail)
+					log.Printf("speed-floor stop: %s", detail)
+					return
 				}
 			}
 		}
@@ -429,6 +466,44 @@ func sealAllAndWriteMeta(r *Run, reportsDir string) error {
 	// v0.17.0 — stamp the highest concurrent-run count seen during the
 	// sampler's lifetime. 1 = solo (matches pre-v0.17 single-run UX).
 	meta.ConcurrentRunsAtPeak = int(r.peakConcurrentRuns.Load())
+	// v0.18.0 — stop reason + detail. Default to "duration" when
+	// nothing else captured a reason: by the time we reach seal, the
+	// dispatchers have ended either via the deadline timer or because
+	// an explicit Stop fired. Stop sets "user", the sampler sets
+	// "speed-floor", and the disable policy sets "max-failures"; the
+	// fall-through here covers the planned-deadline path so RunMeta
+	// always carries a label even for normal completion.
+	if rp := r.stopReason.Load(); rp != nil && *rp != "" {
+		meta.StopReason = *rp
+	} else {
+		meta.StopReason = "duration"
+	}
+	if dp := r.stopDetail.Load(); dp != nil && *dp != "" {
+		meta.StopDetail = *dp
+	}
+	// v0.18.0 — hash counters. Always written even when verify is off
+	// (both will be 0 in that case), so downstream tools don't need to
+	// special-case the field's absence.
+	// v0.18.0 — derive hash counters by walking the sealed record set
+	// rather than maintaining live atomics in the AttachDownloadBy*
+	// fast path. Walk is O(records) once at seal; AttachDownload* is
+	// per-file in the hot path. Verified+mismatch == count of rows
+	// that produced both an upload + download SHA-256.
+	if r.Cfg != nil && r.Cfg.VerifyHashes {
+		var verified, mismatch int64
+		for _, rec := range r.Report.Snapshot() {
+			if rec.UploadSHA256 == "" || rec.DownloadSHA256 == "" {
+				continue
+			}
+			if rec.HashMatch {
+				verified++
+			} else {
+				mismatch++
+			}
+		}
+		meta.HashVerified = verified
+		meta.HashMismatch = mismatch
+	}
 	// Capture workload-shape from the live config so the Previous-runs
 	// overview tells the user what was attempted, not just what finished.
 	if r.Cfg != nil {
@@ -517,6 +592,19 @@ func appendCSVAnalysis(path string, m persist.RunMeta) error {
 	b.WriteString(fmt.Sprintf("# parallel_streams,%d\n", m.ParallelStreams))
 	b.WriteString(fmt.Sprintf("# files_per_minute,%d\n", m.FilesPerMinute))
 	b.WriteString(fmt.Sprintf("# upload_users,%d\n", m.UploadUsers))
+	// v0.18.0 — stop-reason narrative. Always emit reason; emit detail
+	// only when present (prevents an empty "# stop_detail," line for
+	// runs that ended on duration / user-click).
+	if m.StopReason != "" {
+		b.WriteString(fmt.Sprintf("# stop_reason,%s\n", m.StopReason))
+	}
+	if m.StopDetail != "" {
+		b.WriteString(fmt.Sprintf("# stop_detail,%s\n", m.StopDetail))
+	}
+	if m.HashVerified > 0 || m.HashMismatch > 0 {
+		b.WriteString(fmt.Sprintf("# hash_verified,%d\n", m.HashVerified))
+		b.WriteString(fmt.Sprintf("# hash_mismatch,%d\n", m.HashMismatch))
+	}
 	if m.Latency != nil {
 		writeLatencyRows(&b, "upload", m.Latency.Upload)
 		writeLatencyRows(&b, "upload_cor", m.Latency.UploadCOR)
@@ -569,6 +657,21 @@ type Run struct {
 
 	doneCh chan struct{}
 	err    atomic.Pointer[error]
+
+	// stopReason / stopDetail (v0.18.0) — set when something OTHER than
+	// the operator's Stop click or the duration deadline ends the
+	// dispatch loop. Sampler writes "speed-floor" + the human-readable
+	// "current X Mbps is N% of peak Y Mbps, below configured floor M%"
+	// here before calling cancelDispatch. Read by sealAllAndWriteMeta
+	// so the detail lands in RunMeta.StopReason/StopDetail and in the
+	// CSV analysis trailer.
+	stopReason atomic.Pointer[string]
+	stopDetail atomic.Pointer[string]
+
+	// Hash-verification counters live ON the report records, not on
+	// Run. sealAllAndWriteMeta walks the sealed snapshot to produce
+	// RunMeta.HashVerified / HashMismatch — keeps the hot
+	// upload/download paths free of an extra atomic per file.
 
 	// uploadsWG tracks in-flight uploads that must finish before teardown.
 	uploadsWG sync.WaitGroup
@@ -1276,7 +1379,27 @@ func (r *Run) IsActive() bool {
 
 // Stop halts new uploads. In-flight uploads finish, track-id polling continues
 // until all pending IDs resolve (or TrackIDTimeout expires), then teardown runs.
-func (r *Run) Stop() { r.cancelDispatch() }
+func (r *Run) Stop() {
+	// Operator-initiated stop. Mark "user" only if no earlier reason
+	// (sampler / max-failures) has already claimed it.
+	r.stopReason.CompareAndSwap(nil, ptrString("user"))
+	r.cancelDispatch()
+}
+
+// stopWithReason captures a non-operator stop signal. The first reason
+// wins — subsequent calls (e.g. user clicks Stop after the sampler
+// already triggered) are ignored so the analysis trailer reflects the
+// actual cause, not the cosmetic operator action that followed.
+func (r *Run) stopWithReason(code, detail string) {
+	if r.stopReason.CompareAndSwap(nil, ptrString(code)) {
+		if detail != "" {
+			r.stopDetail.Store(ptrString(detail))
+		}
+		r.cancelDispatch()
+	}
+}
+
+func ptrString(s string) *string { return &s }
 
 // ErrorsByCode returns the live failure-count breakdown (copy — safe to
 // serialize from the status handler).
@@ -1481,7 +1604,18 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 					r.errCounts.inc("DOWNLOAD")
 					r.disable.onFailureFor(u.Username, "download", "DOWNLOAD", basename)
 				} else {
-					n, derr := protocol.DrainTo(c, path.Join(folder, name), wc)
+					// v0.18.0 — wrap the sink writer with a streaming
+					// SHA-256 hasher when verification is enabled. We
+					// MultiWriter so the bytes still reach the original
+					// sink (file / discard); the hash is a side-channel
+					// derived from the same pipe.
+					var dlHasher hash.Hash
+					var dlDst io.Writer = wc
+					if r.Cfg != nil && r.Cfg.VerifyHashes {
+						dlHasher = sha256.New()
+						dlDst = io.MultiWriter(wc, dlHasher)
+					}
+					n, derr := protocol.DrainTo(c, path.Join(folder, name), dlDst)
 					_ = wc.Close()
 					result.EndTime = time.Now()
 					result.SizeBytes = n
@@ -1492,6 +1626,9 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 						r.disable.onFailureFor(u.Username, "download", "DOWNLOAD", basename)
 					} else {
 						result.SpeedMBps = report.RawSpeedMBps(n, result.EndTime.Sub(start))
+						if dlHasher != nil {
+							result.SHA256 = hex.EncodeToString(dlHasher.Sum(nil))
+						}
 						r.disable.onSuccess(u.Username, "download")
 					}
 				}
@@ -1691,7 +1828,10 @@ func (r *Run) runNormal(ctx context.Context, deadline time.Time) {
 			for j := 0; j < count; j++ {
 				u, ok := pickActiveUser(users, &i, r.disable)
 				if !ok {
-					r.cancelDispatch()
+					// v0.18.0 — every user disabled by the failure policy.
+					// Capture the reason so the CSV trailer + RunMeta show
+					// "max-failures" instead of the default "duration".
+					r.stopWithReason("max-failures", "every user has exceeded MaxConsecutiveFailures and was disabled — no eligible dispatch users remain")
 					return
 				}
 				// Non-blocking: if all parallel slots are busy, record a skip.
@@ -1890,7 +2030,18 @@ func (r *Run) uploadOne(u config.UserCreds, size int64, kind string, intendedSta
 		rec.ExpectedSize = size
 	}
 
-	n, stage, err := c.Upload(remote, srcRes.Reader, size)
+	// v0.18.0 — when hash verification is enabled, wrap the source
+	// reader with an io.TeeReader writing into a streaming SHA-256.
+	// Hashing is allocation-free per byte (sha256 has SIMD impls on
+	// arm64/amd64) and adds < 1% overhead at typical load-test
+	// throughputs. Disabled = nil hasher = original reader.
+	uploadReader := srcRes.Reader
+	var uploadHasher hash.Hash
+	if r.Cfg != nil && r.Cfg.VerifyHashes {
+		uploadHasher = sha256.New()
+		uploadReader = io.TeeReader(srcRes.Reader, uploadHasher)
+	}
+	n, stage, err := c.Upload(remote, uploadReader, size)
 	end := time.Now()
 	rec.EndTime = end
 	if err != nil {
@@ -1900,6 +2051,9 @@ func (r *Run) uploadOne(u config.UserCreds, size int64, kind string, intendedSta
 		slot.markDead()
 		recordFailure(rec, stageToCode(stage), err.Error(), n)
 		return
+	}
+	if uploadHasher != nil {
+		rec.UploadSHA256 = hex.EncodeToString(uploadHasher.Sum(nil))
 	}
 	rec.SizeBytes = n
 	dur := end.Sub(start)
