@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1013,11 +1014,21 @@ func (s *Server) handleHost(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"status": "ok"}
 	if r.URL.Query().Get("detail") == "1" {
-		active := s.activeRun()
+		// v0.17.0 — concurrent-run aware. active_run + active_run_id are
+		// kept for back-compat (they reflect the most recent active run,
+		// matching pre-v0.16 single-run semantics); active_run_count and
+		// active_run_ids surface the full picture for monitors that need it.
+		actives := s.activeRuns()
 		out["uptime_sec"] = int64(time.Since(processStart).Seconds())
-		out["active_run"] = active != nil
-		if active != nil {
-			out["active_run_id"] = active.ID
+		out["active_run"] = len(actives) > 0
+		out["active_run_count"] = len(actives)
+		ids := make([]string, len(actives))
+		for i, r := range actives {
+			ids[i] = r.ID
+		}
+		out["active_run_ids"] = ids
+		if len(actives) > 0 {
+			out["active_run_id"] = actives[len(actives)-1].ID // most recent
 		}
 		if v := s.getVersion(); v != "" {
 			out["version"] = v
@@ -1391,14 +1402,28 @@ func (s *Server) startRun(req startReq, startedBy string) (*runner.Run, error) {
 	s.mu.Lock()
 	s.runs[run.ID] = run
 	s.order = append(s.order, run.ID)
+	// v0.17.0 — eviction now walks the slice for the oldest *finished*
+	// run instead of bailing on the first active. The pre-v0.17 loop
+	// stopped at any active head, so when concurrent active runs ≥
+	// maxRetainedRuns the slice grew unbounded. The new loop preserves
+	// every active run (they keep their slot) and evicts the oldest
+	// finished one until the cap is satisfied — or the slice is all
+	// active, in which case we accept temporary over-cap until any
+	// run completes (then the next start trims).
 	for len(s.order) > maxRetainedRuns {
-		oldID := s.order[0]
-		old := s.runs[oldID]
-		if old != nil && old.IsActive() {
-			break
+		evicted := false
+		for i, id := range s.order {
+			r := s.runs[id]
+			if r == nil || !r.IsActive() {
+				delete(s.runs, id)
+				s.order = append(s.order[:i], s.order[i+1:]...)
+				evicted = true
+				break
+			}
 		}
-		delete(s.runs, oldID)
-		s.order = s.order[1:]
+		if !evicted {
+			break // every retained run is active; cap relaxes once any finishes
+		}
 	}
 	s.mu.Unlock()
 	return run, nil
@@ -1447,6 +1472,22 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// v0.17.0 — soft self-DoS guardrail. When concurrent runs are
+	// allowed (post-v0.16) operators can accidentally point two runs at
+	// the same host:port and self-throttle. We still start the run (no
+	// hard block — sometimes concurrent loads against the same host are
+	// the test), but surface a warning in the response body so the UI
+	// can show a toast. force=true in the URL skips the guardrail
+	// silently for automation.
+	var warning string
+	if r.URL.Query().Get("force") != "true" {
+		if conflict := s.findActiveAtTarget(req.Host, req.Port); conflict != "" {
+			warning = "another run (" + conflict + ") is already active against " +
+				req.Host + ":" + strconv.Itoa(req.Port) +
+				" — concurrent runs against the same host share bandwidth and connections"
+		}
+	}
+
 	run, err := s.startRun(req, "manual")
 	if err != nil {
 		code := http.StatusBadRequest
@@ -1456,7 +1497,33 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), code)
 		return
 	}
-	writeJSON(w, map[string]any{"run_id": run.ID})
+	out := map[string]any{"run_id": run.ID}
+	if warning != "" {
+		out["warning"] = warning
+	}
+	writeJSON(w, out)
+}
+
+// findActiveAtTarget returns the ID of the first active run whose
+// configured Host:Port matches the supplied target, or "" when none
+// match. Used by the start handler's self-DoS guardrail. Read-only;
+// holds s.mu just long enough to walk the order slice.
+func (s *Server) findActiveAtTarget(host string, port int) string {
+	if host == "" || port <= 0 {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, id := range s.order {
+		r := s.runs[id]
+		if r == nil || !r.IsActive() || r.Cfg == nil {
+			continue
+		}
+		if r.Cfg.Host == host && r.Cfg.Port == port {
+			return id
+		}
+	}
+	return ""
 }
 
 // preflightHostKey runs a single capture-callback dial. Returns a non-nil

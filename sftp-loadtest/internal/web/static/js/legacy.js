@@ -536,12 +536,47 @@ async function start() {
     }
     const res = await apiFetch('/api/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error(await res.text());
+    // v0.17.0 — server returns {run_id, warning?}. The warning fires
+    // when starting a second concurrent run against the same host:port
+    // — surface it in the err line as an info banner so the operator
+    // notices but isn't blocked.
+    let respWarning = '';
+    try {
+      const body2 = await res.clone().json();
+      respWarning = body2.warning || '';
+    } catch {}
+    if (respWarning) {
+      const errEl = $('err');
+      if (errEl) errEl.textContent = '⚠ ' + respWarning;
+    }
     rememberConn(body.host, body.port);
     $('startBtn').disabled = true;
     $('stopBtn').disabled = false;
   } catch (e) { $('err').textContent = e.message; }
 }
-async function stop() { await apiFetch('/api/stop', { method: 'POST' }); }
+// stop targets pinnedRun first (the currently-viewed run), so an
+// operator who's been watching a specific run stops *that one*. With no
+// pin, /api/stop with no args works for the single-active case and 409s
+// with active_ids[] when ambiguous — surface the list so the operator
+// can pick rather than swallowing the error. v0.17.0 added the multi-run
+// disambiguation; pre-v0.17 callers and single-run setups behave
+// identically.
+async function stop() {
+  const url = pinnedRun
+    ? `/api/stop?run=${encodeURIComponent(pinnedRun)}`
+    : '/api/stop';
+  const res = await apiFetch(url, { method: 'POST' });
+  if (res && res.status === 409) {
+    let ids = [];
+    try { const body = await res.json(); ids = body.active_ids || []; } catch {}
+    const errEl = document.getElementById('err');
+    if (errEl) {
+      errEl.textContent = ids.length
+        ? `${ids.length} runs active — click View on a run row first, then Stop.`
+        : 'Multiple runs active — pick one and try again.';
+    }
+  }
+}
 
 $('startBtn').addEventListener('click', start);
 $('stopBtn').addEventListener('click', stop);
@@ -595,10 +630,38 @@ function fmtSpeed(info) {
 
 // ---------- runs list (right pane header) ----------
 let pinnedRun = null;
+// v0.17.0 — when the pinned run finishes and other runs are still
+// active, auto-unpin so the live view falls back to the most recent
+// active. Operators don't have to remember to click "Live" themselves
+// when their pinned run completes mid-session.
+function maybeUnpinFinished(runs) {
+  if (!pinnedRun) return;
+  const pinned = runs.find(r => r.id === pinnedRun);
+  if (!pinned) return;
+  if (pinned.active) return;
+  const stillActive = runs.some(r => r.active);
+  if (stillActive) {
+    pinnedRun = null;
+  }
+}
 async function pollRuns() {
   try {
     const { runs } = await (await apiFetch('/api/runs')).json();
     const tb = $('runs_body');
+    // v0.17.0 — masthead "N active" badge so an operator running
+    // multiple loads at once can see the count without scanning the
+    // table. Hidden when 0 or 1 active (the legacy single-run case).
+    const activeCount = (runs || []).filter(r => r.active).length;
+    const badge = document.querySelector('[data-role="active-runs-badge"]');
+    if (badge) {
+      if (activeCount > 1) {
+        badge.hidden = false;
+        badge.textContent = `${activeCount} runs active`;
+      } else {
+        badge.hidden = true;
+      }
+    }
+    maybeUnpinFinished(runs || []);
     tb.innerHTML = '';
     if (!runs || runs.length === 0) {
       tb.innerHTML = `<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">No runs yet.</td></tr>`;

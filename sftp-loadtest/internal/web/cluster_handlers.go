@@ -12,6 +12,17 @@ import (
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/cluster"
 )
 
+// CONCURRENT-RUNS NOTE (v0.17.0): the per-worker /api/start handler no
+// longer blocks a second concurrent run on a single worker (gate was
+// lifted in v0.16.0 to allow operator-initiated parallel loads). The
+// cluster Coordinator continues to call /api/start exactly ONCE per
+// clusterStart per worker — the contract here is "one cluster
+// orchestrates one run per worker". If a future change sends a
+// concurrent start to a worker, that worker will now happily accept it
+// and the cluster status panel will show two run rows for that worker.
+// Tests cover the single-run-per-worker path; the Coordinator does not
+// currently exercise the concurrent-per-worker path.
+
 // clusterCoord is the master-side coordinator instance. Lazily
 // constructed via sync.Once because the cluster surface is a no-op for
 // instances that never act as a master (i.e. workers never reach these

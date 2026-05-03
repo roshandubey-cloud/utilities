@@ -448,6 +448,11 @@
           <span class="masthead-status-dot" data-role="status-dot" data-state="idle" aria-hidden="true"></span>
           <span data-role="status-text">Connecting…</span>
         </span>
+        <!-- v0.17.0 — concurrent-runs awareness. Hidden until ≥2 runs
+             are active so the legacy single-run UX is unchanged. -->
+        <span class="badge-mini" data-role="active-runs-badge" hidden
+              title="Click a run row's View button to focus the live view on it.">
+        </span>
         <div class="segmented" data-role="theme-switcher" aria-label="Theme">
           <button type="button" data-theme="auto"  aria-pressed="false" title="Match system">Auto</button>
           <button type="button" data-theme="light" aria-pressed="false" title="Light">Light</button>

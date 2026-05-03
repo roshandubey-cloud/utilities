@@ -10,6 +10,55 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.17.0] — 2026-05-03
+### Added
+Concurrent-runs hardening pass. v0.16 made multi-run *possible*; v0.17
+makes it usable across the full surface.
+
+- **Stop button is run-aware.** When a run is pinned in the right-pane
+  (clicked View on a row), `/api/stop` now forwards `?run=<id>` so the
+  operator stops *that* run. Without a pin, the no-arg form keeps
+  working for the single-active case and surfaces a friendly "click
+  View on a run row first" message instead of the raw 409 when
+  multiple runs are active.
+- **Live masthead now shows "N runs active"** when ≥2 runs are
+  running. Hidden in the legacy single-run case so existing UX is
+  unchanged.
+- **Auto-fallback when a pinned run finishes.** If the pinned run
+  completes while other runs are still active, the live view drops
+  the pin and falls back to the most recent active run on the next
+  poll. No more staring at a stale "stopped" snapshot.
+- **`/healthz?detail=1` exposes `active_run_count` and
+  `active_run_ids[]`.** External monitors finally see the full
+  concurrent-run picture. The legacy `active_run` (bool) and
+  `active_run_id` (most recent) remain for back-compat.
+- **`RunMeta.ConcurrentRunsAtPeak`** captures the highest concurrent
+  count observed during a run's sampler ticks, surfacing in the
+  Previous-runs UI so peak CPU/FD readings can be interpreted as
+  "shared with N siblings" rather than "this run was a runaway."
+  New `runner.ActiveCount()` exposes the live count to other
+  packages; backed by an atomic counter incremented at Start and
+  decremented after the run's seal completes.
+- **Self-DoS guardrail.** Starting a second run against the same
+  host:port as an active run now returns `{run_id, warning}` instead
+  of just `{run_id}`. The UI surfaces the warning as a non-blocking
+  banner — "another run X is already active against host:port —
+  concurrent runs share bandwidth and connections". Pass
+  `?force=true` on the URL to skip the guardrail in automation.
+- **Cluster-handler concurrency note.** Cluster `/api/start` calls go
+  through the per-worker handler whose gate was lifted in v0.16. The
+  Coordinator still issues exactly one start per worker per cluster
+  run; documented in cluster_handlers.go so future Coordinator work
+  doesn't accidentally rely on the old gate.
+
+### Fixed
+- **In-memory run retention loop** previously bailed out the moment
+  the oldest retained run was active. With ≥`maxRetainedRuns` (=10)
+  concurrent active runs that meant the slice grew unbounded
+  forever. The loop now walks the slice for the oldest *finished*
+  run; every active is preserved (they keep their slot) and the cap
+  re-tightens automatically when any active completes.
+
 ## [v0.16.0] — 2026-05-02
 ### Added
 - **Concurrent runs.** The single-active-run gate at `/api/start` is gone —

@@ -41,6 +41,18 @@ var runSeq atomic.Uint64
 
 func nextRunSeq() uint64 { return runSeq.Add(1) }
 
+// activeCount tracks the number of currently-live Runs. v0.17.0 — used
+// by sampleHostStats to stamp ConcurrentRunsAtPeak into RunMeta so
+// historical analysis can tell "this run had the box to itself" from
+// "this run shared CPU with N siblings". Incremented at Start,
+// decremented after teardown completes.
+var activeCount atomic.Int64
+
+// ActiveCount returns the current number of active runs across the
+// process. Cheap (single atomic load); safe from any goroutine. Web
+// layer reads it for the soft self-DoS guardrail in startRun.
+func ActiveCount() int { return int(activeCount.Load()) }
+
 // disablePolicy tracks per-user consecutive failures for one run and flags
 // users past the threshold so dispatchers stop picking them.
 type userStatus struct {
@@ -322,6 +334,19 @@ func (r *Run) sampleHostStats(ctx context.Context) {
 			}
 		}
 
+		// v0.17.0 — concurrent-runs-at-peak. Track the highest observed
+		// concurrent run count for the lifetime of THIS run. Sampled in
+		// the same 2s tick as CPU/heap so the value is a peak that
+		// matches the peak of every other resource on the run row.
+		if c := int64(ActiveCount()); c > 0 {
+			for {
+				cur := r.peakConcurrentRuns.Load()
+				if c <= cur || r.peakConcurrentRuns.CompareAndSwap(cur, c) {
+					break
+				}
+			}
+		}
+
 		// Live throughput peak from the metrics engine. Read the latest
 		// per-minute bucket — it represents the most recent minute's rate.
 		if r.Metrics != nil {
@@ -401,6 +426,9 @@ func sealAllAndWriteMeta(r *Run, reportsDir string) error {
 	meta.PeakHeapMB = float64(r.peakHeapKB.Load()) / 1024.0
 	meta.PeakWindowMBps = float64(r.peakWindowKBps.Load()) / 1024.0
 	meta.NumCPU = int(r.hostNumCPU.Load())
+	// v0.17.0 — stamp the highest concurrent-run count seen during the
+	// sampler's lifetime. 1 = solo (matches pre-v0.17 single-run UX).
+	meta.ConcurrentRunsAtPeak = int(r.peakConcurrentRuns.Load())
 	// Capture workload-shape from the live config so the Previous-runs
 	// overview tells the user what was attempted, not just what finished.
 	if r.Cfg != nil {
@@ -586,6 +614,12 @@ type Run struct {
 	peakHeapKB      atomic.Int64 // peak HeapMB × 1024
 	peakWindowKBps  atomic.Int64 // peak window MB/s × 1024
 	hostNumCPU      atomic.Int64
+	// peakConcurrentRuns (v0.17.0) — highest observed value of
+	// runner.ActiveCount() during this run's sampler ticks. Stamped
+	// into RunMeta.ConcurrentRunsAtPeak at seal time so the historical
+	// analyzer can interpret high CPU/FD numbers as "shared with N
+	// siblings" rather than "this run was a runaway".
+	peakConcurrentRuns atomic.Int64
 
 	// Failure counters — visible to the UI via /api/status so operators don't
 	// have to scan the record tail to see error health.
@@ -1128,9 +1162,18 @@ func StartWithPersistAndTLS(parent context.Context, cfg *config.RunConfig, repor
 				log.Printf("report flush: %v", err)
 			}
 		}
+		// v0.17.0 — decrement *after* sealing so a sampler tick on
+		// another concurrent run still observes this run as live up
+		// until its meta JSON is written. Order: teardown → seal →
+		// activeCount-- → close(doneCh).
+		activeCount.Add(-1)
 		close(r.doneCh)
 	}()
 
+	// v0.17.0 — increment after the launch goroutine is started so a
+	// failure in build* above doesn't leak the counter (those error
+	// paths return before we reach this line).
+	activeCount.Add(1)
 	return r, nil
 }
 

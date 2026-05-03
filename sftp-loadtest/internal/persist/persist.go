@@ -75,6 +75,16 @@ type RunMeta struct {
 	PeakWindowMBps float64 `json:"peak_window_mbps,omitempty"`
 	NumCPU         int     `json:"num_cpu,omitempty"`
 
+	// ConcurrentRunsAtPeak (v0.17.0) records the highest concurrent-run
+	// count observed by the sampler during this run's lifetime.
+	// Without it, a multi-run setup where the box was shared between N
+	// loads attributes the whole machine's peak CPU/FD/heap to each
+	// run individually — making each one look like a runaway. Surfaced
+	// in the Previous-runs UI as "shared with N runs at peak" so an
+	// operator can interpret high-CPU numbers in context. 1 (or 0) =
+	// solo run, behaviour identical to the pre-v0.17 single-run case.
+	ConcurrentRunsAtPeak int `json:"concurrent_runs_at_peak,omitempty"`
+
 	// Suggestions is the analyst's narrative for this run — what slowed it
 	// down and what to change next time. Generated at seal time by the
 	// internal/analyze package and embedded so the CSV and UI render
