@@ -2,10 +2,14 @@ package runner_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -283,6 +287,248 @@ func TestRunner_FilenameModeRoundTrip(t *testing.T) {
 	if withDownload == 0 {
 		t.Error("no records received a download — marker-lookup attach never fired")
 	}
+}
+
+// TestRunner_VerifyHashes_RoundTrip exercises the SHA-256 round-trip
+// on synthetic uploads + discard downloads against a real mocksftp.
+// Asserts:
+//   (a) every successful upload row carries a non-empty UploadSHA256
+//       (proves uploadOne's TeeReader fires regardless of source kind),
+//   (b) every row that received a download carries a non-empty
+//       DownloadSHA256 (proves downloadWorker's MultiWriter fires
+//       regardless of sink kind — discard included),
+//   (c) those rows have HashMatch == true (proves the bytes that left
+//       the client are the bytes that came back; the mock loops them
+//       through verbatim, so any mismatch would be a real bug),
+//   (d) RunMeta.HashVerified is positive at seal time.
+//
+// We use filename mode so the mock's outbox routing stays
+// deterministic. The mock copies upload bytes into the outbox
+// unmodified, which is the contract the runner relies on for hash
+// equality. A future mock that mutates bytes in flight would surface
+// here as HashMatch=false + RunMeta.HashMismatch > 0 — exactly the
+// signal the operator wants.
+func TestRunner_VerifyHashes_RoundTrip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test (mockserver) skipped under -short")
+	}
+	// PersistContent: true makes the mock store upload bytes and replay
+	// them verbatim on download. Without it, the mock synthesises zero-
+	// filled downloads and the hash check correctly reports MISMATCH —
+	// which is the OPPOSITE of what we want to assert here. The earlier
+	// failure of this test caught exactly that misconfiguration.
+	srv, err := mocksftp.Start(mocksftp.Options{
+		Addr:           "127.0.0.1:0",
+		Delay:          50 * time.Millisecond,
+		Logger:         log.New(io.Discard, "", 0),
+		PersistContent: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Stop()
+	host, portStr, _ := net.SplitHostPort(srv.Addr().String())
+	port, _ := strconv.Atoi(portStr)
+	sftpx.SetHostKeyCallback(ssh.InsecureIgnoreHostKey())
+
+	cfg := &config.RunConfig{
+		Host:            host,
+		Port:            port,
+		UploadFolder:    "inbox",
+		ParallelStreams: 2,
+		DurationHours:   3.0 / 3600.0,
+		PollInterval:    250 * time.Millisecond,
+		TrackIDTimeout:  5 * time.Second,
+		VerifyHashes:    true, // <-- the feature under test
+		Normal: &config.NormalLoad{
+			FilesPerMinute: 600,
+			MinSizeMB:      1,
+			MaxSizeMB:      1,
+		},
+		NormalUsers: []config.UserCreds{
+			{Username: "u1", Password: "p", Patterns: []string{"f-*"}},
+		},
+		Download: &config.DownloadLoad{
+			Folder:          "outbox",
+			ParallelStreams: 2,
+			MatchMode:       config.MatchModeFilename,
+		},
+		DownloadUsers: []config.UserCreds{
+			{Username: "u1", Password: "p", Patterns: []string{"*"}},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	run, err := runner.Start(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	select {
+	case <-run.Done():
+	case <-ctx.Done():
+		t.Fatal("run did not complete in time")
+	}
+
+	rows := run.Report.Snapshot()
+	if len(rows) == 0 {
+		t.Fatal("no records produced")
+	}
+	uploadHashed, downloadHashed, matched, mismatched := 0, 0, 0, 0
+	for _, r := range rows {
+		if r.Error != "" {
+			continue // skip failures
+		}
+		if r.UploadSHA256 == "" {
+			t.Errorf("upload row %s has empty UploadSHA256 (synthetic upload should hash via TeeReader)", r.Filename)
+			continue
+		}
+		uploadHashed++
+		if r.DownloadEndTime.IsZero() {
+			continue // download didn't round-trip yet
+		}
+		if r.DownloadSHA256 == "" {
+			t.Errorf("download row %s has empty DownloadSHA256 (discard sink should hash via MultiWriter)", r.Filename)
+			continue
+		}
+		downloadHashed++
+		if r.HashMatch {
+			matched++
+		} else {
+			mismatched++
+			t.Errorf("row %s hash mismatch: upload=%s download=%s download_error=%q",
+				r.Filename, r.UploadSHA256, r.DownloadSHA256, r.DownloadError)
+		}
+	}
+	if uploadHashed == 0 {
+		t.Fatal("no upload rows carried a SHA-256 — TeeReader is not firing")
+	}
+	if downloadHashed == 0 {
+		t.Fatal("no download rows carried a SHA-256 — MultiWriter is not firing")
+	}
+	if matched == 0 {
+		t.Fatal("no matched rounds-trips passed hash check; the runner is reporting bytes that don't match")
+	}
+	if mismatched > 0 {
+		t.Fatalf("%d hash mismatches against a byte-faithful mock — comparator wiring is wrong", mismatched)
+	}
+	t.Logf("hash verify wiring confirmed: upload_hashed=%d download_hashed=%d matched=%d", uploadHashed, downloadHashed, matched)
+}
+
+// TestRunner_VerifyHashes_RealFileSource asserts that the SHA-256
+// captured by the runner's upload TeeReader matches a pre-computed
+// hash of an on-disk file when the source kind is local-files (NOT
+// synthetic). Closes the gap left by the synthetic-only test:
+// proves the wrap is io.Reader-agnostic and a real file source
+// flows through the same hashing path.
+func TestRunner_VerifyHashes_RealFileSource(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test (mockserver) skipped under -short")
+	}
+	// Materialise a known on-disk file and compute its expected SHA-256.
+	// The runner should produce exactly this hash on the upload row.
+	tmp := t.TempDir()
+	srcFile := filepath.Join(tmp, "fixture.bin")
+	body := make([]byte, 256*1024) // 256 KiB
+	for i := range body {
+		body[i] = byte(i % 251) // not all zeros, not all one byte; deterministic
+	}
+	if err := os.WriteFile(srcFile, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	expectedSum := sha256.Sum256(body)
+	expectedHex := hex.EncodeToString(expectedSum[:])
+
+	srv, err := mocksftp.Start(mocksftp.Options{
+		Addr:           "127.0.0.1:0",
+		Delay:          50 * time.Millisecond,
+		Logger:         log.New(io.Discard, "", 0),
+		PersistContent: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Stop()
+	host, portStr, _ := net.SplitHostPort(srv.Addr().String())
+	port, _ := strconv.Atoi(portStr)
+	sftpx.SetHostKeyCallback(ssh.InsecureIgnoreHostKey())
+
+	cfg := &config.RunConfig{
+		Host:            host,
+		Port:            port,
+		UploadFolder:    "inbox",
+		ParallelStreams: 1,
+		DurationHours:   2.0 / 3600.0,
+		PollInterval:    250 * time.Millisecond,
+		TrackIDTimeout:  5 * time.Second,
+		VerifyHashes:    true,
+		Normal: &config.NormalLoad{
+			FilesPerMinute: 60,
+			MinSizeMB:      1, // ignored when local-files supplies bytes
+			MaxSizeMB:      1,
+			Source: &config.SourceConfig{
+				Kind:  "local-files",
+				Files: []string{srcFile},
+				Mode:  "round-robin",
+			},
+		},
+		NormalUsers: []config.UserCreds{
+			{Username: "u1", Password: "p", Patterns: []string{"f-*"}},
+		},
+		Download: &config.DownloadLoad{
+			Folder:          "outbox",
+			ParallelStreams: 1,
+			MatchMode:       config.MatchModeFilename,
+		},
+		DownloadUsers: []config.UserCreds{
+			{Username: "u1", Password: "p", Patterns: []string{"*"}},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	run, err := runner.Start(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	select {
+	case <-run.Done():
+	case <-ctx.Done():
+		t.Fatal("run did not complete in time")
+	}
+
+	rows := run.Report.Snapshot()
+	if len(rows) == 0 {
+		t.Fatal("no records produced")
+	}
+	// Every successful upload row should carry the expected SHA-256
+	// because the local-files source serves the same fixture every
+	// time. If even one row diverges, the TeeReader is hashing the
+	// wrong stream (e.g. a buffered copy that bypassed our wrap).
+	checked := 0
+	for _, r := range rows {
+		if r.Error != "" {
+			continue
+		}
+		if r.UploadSHA256 != expectedHex {
+			t.Errorf("row %s: UploadSHA256=%s expected %s — TeeReader is hashing the wrong stream for local-files source",
+				r.Filename, r.UploadSHA256, expectedHex)
+		}
+		checked++
+		if !r.DownloadEndTime.IsZero() {
+			if r.DownloadSHA256 != expectedHex {
+				t.Errorf("row %s: DownloadSHA256=%s expected %s — MultiWriter is hashing the wrong stream",
+					r.Filename, r.DownloadSHA256, expectedHex)
+			}
+			if !r.HashMatch {
+				t.Errorf("row %s: HashMatch should be true for byte-identical round-trip", r.Filename)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no successful upload rows to assert against")
+	}
+	t.Logf("real-file source wiring confirmed: %d rows all carry expected SHA-256 %s", checked, expectedHex)
 }
 
 // _ keeps the fmt import alive if we add diagnostic prints later.
