@@ -870,7 +870,7 @@
           </div>
           <div class="row">
             <div><label for="poll" title="How often the tool re-lists each upload user's inbox (looking for #trackid renames) AND each download user's outbox (looking for files to pull). Lower = faster detection, more SFTP overhead.">Poll interval (sec)</label><input id="poll" type="number" value="3" min="1"></div>
-            <div><label for="timeout_min">Track-ID timeout (min)</label><input id="timeout_min" type="number" value="10" min="1"></div>
+            <div><label for="timeout_min" title="Maximum wall-clock minutes the runner waits for a server-side rename (track-ID #suffix or filename marker) before declaring a round-trip lost. After the upload phase ends, the run keeps draining for up to this much longer to give pending round-trips time to resolve.">Round-trip timeout (min)</label><input id="timeout_min" type="number" value="10" min="1"></div>
             <div><label for="max_fails" title="Disable a user account after this many consecutive failed ops. 0 = off.">Disable user after (fails)</label><input id="max_fails" type="number" value="3" min="0"></div>
           </div>
           <!-- v0.18.0 — speed-floor auto-stop. 0 = disabled. When set,
@@ -883,15 +883,15 @@
                trailer. -->
           <div class="row">
             <div>
-              <label for="speed_floor_percent" title="Auto-stop the run when the live throughput drops below this fraction of the peak observed during the run. Captures partner-side rate limits or congestion as a clean stop with a labelled reason. 0 = disabled.">Speed-floor auto-stop (%) <span class="badge-mini">v0.18</span></label>
+              <label for="speed_floor_percent" title="Stop the run if live throughput drops below this fraction of the peak observed during the run. Captures partner-side rate limits or congestion as a clean stop with a labelled reason. 0 = disabled.">Slowdown threshold (% of peak) <span class="badge-mini">v0.18</span></label>
               <input id="speed_floor_percent" type="number" value="0" min="0" max="100" placeholder="0 = off">
             </div>
             <div>
-              <label for="speed_floor_warmup_sec" title="Skip the speed-floor check for this many seconds after the run starts so the metric has time to stabilise. Default 60.">Floor warmup (sec)</label>
+              <label for="speed_floor_warmup_sec" title="Skip the slowdown check for this many seconds after the run starts so the metric has time to stabilise. Default 60.">Slowdown warmup (sec)</label>
               <input id="speed_floor_warmup_sec" type="number" value="60" min="10">
             </div>
             <div>
-              <label for="speed_floor_breach_sec" title="The breach must be SUSTAINED for this many consecutive seconds before the run stops. A single sample back above the floor resets the streak. Default 90s — long enough to ride out a brief network blip, short enough to stop a real partner-side rate cap before wasting hours.">Sustained for (sec) <span class="badge-mini">v0.18.2</span></label>
+              <label for="speed_floor_breach_sec" title="The slowdown must persist this many consecutive seconds before the run stops. A single sample back above the threshold resets the streak. Default 90s — long enough to ride out a brief network blip, short enough to stop a real partner-side rate cap before wasting hours.">Allow slowness for (sec) <span class="badge-mini">v0.18.2</span></label>
               <input id="speed_floor_breach_sec" type="number" value="90" min="10">
             </div>
           </div>

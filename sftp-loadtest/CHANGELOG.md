@@ -10,6 +10,30 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.18.6] — 2026-05-03
+### Changed
+- **Labels reworded for the operator's vocabulary, not the implementation's:**
+  - `Track-ID timeout (min)` → `Round-trip timeout (min)`
+  - `Speed-floor auto-stop (%)` → `Slowdown threshold (% of peak)`
+  - `Sustained for (sec)` → `Allow slowness for (sec)`
+  - `Floor warmup (sec)` → `Slowdown warmup (sec)`
+
+  Reads as a sentence top-to-bottom: *"Stop if slower than 50% of
+  peak, allow slowness for 90 seconds, after a 60-second warmup."*
+
+- **Run controls is now collapsed by default behind an "Expert mode"
+  disclosure.** Most operators never override polling, round-trip
+  timeout, disable-after-fails, or the slowdown trio — defaults are
+  sensible. Hiding them keeps the main form scannable for the 80%
+  case. Per-user parallelism (Upload streams / Download streams)
+  stays visible — that's an always-relevant tuning knob.
+
+- **Inside Expert mode**, the knobs split into two intent-aligned
+  subgroups: **Timing & retry** (poll interval, round-trip timeout,
+  disable-after-fails) and **Auto-stop on slowness** (threshold,
+  allow-slowness-for, warmup). Reads as two coherent clusters
+  rather than one flat row.
+
 ## [v0.18.5] — 2026-05-03
 ### Changed
 - **Duration sits to the RIGHT of the Workload header** instead of

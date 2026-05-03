@@ -129,7 +129,7 @@ export function mountConfigureRedesign() {
       <section class="cfg-section" data-section="limits">
         <header class="cfg-section-head">
           <div class="cfg-section-eyebrow">3 · Resource limits</div>
-          <p class="cfg-section-sub">Per-user parallelism (split for upload + download), plus run-wide duration, polling, timeouts, and the disable-after-fails ceiling.</p>
+          <p class="cfg-section-sub">Per-user parallelism for upload + download. Open <strong>Expert mode</strong> below to override polling, retry, and auto-stop-on-slowness defaults.</p>
         </header>
         <div class="cfg-section-body" data-slot="limits"></div>
       </section>
@@ -213,6 +213,14 @@ export function mountConfigureRedesign() {
   //               Download workload card so the workload card holds
   //               only workload-shape concerns: folder + match mode)
   //   Run       → #duration / #poll / #timeout_min / #max_fails
+  // v0.18.6 — Run controls is now an explicit "Expert mode" disclosure.
+  // Most operators never touch poll interval / round-trip timeout /
+  // disable-after-fails / the slowdown trio; defaults are sensible.
+  // Hiding them by default keeps the form scannable for the 80% case.
+  // Per-stream parallelism stays visible (always-relevant tuning knob).
+  // Two explicit subgroups inside the disclosure separate "timing"
+  // from "auto-stop on slowness" so the operator scans each cluster
+  // as a coherent group instead of one long flat list.
   const limitsSlot = layout.querySelector('[data-slot="limits"]');
   limitsSlot.innerHTML = `
     <div class="cfg-limits-stream">
@@ -225,14 +233,28 @@ export function mountConfigureRedesign() {
         <div class="cfg-limits-rows" data-slot="limits-download"></div>
       </div>
     </div>
-    <div class="cfg-limits-group" data-group="run">
-      <div class="cfg-limits-eyebrow">Run controls</div>
-      <div class="cfg-limits-rows" data-slot="limits-run"></div>
-    </div>
+    <details class="cfg-limits-expert" data-group="run">
+      <summary class="cfg-limits-expert-summary">
+        <span class="cfg-limits-expert-chevron" aria-hidden="true">›</span>
+        <span class="cfg-limits-expert-title">Expert mode</span>
+        <span class="cfg-limits-expert-hint">timing, retry, auto-stop on slowness — defaults are sensible; click to override</span>
+      </summary>
+      <div class="cfg-limits-expert-body">
+        <div class="cfg-limits-group" data-subgroup="timing">
+          <div class="cfg-limits-eyebrow">Timing &amp; retry</div>
+          <div class="cfg-limits-rows" data-slot="limits-run"></div>
+        </div>
+        <div class="cfg-limits-group" data-subgroup="autostop">
+          <div class="cfg-limits-eyebrow">Auto-stop on slowness</div>
+          <div class="cfg-limits-rows" data-slot="limits-autostop"></div>
+        </div>
+      </div>
+    </details>
   `;
-  const upSlot   = limitsSlot.querySelector('[data-slot="limits-upload"]');
-  const dlSlot   = limitsSlot.querySelector('[data-slot="limits-download"]');
-  const runSlot  = limitsSlot.querySelector('[data-slot="limits-run"]');
+  const upSlot       = limitsSlot.querySelector('[data-slot="limits-upload"]');
+  const dlSlot       = limitsSlot.querySelector('[data-slot="limits-download"]');
+  const runSlot      = limitsSlot.querySelector('[data-slot="limits-run"]');
+  const autoStopSlot = limitsSlot.querySelector('[data-slot="limits-autostop"]');
 
   // Resolve the rows. The legacy form gives us .row containers with the
   // <input> inside; we steal each <input>'s containing field-cell so the
@@ -272,14 +294,17 @@ export function mountConfigureRedesign() {
 
   if (fParallel)  upSlot.appendChild(fParallel);
   if (fDParallel) dlSlot.appendChild(fDParallel);
-  // v0.18.4 — Duration goes to the Workload section's headline slot
-  // (right under "Combine up to three flows…") instead of the bottom
-  // Run controls group. The remaining run-wide knobs stay in their
-  // original limits group.
+  // v0.18.4 — Duration goes to the Workload section's headline slot.
   const workloadHeadline = layout.querySelector('[data-slot="workload-headline"]');
   if (fDuration && workloadHeadline) workloadHeadline.appendChild(fDuration);
-  for (const f of [fPoll, fTimeout, fMaxFails, fSpeedFloor, fSpeedWarmup, fSpeedBreach]) {
+  // v0.18.6 — Timing/retry vs auto-stop are clustered into separate
+  // subgroups inside the Expert mode disclosure so the form reads
+  // as two intent-aligned groups instead of a flat list.
+  for (const f of [fPoll, fTimeout, fMaxFails]) {
     if (f) runSlot.appendChild(f);
+  }
+  for (const f of [fSpeedFloor, fSpeedBreach, fSpeedWarmup]) {
+    if (f) autoStopSlot.appendChild(f);
   }
 
   // The runMechanics scaffold (and any leftover .row husks now empty

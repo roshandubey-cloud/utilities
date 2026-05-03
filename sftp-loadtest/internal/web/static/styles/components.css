@@ -3156,6 +3156,75 @@ button.primary:hover:not(:disabled),
   color: var(--text-secondary);
   font-weight: var(--fw-medium);
 }
+
+/* v0.18.6 — Expert-mode disclosure for Run controls.
+   Replaces the always-visible "Run controls" panel; the operator only
+   reveals timing / retry / auto-stop knobs when they need to override
+   defaults. The body stacks two subgroups (Timing & retry, Auto-stop
+   on slowness) so the surface reads as two intent-aligned clusters
+   rather than one flat row. */
+.cfg-limits-expert {
+  margin-top: var(--sp-3);
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-3);
+  overflow: hidden;
+}
+.cfg-limits-expert[open] {
+  background: var(--surface-raised, var(--surface));
+}
+.cfg-limits-expert-summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+.cfg-limits-expert-summary::-webkit-details-marker { display: none; }
+.cfg-limits-expert-summary::marker { display: none; }
+.cfg-limits-expert-chevron {
+  display: inline-block;
+  font-size: var(--fs-14);
+  color: var(--text-tertiary);
+  transition: transform 120ms ease;
+  transform-origin: 50% 55%;
+  line-height: 1;
+}
+.cfg-limits-expert[open] > .cfg-limits-expert-summary > .cfg-limits-expert-chevron {
+  transform: rotate(90deg);
+}
+.cfg-limits-expert-title {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  letter-spacing: var(--tracking-tight);
+}
+.cfg-limits-expert-hint {
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  font-weight: var(--fw-regular);
+}
+.cfg-limits-expert-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-3) var(--sp-3);
+  border-top: var(--bw-1) solid var(--border-weak);
+  padding-top: var(--sp-3);
+}
+@media (max-width: 720px) {
+  .cfg-limits-expert-body { grid-template-columns: 1fr; }
+}
+.cfg-limits-expert-body .cfg-limits-group {
+  /* Inner subgroups: lose the outer card chrome since the disclosure
+     itself provides the container; otherwise we'd have a card-in-a-
+     card visual, which looks cluttered. */
+  background: transparent;
+  border: none;
+  padding: 0;
+}
 .cfg-limits-rows input[type="number"],
 .cfg-limits-rows input[type="text"],
 .cfg-limits-rows select {
