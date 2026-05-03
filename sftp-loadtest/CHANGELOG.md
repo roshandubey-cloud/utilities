@@ -10,6 +10,13 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.18.5] — 2026-05-03
+### Changed
+- **Duration sits to the RIGHT of the Workload header** instead of
+  stacking under the subtitle. 2-column CSS grid keeps the
+  eyebrow + subtitle column layout intact while Duration lives
+  right-aligned with a compact ~5.5 rem input.
+
 ## [v0.18.4] — 2026-05-03
 ### Changed
 - **Duration moved from Run controls to the Workload section header.**

@@ -14,7 +14,7 @@
   },
   "info": {
     "productName": "SFTP Load Test",
-    "productVersion": "0.18.4",
+    "productVersion": "0.18.5",
     "copyright": "MIT — https://github.com/roshandubey-cloud/utilities",
     "comments": "Desktop variant of sftp-loadtest. No allocated UI port."
   }

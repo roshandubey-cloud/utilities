@@ -2511,17 +2511,34 @@ button.primary:hover:not(:disabled),
 }
 
 /* v0.18.4 — Duration field hoisted into the Workload section header.
-   Sits inline with the section eyebrow + sub so the operator sees
-   "I'm shaping a 1-hour run" before they touch the flow cards.
-   max-width keeps the input compact (single number) instead of
-   stretching to the full row width. */
+   v0.18.5 — pushed to the right of the eyebrow + subtitle using a
+   2-column grid so the header row stays compact. Eyebrow + subtitle
+   stack vertically in column 1 (their original layout); Duration
+   sits in column 2, vertically centred against the two-line block.
+   Compact input width keeps it from bloating into a chunky panel.
+*/
+.cfg-section[data-section="workload"] .cfg-section-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "eyebrow duration"
+    "sub     duration";
+  align-items: center;
+  column-gap: var(--sp-4);
+}
+.cfg-section[data-section="workload"] .cfg-section-head .cfg-section-eyebrow { grid-area: eyebrow; }
+.cfg-section[data-section="workload"] .cfg-section-head .cfg-section-sub     { grid-area: sub; }
 .cfg-workload-headline {
-  margin-top: var(--sp-3);
+  grid-area: duration;
   display: flex;
-  gap: var(--sp-3);
+  align-items: center;
+  gap: var(--sp-2);
 }
 .cfg-workload-headline > div {
-  max-width: 12rem;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
 }
 .cfg-workload-headline > div > label {
   font-size: var(--fs-12);
@@ -2529,6 +2546,12 @@ button.primary:hover:not(:disabled),
   text-transform: uppercase;
   letter-spacing: var(--tracking-tight);
   font-weight: var(--fw-semibold);
+  margin: 0;
+  white-space: nowrap;
+}
+.cfg-workload-headline > div > input {
+  width: 5.5rem; /* fits "999.99"; most operators type 1 / 4 / 24 */
+  padding: var(--sp-1) var(--sp-2);
 }
 
 /* The Target slot already hosts the existing Quick-checks panel; flatten
