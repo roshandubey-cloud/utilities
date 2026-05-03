@@ -9,67 +9,127 @@
 
 ![sftp-loadtest workbench — live throughput, latency percentiles, per-file activity tail](sftp-loadtest/docs/screenshots/workbench-active-dark.png)
 
-## Top 5 reasons this load tester is honest
+## Top 5 product features
 
-A real load tester earns its trust by *doing exactly what the operator
-asked*, with reports that survive a tester's challenge. These are the
-five we hold ourselves to — every one is exercised by integration
-tests against a mock SFTP server, not a slide deck.
+A real load tester earns trust by *doing exactly what the operator
+asked* and producing reports that survive a tester's challenge.
+Every claim below is exercised by integration tests against an
+in-process mock SFTP server, not a slide deck.
 
 <table>
   <tr>
-    <td width="20%" align="center"><sub><b>1</b></sub><br><b>Honest concurrency</b></td>
-    <td>When you ask for <b>N parallel streams per user</b> and <b>K filename patterns per user</b>, you get exactly that. Pattern selection is a strict atomic round-robin, not a clock-skewed approximation — integration tests assert <code>max(per-pattern uploads) − min ≤ 1</code> across N uploads, so a 3-pattern × 4-stream run can't silently starve one pattern.</td>
+    <td width="20%" align="center"><sub><b>1</b></sub><br><b>Honest concurrency at every layer</b></td>
+    <td>When you ask for <b>N parallel streams per user</b>, <b>M users</b>, and <b>K filename patterns per user</b>, you get exactly that — N×M concurrent transfers with K patterns rotating in proportion. Pattern selection is a strict atomic round-robin (not a clock-skewed approximation); integration tests assert <code>max(per-pattern uploads) − min ≤ 1</code> across the run.</td>
   </tr>
   <tr>
-    <td align="center"><sub><b>2</b></sub><br><b>End-to-end byte integrity</b></td>
-    <td>Tick <b>Verify upload/download SHA-256</b> and the runner streams a SHA-256 over every uploaded byte (<code>io.TeeReader</code>) and every downloaded byte (<code>io.MultiWriter</code>). Mismatches surface as <code>download_error=HASH_MISMATCH</code> and bump <code>RunMeta.HashMismatch</code>; matches bump <code>HashVerified</code>. Two test cases pin synthetic and on-disk source bytes against the wire-faithful round-trip.</td>
-  </tr>
-  <tr>
-    <td align="center"><sub><b>3</b></sub><br><b>Multi-protocol with one config</b></td>
+    <td align="center"><sub><b>2</b></sub><br><b>Multi-protocol with one config</b></td>
     <td>SFTP, FTP, and FTPS under a single runner. <b>Bastion / SSH ProxyJump</b> for targets behind a jump host. <b>TOFU pinning</b> for both SSH host keys and FTPS leaf certs — first contact pins the fingerprint, subsequent runs verify strictly, changes refuse. Quirk profiles re-enable legacy ssh-rsa or disable EPSV/MLSD/UTF-8 NOOP for misbehaving servers.</td>
   </tr>
   <tr>
-    <td align="center"><sub><b>4</b></sub><br><b>Smart auto-stop on slowness</b></td>
-    <td>Set a <b>Slowdown threshold (% of peak)</b> and <b>Allow slowness for (sec)</b>. The sampler counts consecutive sub-threshold ticks; a single sample back above resets the streak. Only a SUSTAINED breach trips the stop — labelled <code>stop_reason=speed-floor</code> with a sentence in the report explaining what was measured, what the threshold was, and how long the breach lasted. No wasting eight hours when the partner rate-limits at 9 PM.</td>
+    <td align="center"><sub><b>3</b></sub><br><b>End-to-end byte integrity</b></td>
+    <td>Optional <b>SHA-256 round-trip verification</b>: streams a hash over every uploaded byte (<code>io.TeeReader</code>) and every downloaded byte (<code>io.MultiWriter</code>), then matches per-file by track-id or filename marker. Mismatches stamp <code>download_error=HASH_MISMATCH</code>; matches bump <code>RunMeta.HashVerified</code>. Two test cases pin synthetic + on-disk source bytes against the wire-faithful round-trip.</td>
   </tr>
   <tr>
-    <td align="center"><sub><b>5</b></sub><br><b>Reports a tester can defend</b></td>
-    <td>Per-file CSV with the upload + download stages, both SHA-256 columns, error code, latency, and per-row stage attribution. Run-meta JSON with p50/p95/p99/p99.9 latency histograms, peak CPU/FD/heap with the concurrent-runs-at-peak count for shared-box context, suggestions narrative, stop reason. Slack / generic webhook / SMTP alerts on operator-configurable triggers (failures, p99 ms, error rate %, dispatch skips, hash mismatch, speed-floor stop).</td>
+    <td align="center"><sub><b>4</b></sub><br><b>Realistic workload shapes</b></td>
+    <td>Fixed FPM, <b>step-load ramp</b> (start_fpm + step_fpm every step_every_sec, capped at ceiling_fpm), mixed normal + large-file + download phases concurrently. Real source files from disk OR synthetic generator. Recurring schedules (<code>Xh</code>, <code>Xd</code>, <code>Xm</code>). Multi-worker fan-out via SSH wizard with cumulative reporting — no preinstalled agent.</td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>5</b></sub><br><b>Defensible reports + alerts</b></td>
+    <td>Per-file CSV with upload + download stages, latency, error code, both SHA-256 columns. Run-meta JSON with p50/p95/p99/p99.9 latency histograms, peak CPU/FD/heap, concurrent-runs-at-peak count, suggestions narrative, labelled <code>stop_reason</code> (<code>duration</code>/<code>user</code>/<code>speed-floor</code>/<code>max-failures</code>). Slack / generic webhook / SMTP alerts on configurable triggers (failure count, p99 ms, error rate %, dispatch skips, hash mismatch, speed-floor stop).</td>
   </tr>
 </table>
 
-### Available in this release (v0.18.8)
+## Top 5 measurement scenarios
 
-- ✅ **Concurrent runs** against the same or different targets — each
-  with its own pools, watcher, metrics, persisted CSV / meta;
-  self-DoS warning when targeting the same host:port.
-- ✅ **Speed-floor auto-stop** with operator-tunable threshold,
-  warmup, and sustained-breach window.
-- ✅ **SHA-256 round-trip verification** (optional checkbox).
-- ✅ **Step-load ramp** — start at 60 fpm, step +20 fpm every 5 min,
-  ceiling 180 fpm. Find capacity without splitting a run.
-- ✅ **Strict round-robin** filename-pattern rotation per (kind, user).
-- ✅ **Bastion / SSH ProxyJump** for SFTP through a jump host.
-- ✅ **Quirk profiles** (`openssh-legacy`, `ftp-no-epsv`, `ftp-iis`, …)
-  for partner servers that reject modern algorithms.
-- ✅ **Schedule recurring runs** with `Xh`, `Xd`, `Xm` cadences.
-- ✅ **Alerts** (Slack / generic webhook / SMTP) with configurable
-  triggers and per-channel test buttons.
-- ✅ **Multi-worker fan-out via SSH wizard** — no preinstalled agent.
-  Cluster runs aggregate per-worker reports into one cumulative CSV.
-- ✅ **Full export/import JSON bundle (v2)** — captures run config,
-  schedules, AND alerts in one file. Import to a fresh instance,
-  every dial / template / trigger restored.
-- ✅ **Workload sources & sinks** — synthetic generator OR real
-  on-disk files; download to discard OR persist to local-disk with
-  `{run_id}/{user}/{filename}` template by default.
-- ✅ **TOFU trust store** for SSH host keys + FTPS leaf certs, all
-  manageable in the Trust panel UI.
-- ✅ **UI gating** — never offer an action that can't succeed (Test
-  Connection blocked until host+port set, Verify-SHA-256 blocked
-  when Download is off, Bastion fields disabled when protocol ≠
-  SFTP, Distribute-load disabled when 0 workers, etc.).
+What operators actually use this tool to **calculate**. Each scenario
+maps to a concrete configuration; the report tells you the answer.
+
+| # | Question you're asking | How you configure it | What the report tells you |
+|---|---|---|---|
+| 1 | **Capacity ceiling** — at what FPM does the partner SFTP server stop keeping up? | Step-load ramp (start 60 fpm, +20 every 5 min, ceiling 600 fpm) + speed-floor auto-stop at 50% of peak | Run terminates with `stop_reason=speed-floor` at the FPM where throughput drops; the per-minute window in the CSV shows the exact cliff. |
+| 2 | **Round-trip processing time** — how long does the partner take to ingest a file (rename / move / outbox)? | Track-id mode + a generous round-trip timeout; ParallelStreams ≥ 2 to keep the upload pipe full | `track_id_wait_sec` and `processing_time_min` per row; p50/p95/p99 in the analysis trailer. |
+| 3 | **Multi-tenant capacity** — how many concurrent users can run before the partner pool exhausts? | One CSV row per user (e.g. 50 users × 5 patterns each), single ParallelStream per user | `dispatch_skips` non-zero = capacity hit; per-user error chips in the UI; `disabled_users` list in RunMeta if the failure policy zeroed any out. |
+| 4 | **Long-haul stability** — does the pipeline stay clean over 8 hours? | 8-hour duration, moderate FPM, **Verify SHA-256** on, alerts on hash mismatch + p99 ms + error rate | Hourly latency drift in `per_minute` buckets; any silent corruption surfaces as `HASH_MISMATCH` immediately; alerts fire if any threshold trips. |
+| 5 | **Migration validation** — does staging behave the same as prod before cutover? | Run identical config against both, with **real-files source** for a fixed fixture set | Compare run-meta JSONs column-by-column: success rate, p50/p99, peak window MBps, hash counts. Differences = pre-cutover risk you can name. |
+
+## How parallel streams actually work
+
+The single most common load-tester question — *"if I configure 5
+parallel streams, am I really getting 5 concurrent transfers?"* — has
+a long answer worth showing. Here's the path a single file takes
+from dispatcher tick to wire bytes.
+
+```
+Configure                           Run (per user, ParallelStreams = 5)
+┌───────────────────┐               ┌──────────────────────────────────────────┐
+│ Users CSV         │               │ Per-user client pool (one per user)      │
+│ u1,p1,inv-*,po-*  │  ─── Start ─▶ │ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐
+│ u2,p2,*           │               │ │slot 0│ │slot 1│ │slot 2│ │slot 3│ │slot 4│
+└───────────────────┘               │ └──┬───┘ └──┬───┘ └──┬───┘ └──┬───┘ └──┬───┘
+ParallelStreams = 5                 │    │        │        │        │        │
+                                    │  live    live     live     live     live
+                                    │  SSH/    conn     conn     conn     conn
+                                    │  FTP                                  
+                                    │   conn                                
+                                    │    │        │        │        │        │
+                                    └────┼────────┼────────┼────────┼────────┘
+                                         ▼        ▼        ▼        ▼        ▼
+                                          to partner SFTP/FTP/FTPS server
+```
+
+**At config time** — when you set `ParallelStreams = 5` and supply a
+2-user CSV, the runner builds **two pools of 5 slots each** at Start.
+Each slot dials its own SSH (or FTP control) connection up front, so
+**10 live connections exist before the dispatcher fires its first
+file**. Failures here abort the run with a clear `connect <user>:
+<reason>` — auth bugs surface in seconds, not ten minutes into a
+session.
+
+**At dispatch time** — every tick (computed from `FilesPerMinute` or
+the active ramp), the dispatcher picks the next user via round-robin,
+then the next pattern via the strict atomic round-robin (so all
+patterns in the user's CSV row get exercised in proportion), and then
+attempts a non-blocking acquire on a 5-slot semaphore. If a slot is
+free, the upload runs in a goroutine on that slot's persistent
+connection. **If every slot is busy, the file is recorded as a
+`dispatch_skip` and the dispatcher moves on** — no queueing, no
+silent backlog. `dispatch_skips > 0` in the report means the partner
+couldn't keep up at the requested FPM, OR your `ParallelStreams`
+setting capped capacity below what the FPM needs.
+
+**During transfer** — uploads stream from the source reader
+(synthetic generator or on-disk file) directly to the SFTP write
+handle via `io.Copy`. When `Verify SHA-256` is on, the reader is
+wrapped in `io.TeeReader` to compute the hash without a second pass
+over the bytes. Per-slot connections are persistent and
+keepalive'd; if a connection drops mid-run, the slot redials lazily
+on the next dispatch and the failure is recorded as
+`error_code=DIAL` for that file only — the rest of the pool keeps
+running.
+
+**Theoretical maximum concurrent transfers** = `users × ParallelStreams`.
+For 10 users × 4 streams = 40 concurrent transfers in flight. Real
+ceiling is the lower of:
+
+- Partner-side `MaxStartups` / max-sessions setting
+- Your local file-descriptor limit (the runner pre-bumps `RLIMIT_NOFILE`
+  to 65k where allowed)
+- Network bandwidth (look at `peak_window_mbps` in the run meta)
+
+**Verifying it really happened** — every transfer attempt produces a
+row in the CSV with its `start_time` and `end_time`. To confirm 5
+streams *really* ran in parallel for user `u1`, count rows where
+`u1`'s timestamps overlap. The integration test
+`TestRunner_AllUserPatternsUsed` does exactly this for the
+4-stream × 3-pattern combination — the assertion fails if any
+pattern got starved or any stream slot stayed idle.
+
+For the **download** side the model is identical but with one
+pool per *download* user instead of upload user, and a polling
+worker per download user that drains files from the partner's
+outbox folder. Round-trip pairing matches each downloaded file
+back to its originating upload row by track-id (or embedded
+filename marker) so per-file latency is computed end-to-end.
 
 <table>
   <tr>
