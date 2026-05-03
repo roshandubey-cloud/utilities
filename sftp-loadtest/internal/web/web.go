@@ -1389,6 +1389,14 @@ func (s *Server) startRun(req startReq, startedBy string) (*runner.Run, error) {
 	if err != nil {
 		return nil, err
 	}
+	// v0.17.1 — concurrent download sink safeguard. When a sibling
+	// active run is also writing to local-disk under the same Root and
+	// our template doesn't include {run_id}, files would clobber across
+	// runs (overwrite=true) or every download would fail with EEXIST
+	// (overwrite=false). Auto-prepend "{run_id}/" so paths stay
+	// disjoint. The default template already includes {run_id} since
+	// v0.17.1; this catches operator-supplied templates that don't.
+	maybePrependRunIDToSink(cfg, s.activeRunsSnapshot())
 	run, err := runner.StartWithPersistAndTLS(context.Background(), cfg, s.reportsDir, s.getTLSStore())
 	if err != nil {
 		return nil, err
@@ -1485,6 +1493,17 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 			warning = "another run (" + conflict + ") is already active against " +
 				req.Host + ":" + strconv.Itoa(req.Port) +
 				" — concurrent runs against the same host share bandwidth and connections"
+			// v0.17.1 — also flag download-sink collisions when the
+			// operator's template doesn't include {run_id}. The
+			// safeguard in startRun auto-prepends in that case, but
+			// the operator should know we did it so on-disk paths
+			// match expectations.
+			if req.DownloadEnabled && req.DownloadSink != nil &&
+				req.DownloadSink.Kind == "local-disk" &&
+				req.DownloadSink.Template != "" &&
+				!strings.Contains(req.DownloadSink.Template, "{run_id}") {
+				warning += "; the download sink template lacks {run_id} so paths will be auto-prefixed to keep runs disjoint"
+			}
 		}
 	}
 
@@ -1502,6 +1521,65 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 		out["warning"] = warning
 	}
 	writeJSON(w, out)
+}
+
+// activeRunsSnapshot returns a snapshot of every active run's *RunConfig
+// (pointer, not a copy — read-only). Used by startRun to detect sink
+// path collisions before launching a new run. Holds s.mu only for the
+// walk, not for the caller's subsequent inspection.
+func (s *Server) activeRunsSnapshot() []*config.RunConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*config.RunConfig, 0, len(s.order))
+	for _, id := range s.order {
+		r := s.runs[id]
+		if r != nil && r.IsActive() && r.Cfg != nil {
+			out = append(out, r.Cfg)
+		}
+	}
+	return out
+}
+
+// maybePrependRunIDToSink mutates cfg.Download.Sink.Template to start
+// with "{run_id}/" when a sibling active run shares the same sink Root
+// and our template doesn't already use {run_id}. No-op when:
+//   - download is disabled,
+//   - sink kind is not local-disk,
+//   - the operator-supplied template already includes {run_id},
+//   - no active sibling writes to the same Root.
+//
+// Idempotent: prefixing twice would render once (the second {run_id}
+// would just expand to the same string), but we still avoid duplicates
+// for clarity.
+func maybePrependRunIDToSink(cfg *config.RunConfig, active []*config.RunConfig) {
+	if cfg == nil || cfg.Download == nil || cfg.Download.Sink == nil {
+		return
+	}
+	sk := cfg.Download.Sink
+	if sk.Kind != "local-disk" || sk.Root == "" {
+		return
+	}
+	if sk.Template == "" {
+		return // empty template uses default which already has {run_id}
+	}
+	if strings.Contains(sk.Template, "{run_id}") {
+		return
+	}
+	collides := false
+	for _, other := range active {
+		if other == nil || other.Download == nil || other.Download.Sink == nil {
+			continue
+		}
+		os := other.Download.Sink
+		if os.Kind == "local-disk" && os.Root == sk.Root {
+			collides = true
+			break
+		}
+	}
+	if !collides {
+		return
+	}
+	sk.Template = "{run_id}/" + sk.Template
 }
 
 // findActiveAtTarget returns the ID of the first active run whose

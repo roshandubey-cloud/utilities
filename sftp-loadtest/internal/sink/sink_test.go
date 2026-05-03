@@ -52,6 +52,32 @@ func TestLocalDisk_TemplateRendersUserAndFilename(t *testing.T) {
 	}
 }
 
+// TestLocalDisk_DefaultTemplateIncludesRunID pins the v0.17.1 default
+// template upgrade: passing template="" now yields
+// "{run_id}/{user}/{filename}" so two concurrent runs writing to the
+// same Root land in disjoint folders. Single-run callers see one extra
+// directory level (acceptable cost for default-safe concurrency).
+func TestLocalDisk_DefaultTemplateIncludesRunID(t *testing.T) {
+	root := t.TempDir()
+	s, err := NewLocalDisk(root, "", false) // empty -> default
+	if err != nil {
+		t.Fatalf("NewLocalDisk: %v", err)
+	}
+	if !strings.Contains(s.Template, "{run_id}") {
+		t.Fatalf("default template lacks {run_id}: %q", s.Template)
+	}
+	w, err := s.Open(Request{RunID: "run-42-1", User: "alice", Filename: "x.txt"})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	w.Write([]byte("ok"))
+	w.Close()
+	got := filepath.Join(root, "run-42-1", "alice", "x.txt")
+	if _, err := os.Stat(got); err != nil {
+		t.Fatalf("expected file at %s: %v", got, err)
+	}
+}
+
 // TestLocalDisk_TemplateAllVariables exercises every supported
 // substitution including the {date}/{datetime} clock-derived ones.
 func TestLocalDisk_TemplateAllVariables(t *testing.T) {

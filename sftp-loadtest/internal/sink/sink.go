@@ -80,8 +80,15 @@ func (Discard) Open(_ Request) (io.WriteCloser, error) {
 }
 
 // LocalDisk writes downloads to disk under Root, organised by
-// Template. The default template ("{user}/{filename}") gives one
-// folder per download user with original filenames preserved.
+// Template. The default template ("{run_id}/{user}/{filename}") gives
+// one folder per run, sub-organised by download user, with original
+// filenames preserved.
+//
+// v0.17.1 — the default template was extended from "{user}/{filename}"
+// to include "{run_id}" so concurrent runs (allowed since v0.16.0)
+// don't collide on the same download path. Single-run users see one
+// extra folder level; their existing scripts that walked Root/<user>/…
+// need to walk Root/<run-id>/<user>/… now.
 type LocalDisk struct {
 	Root      string // base directory; created (0700) if it doesn't exist
 	Template  string // path template, see package comment for variables
@@ -102,7 +109,10 @@ func NewLocalDisk(root, template string, overwrite bool) (*LocalDisk, error) {
 		return nil, fmt.Errorf("local-disk: mkdir %q: %w", abs, err)
 	}
 	if template == "" {
-		template = "{user}/{filename}"
+		// v0.17.1 — concurrent-run-safe default. Was "{user}/{filename}"
+		// before v0.17.1; that collided across concurrent runs writing
+		// to the same sink Root.
+		template = "{run_id}/{user}/{filename}"
 	}
 	return &LocalDisk{
 		Root:      abs,

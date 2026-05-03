@@ -267,7 +267,7 @@ type SourceConfig struct {
 type SinkConfig struct {
 	Kind      string `json:"kind,omitempty"`      // "discard" | "local-disk" — default "discard"
 	Root      string `json:"root,omitempty"`      // base dir for local-disk; auto-mkdir
-	Template  string `json:"template,omitempty"`  // path template; default "{user}/{filename}"
+	Template  string `json:"template,omitempty"`  // path template; default "{run_id}/{user}/{filename}" since v0.17.1
 	Overwrite bool   `json:"overwrite,omitempty"` // false = O_EXCL, error if file exists
 }
 

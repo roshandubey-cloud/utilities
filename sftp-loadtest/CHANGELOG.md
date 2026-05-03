@@ -10,6 +10,24 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.17.1] — 2026-05-03
+### Fixed
+- **Concurrent-run download-sink path collisions.** When two runs wrote
+  to a `local-disk` sink under the same `Root` and the template didn't
+  include `{run_id}`, files clobbered (overwrite=true) or every
+  download failed with EEXIST (overwrite=false). Three layers of
+  defence ship together:
+  - **Default template changed** from `{user}/{filename}` to
+    `{run_id}/{user}/{filename}`. Single-run users get one extra
+    folder level; concurrent runs are safe out of the box.
+  - **Runtime auto-prepend safeguard** — when the operator supplies
+    a custom template that lacks `{run_id}` and a sibling active
+    run already writes to the same Root, the new run's template is
+    rewritten to `{run_id}/<original>` before launch.
+  - **Start warning enriched** — the existing same-host:port
+    warning now also calls out the sink-template rewrite so the
+    operator knows on-disk paths shifted.
+
 ## [v0.17.0] — 2026-05-03
 ### Added
 Concurrent-runs hardening pass. v0.16 made multi-run *possible*; v0.17
