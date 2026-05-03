@@ -29,11 +29,11 @@ class SftpLoadtest < Formula
       # SHA256 is updated by the release workflow on every tag. Until the
       # first run lands a real value, use the placeholder — `brew install`
       # will refuse to install (as it should) and surface the mismatch.
-      sha256 "8d96b4257a55b63d831802524d533f2c5b7c58e4cc4f8ed0f88af83a8c574fff"
+      sha256 "994a33fb510aede9a6cb185ae83d94b94d3727115590d061a4158f62a1c4c5cf"
     end
     on_intel do
       url "https://github.com/roshandubey-cloud/utilities/releases/download/v#{version}/sftp-loadtest-webui-v#{version}-mac-intel.zip"
-      sha256 "815ce0a59958505ffb17782f0c8ce68a44a2f43e8347bd28c294507e9a8e25a1"
+      sha256 "ce17aacd099a90f892df94a9799764ce70d5e06a4fcda1fe54a5ac81f044624a"
     end
   end
 
