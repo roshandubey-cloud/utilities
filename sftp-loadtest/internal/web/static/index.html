@@ -875,9 +875,12 @@
           </div>
           <!-- v0.18.0 — speed-floor auto-stop. 0 = disabled. When set,
                the runner cancels dispatchers if the latest 1-minute
-               throughput falls below (peak * floor / 100) after the
-               warmup window has elapsed. Stop reason + a human
-               sentence land in the analysis trailer. -->
+               throughput stays below (peak * floor / 100) for
+               `breach (sec)` consecutive seconds after the warmup
+               window. v0.18.2 added the sustain window so a brief
+               network blip does NOT kill an otherwise-healthy run.
+               Stop reason + a human sentence land in the analysis
+               trailer. -->
           <div class="row">
             <div>
               <label for="speed_floor_percent" title="Auto-stop the run when the live throughput drops below this fraction of the peak observed during the run. Captures partner-side rate limits or congestion as a clean stop with a labelled reason. 0 = disabled.">Speed-floor auto-stop (%) <span class="badge-mini">v0.18</span></label>
@@ -888,7 +891,13 @@
               <input id="speed_floor_warmup_sec" type="number" value="60" min="10">
             </div>
             <div>
-              <label class="toggle-label" style="margin-top:var(--sp-3)" title="When ticked, the runner streams a SHA-256 hash over every uploaded file and over every matched download, then compares them. Mismatches surface as download_error=HASH_MISMATCH and the meta JSON carries verified/mismatch counters.">
+              <label for="speed_floor_breach_sec" title="The breach must be SUSTAINED for this many consecutive seconds before the run stops. A single sample back above the floor resets the streak. Default 90s — long enough to ride out a brief network blip, short enough to stop a real partner-side rate cap before wasting hours.">Sustained for (sec) <span class="badge-mini">v0.18.2</span></label>
+              <input id="speed_floor_breach_sec" type="number" value="90" min="10">
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label class="toggle-label" title="When ticked, the runner streams a SHA-256 hash over every uploaded file and over every matched download, then compares them. Mismatches surface as download_error=HASH_MISMATCH and the meta JSON carries verified/mismatch counters.">
                 <input type="checkbox" id="verify_hashes">
                 Verify upload/download SHA-256 <span class="badge-mini">v0.18</span>
               </label>

@@ -36,17 +36,26 @@ type RunConfig struct {
 
 	// SpeedFloorPercent (v0.18.0) — when > 0, the runner samples
 	// post-warmup throughput against the run's peak window MB/s; if
-	// the current rate falls below (peak * SpeedFloorPercent / 100)
-	// the run cancels its dispatchers, marks RunMeta.StopReason as
-	// "speed-floor", and writes a human-readable detail line into
-	// the analysis trailer. 0 = disabled (legacy behaviour).
+	// the current rate stays below (peak * SpeedFloorPercent / 100)
+	// for SpeedFloorBreachSec consecutive seconds, the run cancels
+	// its dispatchers, marks RunMeta.StopReason as "speed-floor", and
+	// writes a human-readable detail line into the analysis trailer.
+	// 0 = disabled (legacy behaviour).
 	//
 	// SpeedFloorWarmupSec defers the evaluator long enough for the
 	// throughput to actually stabilise — without it, the very first
 	// 5-second window would always trigger the stop because peak
 	// has barely moved past 0. Defaults to 60 when unset.
+	//
+	// SpeedFloorBreachSec (v0.18.2) requires the breach to PERSIST
+	// for this many seconds before stopping. A single dip back above
+	// the floor resets the streak counter to 0. Defaults to 90 when
+	// unset — long enough to ride out a brief network blip, short
+	// enough that an actual partner-side rate cap stops the run
+	// before wasting hours of runtime.
 	SpeedFloorPercent   int `json:"speed_floor_percent,omitempty"`
 	SpeedFloorWarmupSec int `json:"speed_floor_warmup_sec,omitempty"`
+	SpeedFloorBreachSec int `json:"speed_floor_breach_sec,omitempty"`
 
 	// VerifyHashes (v0.18.0) — when true, the runner streams a
 	// SHA-256 hash over every uploaded file and every downloaded

@@ -1274,6 +1274,7 @@ type startReq struct {
 	// evaluation; default 60s when zero.
 	SpeedFloorPercent   int `json:"speed_floor_percent,omitempty"`
 	SpeedFloorWarmupSec int `json:"speed_floor_warmup_sec,omitempty"`
+	SpeedFloorBreachSec int `json:"speed_floor_breach_sec,omitempty"`
 
 	// v0.18.0 — end-to-end SHA-256 verification of every uploaded
 	// file against its corresponding download. False (default)
@@ -1361,6 +1362,7 @@ func buildRunConfig(req startReq) (*config.RunConfig, error) {
 		BastionPassphrase:      req.BastionPassphrase,
 		SpeedFloorPercent:      req.SpeedFloorPercent,
 		SpeedFloorWarmupSec:    req.SpeedFloorWarmupSec,
+		SpeedFloorBreachSec:    req.SpeedFloorBreachSec,
 		VerifyHashes:           req.VerifyHashes,
 	}
 	if req.NormalEnabled {

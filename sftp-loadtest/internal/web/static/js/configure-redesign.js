@@ -258,11 +258,12 @@ export function mountConfigureRedesign() {
   // pre-existing extractions do, so the labels follow.
   const fSpeedFloor   = fieldFor('speed_floor_percent');
   const fSpeedWarmup  = fieldFor('speed_floor_warmup_sec');
+  const fSpeedBreach  = fieldFor('speed_floor_breach_sec');
   const fVerifyHashes = fieldFor('verify_hashes');
 
   if (fParallel)  upSlot.appendChild(fParallel);
   if (fDParallel) dlSlot.appendChild(fDParallel);
-  for (const f of [fDuration, fPoll, fTimeout, fMaxFails, fSpeedFloor, fSpeedWarmup, fVerifyHashes]) {
+  for (const f of [fDuration, fPoll, fTimeout, fMaxFails, fSpeedFloor, fSpeedWarmup, fSpeedBreach, fVerifyHashes]) {
     if (f) runSlot.appendChild(f);
   }
 

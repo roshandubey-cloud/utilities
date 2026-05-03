@@ -296,12 +296,30 @@ func (r *Run) sampleHostStats(ctx context.Context) {
 	// check entirely. warmup defers the first evaluation so the run
 	// has time to ramp up; without it the first 5-second window with
 	// peak still climbing would always falsely trigger.
+	//
+	// v0.18.2 — the trip is now SUSTAINED. We require requiredTicks
+	// consecutive 2-second samples below the floor before stopping;
+	// a single sample at-or-above the floor resets the streak to 0.
+	// Default breach window of 90s rides out brief network blips
+	// (TCP retransmits, GC pauses on the partner) but stops the run
+	// when the partner side is genuinely rate-limiting us. Sampler
+	// runs every 2s so the tick budget is breachSec/2 (rounded up).
 	var floorPct int
 	warmup := 60 * time.Second
+	requiredTicks := 0
+	streak := 0
 	if r.Cfg != nil {
 		floorPct = r.Cfg.SpeedFloorPercent
 		if r.Cfg.SpeedFloorWarmupSec > 0 {
 			warmup = time.Duration(r.Cfg.SpeedFloorWarmupSec) * time.Second
+		}
+		breachSec := r.Cfg.SpeedFloorBreachSec
+		if breachSec <= 0 {
+			breachSec = 90
+		}
+		requiredTicks = (breachSec + 1) / 2 // ceil(breachSec/2s)
+		if requiredTicks < 1 {
+			requiredTicks = 1
 		}
 	}
 	for {
@@ -380,22 +398,31 @@ func (r *Run) sampleHostStats(ctx context.Context) {
 			}
 		}
 
-		// v0.18.0 — speed-floor auto-stop. After the warmup window
-		// expires, compare the latest 1-minute throughput to peak. If
-		// the floor is breached, capture a human-readable reason and
-		// cancel the dispatchers. cancelDispatch is idempotent and
-		// stopWithReason wins only on first call, so a Stop click
-		// after this point won't overwrite the analyzer-friendly text.
+		// v0.18.0 / v0.18.2 — sustained speed-floor auto-stop. After
+		// the warmup window expires, count consecutive 2-second
+		// samples whose latest 1-minute throughput is below
+		// (peak * floorPct / 100). A single sample at-or-above the
+		// floor resets the streak to 0 — a brief network blip or
+		// retransmit doesn't kill an otherwise-healthy run. Trip
+		// only when the streak length reaches requiredTicks. The
+		// detail string mentions BOTH the breach magnitude AND the
+		// sustained-for window so the report explains why we waited
+		// before stopping.
 		if floorPct > 0 && time.Since(r.StartedAt) >= warmup {
 			peakMBps := float64(r.peakWindowKBps.Load()) / 1024.0
 			if peakMBps > 0 && currentMBps > 0 {
 				ratioPct := int(currentMBps / peakMBps * 100)
 				if ratioPct < floorPct {
-					detail := fmt.Sprintf("transfer speed dropped to %.2f Mbps (%d%% of peak %.2f Mbps), below the configured speed floor of %d%%",
-						currentMBps, ratioPct, peakMBps, floorPct)
-					r.stopWithReason("speed-floor", detail)
-					log.Printf("speed-floor stop: %s", detail)
-					return
+					streak++
+					if streak >= requiredTicks {
+						detail := fmt.Sprintf("transfer speed dropped to %.2f Mbps (%d%% of peak %.2f Mbps) and stayed below the configured floor of %d%% for %d consecutive seconds — auto-stopping to prevent runaway runtime",
+							currentMBps, ratioPct, peakMBps, floorPct, streak*2)
+						r.stopWithReason("speed-floor", detail)
+						log.Printf("speed-floor stop: %s", detail)
+						return
+					}
+				} else {
+					streak = 0
 				}
 			}
 		}

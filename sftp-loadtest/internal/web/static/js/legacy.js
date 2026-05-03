@@ -271,8 +271,8 @@ const CFG_KEYS = ['host','port','folder','parallel','duration','poll','timeout_m
   // shouldSavePasswords() guard already used for CSV creds.
   'tls_server_name','bastion_host','bastion_port','bastion_user',
   'bastion_pass','bastion_pem','bastion_passphrase',
-  // v0.18.0 — speed-floor numerics.
-  'speed_floor_percent','speed_floor_warmup_sec'];
+  // v0.18.0 — speed-floor numerics. v0.18.2 added breach window.
+  'speed_floor_percent','speed_floor_warmup_sec','speed_floor_breach_sec'];
 // v0.17.2 — checkboxes/dropdowns that need persistence too. tls_policy
 // is a <select>; tls_skip_verify is a checkbox. tls_mode is a
 // segmented control backed by a hidden #tls_mode input.
@@ -929,6 +929,7 @@ function buildRequestBody() {
     // v0.18.0 — speed-floor auto-stop + hash verification.
     speed_floor_percent:    parseInt(document.getElementById('speed_floor_percent')?.value || '0') || 0,
     speed_floor_warmup_sec: parseInt(document.getElementById('speed_floor_warmup_sec')?.value || '60') || 60,
+    speed_floor_breach_sec: parseInt(document.getElementById('speed_floor_breach_sec')?.value || '90') || 90,
     verify_hashes:          !!document.getElementById('verify_hashes')?.checked,
     // v0.14 source/sink fields. readSource / readSink return null when
     // the operator left the picker on the default (synthetic / discard)
@@ -1138,6 +1139,7 @@ function importConfigPayload(cfg) {
   // v0.18.0 — speed-floor + hash verify restore.
   bSet('speed_floor_percent',    cfg.speed_floor_percent);
   bSet('speed_floor_warmup_sec', cfg.speed_floor_warmup_sec);
+  bSet('speed_floor_breach_sec', cfg.speed_floor_breach_sec);
   const vh = document.getElementById('verify_hashes');
   if (vh) vh.checked = !!cfg.verify_hashes;
   // Auto-open the bastion disclosure when the imported config has any

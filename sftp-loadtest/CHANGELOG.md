@@ -10,6 +10,29 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.18.2] — 2026-05-03
+### Changed
+- **Speed-floor auto-stop is now SUSTAINED, not instantaneous.** v0.18.0
+  tripped on the first 2-second sample below the floor — that turned
+  short retransmits and GC pauses on the partner side into spurious
+  end-of-run events. The sampler now counts consecutive sub-floor
+  samples and only stops when the streak reaches a configurable
+  breach window. A single sample at-or-above the floor resets the
+  streak to 0, so a brief blip never kills an otherwise-healthy run.
+
+### Added
+- **`SpeedFloorBreachSec` config field** (UI: "Sustained for (sec)").
+  Smart default of 90 seconds when unset — long enough to ride out
+  a typical network blip, short enough that a real partner-side rate
+  cap stops the run before wasting hours of runtime. Operator can
+  override (e.g. 30s for stricter, 300s for looser).
+- **Updated stop-detail string** carries the sustained window so the
+  report explains why we waited: *"transfer speed dropped to 12.40
+  Mbps (15% of peak 82.70 Mbps) and stayed below the configured floor
+  of 50% for 90 consecutive seconds — auto-stopping to prevent
+  runaway runtime"*. The same sentence lands in `RunMeta.StopDetail`,
+  the CSV analysis trailer, and the alert payload.
+
 ## [v0.18.1] — 2026-05-03
 ### Fixed
 - **Speed-floor + Verify-SHA-256 UI controls were invisible.** v0.18.0
