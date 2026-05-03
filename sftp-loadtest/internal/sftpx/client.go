@@ -58,6 +58,12 @@ func AllowAnyHostKey(warn func(format string, args ...any)) {
 	SetHostKeyCallback(ssh.InsecureIgnoreHostKey())
 }
 
+// CurrentCallback exposes the process-wide host-key callback so callers
+// outside this package (the bastion package, in particular) can reuse
+// the same TOFU store and policy the SFTP target dials use. v0.16.0
+// added this when bastion / ProxyJump support landed.
+func CurrentCallback() ssh.HostKeyCallback { return currentCallback() }
+
 // currentCallback returns the installed callback or a refuse-all fallback.
 func currentCallback() ssh.HostKeyCallback {
 	hostKeyMu.RLock()
@@ -299,6 +305,22 @@ type DialOpts struct {
 	// means "fall back to ssh.Password(pass)" — preserving the behaviour
 	// every existing caller already gets.
 	Auth []ssh.AuthMethod
+
+	// HostKeyAlgorithms / KeyExchanges (v0.16.0) thread the named
+	// quirk profile's SSH algorithm overrides into ssh.ClientConfig.
+	// Nil = leave library defaults in place (modern algorithms only).
+	// Non-nil = explicit ordered preference list — typically used to
+	// re-enable legacy algorithms (ssh-rsa, dh-group14-sha1) for old
+	// sshd installs that haven't been upgraded.
+	HostKeyAlgorithms []string
+	KeyExchanges      []string
+
+	// BastionDialer (v0.16.0), if non-nil, is used to dial the target
+	// SSH endpoint instead of net.Dial. The bastion package builds
+	// this from the operator-supplied jump-host config; the SFTP path
+	// stays bastion-agnostic and just uses whatever Conn the dialer
+	// produces. nil means "direct dial" — the legacy behaviour.
+	BastionDialer func(network, addr string) (net.Conn, error)
 }
 
 // ParsePrivateKey parses a PEM-encoded SSH private key, decrypting it with
@@ -372,10 +394,39 @@ func DialWithOpts(host string, port int, user, pass string, opts DialOpts) (*Cli
 		HostKeyCallback: cb,
 		Timeout:         15 * time.Second,
 	}
+	// v0.16.0 — quirk profiles. When the caller supplies an explicit
+	// algorithm list, set it on ClientConfig so legacy servers
+	// (ssh-rsa host keys, dh-group14-sha1 KEX) can negotiate. Nil
+	// preserves the library's modern defaults.
+	if len(opts.HostKeyAlgorithms) > 0 {
+		cfg.HostKeyAlgorithms = opts.HostKeyAlgorithms
+	}
+	if len(opts.KeyExchanges) > 0 {
+		cfg.Config.KeyExchanges = opts.KeyExchanges
+	}
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
-	sshc, err := ssh.Dial("tcp", addr, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("ssh dial %s: %w", addr, err)
+	// v0.16.0 — bastion / ProxyJump. When BastionDialer is set, dial
+	// the underlying TCP via the bastion's open SSH session
+	// (ssh.Client.Dial); then negotiate the target SSH layer over
+	// that net.Conn. nil dialer = direct dial (legacy behaviour).
+	var sshc *ssh.Client
+	if opts.BastionDialer != nil {
+		conn, derr := opts.BastionDialer("tcp", addr)
+		if derr != nil {
+			return nil, fmt.Errorf("bastion dial %s: %w", addr, derr)
+		}
+		sc, chans, reqs, herr := ssh.NewClientConn(conn, addr, cfg)
+		if herr != nil {
+			conn.Close()
+			return nil, fmt.Errorf("ssh handshake via bastion %s: %w", addr, herr)
+		}
+		sshc = ssh.NewClient(sc, chans, reqs)
+	} else {
+		var err error
+		sshc, err = ssh.Dial("tcp", addr, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("ssh dial %s: %w", addr, err)
+		}
 	}
 	// Use pkg/sftp defaults everywhere — no packet-size tuning, no concurrency
 	// overrides. Servers that advertise a 32 KiB max-packet limit drop connections

@@ -28,6 +28,7 @@ import (
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/persist"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/proc"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/protocol"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/quirks"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/report"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/runner"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/alerts"
@@ -827,6 +828,17 @@ func (s *Server) handleProbeSink(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// /api/quirks — returns the list of named server-quirk profiles the UI
+// dropdown should render. Static for the lifetime of the binary; ships
+// the names from internal/quirks. v0.16.0.
+func (s *Server) handleQuirks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "GET required", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, map[string]any{"profiles": quirks.Names()})
+}
+
 // /api/version — lightweight unauthenticated GET for the masthead.
 // Returns {version, started_at} so a fresh page load can render the
 // platform version next to the brand without crossing the BasicAuth
@@ -1034,6 +1046,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/probe-sink", s.handleProbeSink)
 	mux.HandleFunc("/api/alerts", s.handleAlerts)
 	mux.HandleFunc("/api/alerts/test", s.handleAlertsTest)
+	mux.HandleFunc("/api/quirks", s.handleQuirks)
 	mux.HandleFunc("/api/start", s.handleStart)
 	mux.HandleFunc("/api/stop", s.handleStop)
 	mux.HandleFunc("/api/status", s.handleStatus)
@@ -1136,6 +1149,11 @@ func (s *Server) pick(r *http.Request) *runner.Run {
 }
 
 // activeRun returns the currently-running run, if any.
+//
+// v0.16.0 — when multiple runs are active concurrently, this returns the
+// most recently started one (matches the legacy single-run behaviour for
+// callers like /api/health and the schedule gate). Callers that need the
+// full active set use activeRuns().
 func (s *Server) activeRun() *runner.Run {
 	run := s.latest()
 	if run == nil {
@@ -1144,7 +1162,32 @@ func (s *Server) activeRun() *runner.Run {
 	if run.IsActive() {
 		return run
 	}
+	// Latest is finished — fall back to scanning for any still-active run.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := len(s.order) - 1; i >= 0; i-- {
+		r := s.runs[s.order[i]]
+		if r != nil && r.IsActive() {
+			return r
+		}
+	}
 	return nil
+}
+
+// activeRuns returns every currently-active run, ordered by start time
+// (oldest first). Empty slice when nothing is running. Used by /api/stop
+// to disambiguate when multiple runs are in flight.
+func (s *Server) activeRuns() []*runner.Run {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*runner.Run, 0, len(s.order))
+	for _, id := range s.order {
+		r := s.runs[id]
+		if r != nil && r.IsActive() {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 type startReq struct {
@@ -1176,6 +1219,22 @@ type startReq struct {
 	// only; "legacy" = TLS 1.0 minimum. Wired into RunConfig.TLSPolicy
 	// at /api/start time and from there into protocol.DialOpts.
 	TLSPolicy string `json:"tls_policy,omitempty"`
+
+	// QuirkProfile (v0.16.0) selects a named server-quirk profile.
+	// "" / "default" = no overrides. See internal/quirks for the list.
+	QuirkProfile string `json:"quirk_profile,omitempty"`
+
+	// Bastion / SSH ProxyJump (v0.16.0). Optional. When BastionHost is
+	// set, the SFTP run dials through the jump host. Auth uses
+	// BastionPass, or BastionPrivateKeyPEM (with optional
+	// BastionPassphrase). SFTP-only — the runner rejects FTP/FTPS
+	// runs with a bastion configured.
+	BastionHost          string `json:"bastion_host,omitempty"`
+	BastionPort          int    `json:"bastion_port,omitempty"`
+	BastionUser          string `json:"bastion_user,omitempty"`
+	BastionPass          string `json:"bastion_pass,omitempty"`
+	BastionPrivateKeyPEM string `json:"bastion_private_key_pem,omitempty"`
+	BastionPassphrase    string `json:"bastion_passphrase,omitempty"`
 
 	NormalEnabled     bool   `json:"normal_enabled"`
 	FilesPerMinute    int    `json:"files_per_minute"`
@@ -1249,6 +1308,13 @@ func buildRunConfig(req startReq) (*config.RunConfig, error) {
 		TLSServerName:          req.TLSServerName,
 		TLSTrustOnFirstUse:     req.TLSTrustOnFirstUse,
 		TLSPolicy:              req.TLSPolicy,
+		QuirkProfile:           req.QuirkProfile,
+		BastionHost:            req.BastionHost,
+		BastionPort:            req.BastionPort,
+		BastionUser:            req.BastionUser,
+		BastionPass:            req.BastionPass,
+		BastionPrivateKeyPEM:   req.BastionPrivateKeyPEM,
+		BastionPassphrase:      req.BastionPassphrase,
 	}
 	if req.NormalEnabled {
 		cfg.Normal = &config.NormalLoad{
@@ -1303,9 +1369,11 @@ func buildRunConfig(req startReq) (*config.RunConfig, error) {
 // scheduler go through here so they stay in lockstep. startedBy tags the
 // run ("manual" or "schedule") so the UI can badge it.
 func (s *Server) startRun(req startReq, startedBy string) (*runner.Run, error) {
-	if s.activeRun() != nil {
-		return nil, fmt.Errorf("a run is already active — stop it first")
-	}
+	// v0.16.0 — concurrent runs allowed. The hard "one run at a time"
+	// gate is gone; each run gets its own ID, pools, watcher, metrics,
+	// and persist files. Operators can still stop runs individually via
+	// /api/stop?run=<id>. The schedule sweep keeps its own gate (see
+	// schedule.go) so cron firings never spawn surprise overlaps.
 	cfg, err := buildRunConfig(req)
 	if err != nil {
 		return nil, err
@@ -1487,13 +1555,45 @@ func firstStartCredential(req startReq) startCred {
 }
 
 func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
-	run := s.activeRun()
-	if run == nil {
-		http.Error(w, "no active run", http.StatusNotFound)
+	// v0.16.0 — with concurrent runs, /api/stop must disambiguate. If
+	// the operator passed ?run=<id>, target that one. Otherwise stop the
+	// single active run if exactly one exists; refuse with 409 + the
+	// list when multiple are active so the UI can prompt for which.
+	if id := r.URL.Query().Get("run"); id != "" {
+		s.mu.Lock()
+		run := s.runs[id]
+		s.mu.Unlock()
+		if run == nil {
+			http.Error(w, "unknown run id", http.StatusNotFound)
+			return
+		}
+		if !run.IsActive() {
+			http.Error(w, "run already stopped", http.StatusConflict)
+			return
+		}
+		run.Stop()
+		writeJSON(w, map[string]any{"stopped": true, "run_id": run.ID})
 		return
 	}
-	run.Stop()
-	writeJSON(w, map[string]any{"stopped": true})
+	active := s.activeRuns()
+	switch len(active) {
+	case 0:
+		http.Error(w, "no active run", http.StatusNotFound)
+	case 1:
+		active[0].Stop()
+		writeJSON(w, map[string]any{"stopped": true, "run_id": active[0].ID})
+	default:
+		ids := make([]string, len(active))
+		for i, r := range active {
+			ids[i] = r.ID
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error":      "multiple runs active — pass ?run=<id> to disambiguate",
+			"active_ids": ids,
+		})
+	}
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {

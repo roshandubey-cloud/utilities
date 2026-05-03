@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	mathrand "math/rand"
+	"net"
 	"os"
 	"path"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/analyze"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/bastion"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/config"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/generator"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/hostkeys"
@@ -30,6 +32,14 @@ import (
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/sftpx"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/trackid"
 )
+
+// runSeq is incremented atomically every time StartWithPersistAndTLS is
+// called. Combined with UnixNano in Run.ID, it guarantees uniqueness even
+// when two concurrent starts arrive in the same nanosecond (low-resolution
+// clocks on some platforms or CI).
+var runSeq atomic.Uint64
+
+func nextRunSeq() uint64 { return runSeq.Add(1) }
 
 // disablePolicy tracks per-user consecutive failures for one run and flags
 // users past the threshold so dispatchers stop picking them.
@@ -630,6 +640,18 @@ type Run struct {
 	// downloadSink is where bytes pulled by the download phase land.
 	// Nil = discard default. Built at Start time from cfg.Download.Sink.
 	downloadSink sink.FileSink
+
+	// bastionClient (v0.16.0) is the open SSH session to the configured
+	// jump host, when one is set. nil = direct dial. Closed by
+	// teardown() so a stopped run releases the bastion TCP. Per-pool
+	// slots reference its Dialer() — they don't own the session.
+	bastionClient *bastion.Client
+
+	// bastionDialer is the cached Dialer() closure from bastionClient.
+	// Cached because every per-pool slot and the download list-client
+	// need it; computing it once avoids re-locking the bastion Client
+	// on the hot dial path. nil when no bastion is configured.
+	bastionDialer func(network, addr string) (net.Conn, error)
 }
 
 // ReportStreamPath returns the on-disk CSV being streamed (empty if not
@@ -665,6 +687,12 @@ type poolSlot struct {
 	tlsStore           *hostkeys.TLSStore // shared across slots; nil disables store-backed verify
 	tlsTrustOnFirstUse bool               // auto-add unknown certs to tlsStore on first contact
 	tlsPolicy          string             // v0.15.0 — minimum TLS version policy
+	quirkProfile       string             // v0.16.0 — named server-quirk profile (legacy SSH algos, FTP EPSV/MLSD off, etc.)
+
+	// v0.16.0 — bastion config. When bastionDialer is non-nil, SFTP
+	// dials through it instead of net.Dial. Closed by clientPool when
+	// the run shuts down. Nil = direct dial.
+	bastionDialer func(network, addr string) (net.Conn, error)
 
 	mu     sync.Mutex
 	client protocol.Conn
@@ -684,6 +712,8 @@ func (s *poolSlot) dialOpts() protocol.DialOpts {
 		TLSStore:           s.tlsStore,
 		TLSTrustOnFirstUse: s.tlsTrustOnFirstUse,
 		TLSPolicy:          s.tlsPolicy,
+		QuirkProfile:       s.quirkProfile,
+		BastionDialer:      s.bastionDialer,
 	}
 }
 
@@ -874,7 +904,10 @@ func StartWithPersistAndTLS(parent context.Context, cfg *config.RunConfig, repor
 	dispatchCtx, cancelDispatch := context.WithCancel(ctx)
 
 	r := &Run{
-		ID:             fmt.Sprintf("run-%d", time.Now().Unix()),
+		// v0.16.0 — UnixNano + atomic counter so two starts within the
+		// same wall-second (legitimate now that concurrent runs are
+		// allowed) cannot collide on the persisted CSV/meta filename.
+		ID:             fmt.Sprintf("run-%d-%d", time.Now().UnixNano(), nextRunSeq()),
 		StartedAt:      time.Now(),
 		Cfg:            cfg,
 		Metrics:        metrics.New(0.30),
@@ -907,6 +940,42 @@ func StartWithPersistAndTLS(parent context.Context, cfg *config.RunConfig, repor
 		sharedAuth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
 	}
 	r.sharedAuth = sharedAuth
+
+	// v0.16.0 — bastion / SSH ProxyJump. When BastionHost is set, open
+	// the jump session up front so a missing host-key (or bad
+	// credentials) fails the run before any pool dial fires. The
+	// bastion's host-key callback shares the same TOFU store the
+	// target uses, so first contact behaves identically. Reused
+	// across every per-user pool slot for the run's lifetime.
+	var bastionDialer func(network, addr string) (net.Conn, error)
+	if cfg.BastionHost != "" {
+		// Bastion is SFTP-only; fail fast if the run is FTP/FTPS so
+		// operators see a clear "not supported" instead of a confusing
+		// dial error after the bastion handshakes.
+		if proto := protocol.Normalize(cfg.Protocol); proto != protocol.SFTP {
+			cancel()
+			return nil, fmt.Errorf("bastion: only supported for sftp (protocol=%s)", proto)
+		}
+		bcfg := bastion.Config{
+			Host:            cfg.BastionHost,
+			Port:            cfg.BastionPort,
+			User:            cfg.BastionUser,
+			Pass:            cfg.BastionPass,
+			Passphrase:      cfg.BastionPassphrase,
+			HostKeyCallback: sftpx.CurrentCallback(),
+		}
+		if cfg.BastionPrivateKeyPEM != "" {
+			bcfg.PrivateKey = []byte(cfg.BastionPrivateKeyPEM)
+		}
+		bc, berr := bastion.Open(bcfg)
+		if berr != nil {
+			cancel()
+			return nil, berr
+		}
+		r.bastionClient = bc
+		bastionDialer = bc.Dialer()
+		r.bastionDialer = bastionDialer
+	}
 
 	// Build upload byte sources + download sink from the run config.
 	// Each is nil-safe: a nil cfg.*.Source / cfg.Download.Sink skips
@@ -969,6 +1038,9 @@ func StartWithPersistAndTLS(parent context.Context, cfg *config.RunConfig, repor
 			TLSServerName:      cfg.TLSServerName,
 			TLSStore:           tlsStore,
 			TLSTrustOnFirstUse: cfg.TLSTrustOnFirstUse,
+			TLSPolicy:          cfg.TLSPolicy,
+			QuirkProfile:       cfg.QuirkProfile,
+			BastionDialer:      bastionDialer,
 		})
 	}
 	r.Watcher = trackid.New(cfg.UploadFolder, cfg.PollInterval, cfg.TrackIDTimeout, opener)
@@ -976,7 +1048,7 @@ func StartWithPersistAndTLS(parent context.Context, cfg *config.RunConfig, repor
 	// Build per-user client pools (union of normal + large users).
 	users := mergeUsers(cfg.NormalUsers, cfg.LargeFileUsers)
 	for _, u := range users {
-		pool, err := buildPool(cfg, u, cfg.ParallelStreams, sharedAuth, tlsStore)
+		pool, err := buildPool(cfg, u, cfg.ParallelStreams, sharedAuth, tlsStore, bastionDialer)
 		if err != nil {
 			r.teardown()
 			cancel()
@@ -988,7 +1060,7 @@ func StartWithPersistAndTLS(parent context.Context, cfg *config.RunConfig, repor
 	// Build download user pools if the download test is enabled.
 	if cfg.Download != nil {
 		for _, u := range cfg.DownloadUsers {
-			pool, err := buildPool(cfg, u, cfg.Download.ParallelStreams, sharedAuth, tlsStore)
+			pool, err := buildPool(cfg, u, cfg.Download.ParallelStreams, sharedAuth, tlsStore, bastionDialer)
 			if err != nil {
 				r.teardown()
 				cancel()
@@ -1249,6 +1321,9 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 			TLSServerName:      r.Cfg.TLSServerName,
 			TLSStore:           r.tlsStore,
 			TLSTrustOnFirstUse: r.Cfg.TLSTrustOnFirstUse,
+			TLSPolicy:          r.Cfg.TLSPolicy,
+			QuirkProfile:       r.Cfg.QuirkProfile,
+			BastionDialer:      r.bastionDialer,
 		})
 		if derr != nil {
 			return nil, derr
@@ -1824,6 +1899,14 @@ func (r *Run) teardown() {
 		p.closeAll()
 	}
 	r.downloadPools = map[string]*clientPool{}
+	// v0.16.0 — close the bastion last. Per-pool ssh sessions
+	// multiplex onto its TCP, so closing the bastion before pools
+	// would yank channels out from under in-flight closes. closeAll()
+	// above has already drained each pool, so this is safe now.
+	if r.bastionClient != nil {
+		_ = r.bastionClient.Close()
+		r.bastionClient = nil
+	}
 }
 
 // buildPool creates a user's connection pool. Each slot is dialed once at
@@ -1832,7 +1915,7 @@ func (r *Run) teardown() {
 // auth is propagated to each slot so subsequent redials use the same auth
 // method (key when the run is configured with a shared PEM, password
 // fallback otherwise).
-func buildPool(cfg *config.RunConfig, u config.UserCreds, size int, auth []ssh.AuthMethod, tlsStore *hostkeys.TLSStore) (*clientPool, error) {
+func buildPool(cfg *config.RunConfig, u config.UserCreds, size int, auth []ssh.AuthMethod, tlsStore *hostkeys.TLSStore, bastionDialer func(network, addr string) (net.Conn, error)) (*clientPool, error) {
 	if size < 1 {
 		size = 1
 	}
@@ -1853,6 +1936,8 @@ func buildPool(cfg *config.RunConfig, u config.UserCreds, size int, auth []ssh.A
 			tlsStore:           tlsStore,
 			tlsTrustOnFirstUse: cfg.TLSTrustOnFirstUse,
 			tlsPolicy:          cfg.TLSPolicy,
+			quirkProfile:       cfg.QuirkProfile,
+			bastionDialer:      bastionDialer, // nil when no bastion configured
 		}
 		c, err := protocol.Dial(context.Background(), proto, slot.dialOpts())
 		if err != nil {

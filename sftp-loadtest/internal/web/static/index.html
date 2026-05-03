@@ -607,6 +607,61 @@
           </div>
         </div>
 
+        <!-- v0.16.0 — server-quirk profile. Applies whether SFTP, FTP,
+             or FTPS — name list is fetched from /api/quirks at load
+             time so a new profile doesn't need a frontend redeploy. -->
+        <div class="field" style="margin-top:var(--sp-3)">
+          <label class="label" for="quirk_profile" title="Server quirks: pick a named profile when the target sshd is old (ssh-rsa, dh-group14-sha1) or the FTP server rejects EPSV / MLSD / UTF-8 NOOP (typical IIS-FTP).">Server quirks <span class="badge-mini">v0.16</span></label>
+          <select class="input" id="quirk_profile" data-role="quirk-profile">
+            <option value="">Default (no overrides)</option>
+          </select>
+          <div class="help" style="white-space:normal">
+            Leave on Default unless your target rejects modern algorithms.
+            <strong>openssh-legacy</strong> re-enables ssh-rsa + dh-group14-sha1.
+            <strong>ftp-no-epsv</strong> / <strong>ftp-no-mlsd</strong> / <strong>ftp-iis</strong> turn off the named feature for misbehaving FTP servers.
+          </div>
+        </div>
+
+        <!-- v0.16.0 — Bastion / SSH ProxyJump disclosure. SFTP-only.
+             When BastionHost is non-empty the runner opens one bastion
+             SSH session up front and reuses it as transport for every
+             per-user pool slot. Closed by default. -->
+        <details class="conn-key-disclosure" data-role="bastion-disclosure">
+          <summary>Use bastion / SSH ProxyJump <span class="badge-mini">v0.16</span></summary>
+          <div class="field-row" style="--cols:3">
+            <div class="field">
+              <label class="label" for="bastion_host">Bastion host</label>
+              <input class="input" id="bastion_host" data-role="bastion-host" type="text" placeholder="jump.example.com">
+            </div>
+            <div class="field">
+              <label class="label" for="bastion_port">Port</label>
+              <input class="input" id="bastion_port" data-role="bastion-port" type="number" min="1" max="65535" placeholder="22">
+            </div>
+            <div class="field">
+              <label class="label" for="bastion_user">User</label>
+              <input class="input" id="bastion_user" data-role="bastion-user" type="text" autocomplete="off">
+            </div>
+          </div>
+          <div class="field">
+            <label class="label" for="bastion_pass">Password <span class="label-hint">(optional if private key is set)</span></label>
+            <input class="input" id="bastion_pass" data-role="bastion-pass" type="password" autocomplete="off" placeholder="••••">
+          </div>
+          <div class="field">
+            <label class="label" for="bastion_pem">Private key (PEM)</label>
+            <textarea class="input mono" id="bastion_pem" data-role="bastion-pem"
+                      rows="5" spellcheck="false" autocomplete="off"
+                      placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                      style="font-family:var(--font-mono,monospace);min-height:6em;resize:vertical"></textarea>
+          </div>
+          <div class="field">
+            <label class="label" for="bastion_passphrase">Key passphrase <span class="label-hint">(optional)</span></label>
+            <input class="input" id="bastion_passphrase" data-role="bastion-passphrase" type="password" autocomplete="off" placeholder="••••">
+          </div>
+          <div class="help" style="white-space:normal">
+            SFTP-only. The runner opens one SSH session to the bastion and reuses it for every per-user pool slot. The bastion host key uses the same TOFU store as the target.
+          </div>
+        </details>
+
         <!-- SSH key disclosure. Closed by default. When opened with PEM
              non-empty, the probe AND start request switch from password
              auth to public-key auth (v1: shared key for the whole run).

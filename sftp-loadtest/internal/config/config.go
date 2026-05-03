@@ -79,6 +79,24 @@ type RunConfig struct {
 	// (TLS 1.3 only — for FedRAMP / FIPS-140-3 compliance posts),
 	// "legacy" (TLS 1.0 minimum — only for ancient servers).
 	TLSPolicy string `json:"tls_policy,omitempty"`
+
+	// QuirkProfile (v0.16.0) — named server-quirk profile from
+	// internal/quirks. "default" / "" = no overrides. Recognised values
+	// include "openssh-legacy" (re-enables ssh-rsa + dh-group14-sha1 for
+	// old sshd installs), "ftp-no-epsv" / "ftp-no-mlsd" / "ftp-iis"
+	// (turns off the corresponding feature for misbehaving FTP servers).
+	QuirkProfile string `json:"quirk_profile,omitempty"`
+
+	// Bastion fields (v0.16.0). When BastionHost is non-empty, SFTP
+	// dials route through this jump host. Auth uses BastionPass, or
+	// BastionPrivateKeyPEM (with optional BastionPassphrase) when set.
+	// SFTP-only — FTP/FTPS through bastion is not supported.
+	BastionHost              string `json:"bastion_host,omitempty"`
+	BastionPort              int    `json:"bastion_port,omitempty"`
+	BastionUser              string `json:"bastion_user,omitempty"`
+	BastionPass              string `json:"bastion_pass,omitempty"`
+	BastionPrivateKeyPEM     string `json:"bastion_private_key_pem,omitempty"`
+	BastionPassphrase        string `json:"bastion_passphrase,omitempty"`
 }
 
 type NormalLoad struct {

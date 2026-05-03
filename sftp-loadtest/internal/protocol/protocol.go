@@ -29,6 +29,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/hostkeys"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/quirks"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/sftpx"
 )
 
@@ -122,6 +123,20 @@ type DialOpts struct {
 	// Has no effect when TLSStore is nil.
 	TLSTrustOnFirstUse bool
 
+	// BastionDialer (v0.16.0), if set, dials the underlying TCP via a
+	// pre-built ssh.Client.Dial closure instead of net.Dial. Used by
+	// the runner when an operator configures a bastion / ProxyJump
+	// hop. SFTP-only — FTP/FTPS through bastion is uncommon and the
+	// jlaffaye library doesn't natively support it.
+	BastionDialer func(network, addr string) (net.Conn, error)
+
+	// QuirkProfile (v0.16.0) selects a named server-quirk profile from
+	// internal/quirks. Empty / unknown values fall back to "default"
+	// (no overrides). Used to flip on legacy SSH algorithms, disable
+	// EPSV/MLSD/UTF-8 on FTP, etc. without exposing every individual
+	// knob in the API.
+	QuirkProfile string
+
 	// TLSPolicy (v0.15.0) clamps the minimum TLS version. Recognised
 	// values:
 	//   ""        / "default"  — Go default (TLS 1.2 minimum)
@@ -192,7 +207,14 @@ type sftpConn struct {
 }
 
 func dialSFTP(opts DialOpts) (Conn, error) {
-	dialOpts := sftpx.DialOpts{HostKeyCallback: opts.SSHHostKeyCallback, Auth: opts.SSHAuth}
+	prof := quirks.Lookup(opts.QuirkProfile)
+	dialOpts := sftpx.DialOpts{
+		HostKeyCallback:   opts.SSHHostKeyCallback,
+		Auth:              opts.SSHAuth,
+		HostKeyAlgorithms: prof.SSHHostKeyAlgorithms,
+		KeyExchanges:      prof.SSHKeyExchanges,
+		BastionDialer:     opts.BastionDialer,
+	}
 	c, err := sftpx.DialWithOpts(opts.Host, opts.Port, opts.User, opts.Pass, dialOpts)
 	if err != nil {
 		return nil, err
@@ -282,6 +304,19 @@ func dialFTP(ctx context.Context, opts DialOpts, useTLS bool) (Conn, error) {
 	}
 	if ctx != nil {
 		dialOpts = append(dialOpts, jlaffayeFTP.DialWithContext(ctx))
+	}
+	// v0.16.0 — quirk profile: appends DialWithDisabled* for servers
+	// that misbehave on EPSV (some load balancers), MLSD (legacy
+	// installs), or UTF-8 NOOP (IIS). Default profile is a no-op.
+	prof := quirks.Lookup(opts.QuirkProfile)
+	if prof.FTPDisableEPSV {
+		dialOpts = append(dialOpts, jlaffayeFTP.DialWithDisabledEPSV(true))
+	}
+	if prof.FTPDisableMLSD {
+		dialOpts = append(dialOpts, jlaffayeFTP.DialWithDisabledMLSD(true))
+	}
+	if prof.FTPDisableUTF8 {
+		dialOpts = append(dialOpts, jlaffayeFTP.DialWithDisabledUTF8(true))
 	}
 
 	var capturedCert *x509.Certificate

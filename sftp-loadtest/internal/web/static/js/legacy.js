@@ -242,6 +242,34 @@ document.querySelectorAll('input[data-toggles]').forEach(cb => {
 });
 
 // v0.15.0 — ramp checkbox reveals the 4 ramp fields.
+// v0.16.0 — populate the quirk profile dropdown from /api/quirks at
+// page load. Names come from the server registry so adding a new
+// profile in Go doesn't require a frontend redeploy. Falls back
+// silently if the endpoint is unreachable (legacy server build).
+(async function populateQuirkProfiles() {
+  const sel = document.getElementById('quirk_profile');
+  if (!sel) return;
+  try {
+    const res = await apiFetch('/api/quirks');
+    if (!res || !res.ok) return;
+    const { profiles } = await res.json();
+    if (!Array.isArray(profiles)) return;
+    const current = sel.value;
+    // Re-render: keep the leading "Default" placeholder, append everything
+    // except "default" (which IS the placeholder).
+    const placeholder = sel.querySelector('option[value=""]');
+    sel.innerHTML = '';
+    if (placeholder) sel.appendChild(placeholder);
+    profiles.forEach(name => {
+      if (name === 'default') return;
+      const opt = document.createElement('option');
+      opt.value = name; opt.textContent = name;
+      sel.appendChild(opt);
+    });
+    if (current) sel.value = current;
+  } catch {}
+})();
+
 (function wireRampToggle() {
   const cb = document.getElementById('ramp_enabled');
   if (!cb) return;
@@ -821,6 +849,19 @@ function buildRequestBody() {
     // v0.15.0 — TLS minimum-version policy. Only emitted for FTPS;
     // SFTP / FTP runs ignore it.
     tls_policy: protocol === 'ftps' ? (document.getElementById('tls_policy')?.value || '') : '',
+    // v0.16.0 — server-quirk profile. Always emitted (covers SFTP +
+    // FTP + FTPS); empty value means "default / no overrides".
+    quirk_profile: document.getElementById('quirk_profile')?.value || '',
+    // v0.16.0 — bastion / SSH ProxyJump. SFTP-only on the runner side
+    // (the runner errors if bastion_host is set on a non-SFTP run);
+    // we still emit unconditionally so the export payload survives a
+    // protocol-flip round-trip.
+    bastion_host:             document.getElementById('bastion_host')?.value.trim() || '',
+    bastion_port:             parseInt(document.getElementById('bastion_port')?.value || '0') || 0,
+    bastion_user:             document.getElementById('bastion_user')?.value.trim() || '',
+    bastion_pass:             document.getElementById('bastion_pass')?.value || '',
+    bastion_private_key_pem:  document.getElementById('bastion_pem')?.value || '',
+    bastion_passphrase:       document.getElementById('bastion_passphrase')?.value || '',
     // v0.14 source/sink fields. readSource / readSink return null when
     // the operator left the picker on the default (synthetic / discard)
     // — the backend then uses the v0.13.x defaults exactly. Only one
@@ -1011,6 +1052,22 @@ function importConfigPayload(cfg) {
   // v0.15.0 — TLS minimum-version policy.
   const tlsPolicy = document.getElementById('tls_policy');
   if (tlsPolicy) tlsPolicy.value = cfg.tls_policy || '';
+  // v0.16.0 — server-quirk profile + bastion / ProxyJump fields.
+  const quirk = document.getElementById('quirk_profile');
+  if (quirk) quirk.value = cfg.quirk_profile || '';
+  const bSet = (id, v) => { const el = document.getElementById(id); if (el) el.value = v == null ? '' : String(v); };
+  bSet('bastion_host',        cfg.bastion_host);
+  bSet('bastion_port',        cfg.bastion_port);
+  bSet('bastion_user',        cfg.bastion_user);
+  bSet('bastion_pass',        cfg.bastion_pass);
+  bSet('bastion_pem',         cfg.bastion_private_key_pem);
+  bSet('bastion_passphrase',  cfg.bastion_passphrase);
+  // Auto-open the bastion disclosure when the imported config has any
+  // bastion fields populated — operators don't have to hunt for them.
+  if (cfg.bastion_host) {
+    const bd = document.querySelector('[data-role="bastion-disclosure"]');
+    if (bd) bd.open = true;
+  }
   strSet('host', cfg.host);
   strSet('port', cfg.port);
   strSet('folder', cfg.upload_folder);

@@ -10,6 +10,60 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.16.0] — 2026-05-02
+### Added
+- **Concurrent runs.** The single-active-run gate at `/api/start` is gone —
+  multiple runs can now drive the same load host in parallel. Each run owns
+  its own pools, watcher, dispatchers, metrics, alerts goroutine, and
+  persisted CSV/meta files. `Run.ID` switched from `run-<unix>` to
+  `run-<unixNano>-<seq>` so two starts within the same wall-second cannot
+  collide on disk. `/api/stop` now requires `?run=<id>` whenever more than
+  one run is active and 409s with the active-id list otherwise; with
+  exactly one active run the no-arg form keeps working. The schedule
+  sweep keeps its own gate so cron firings still skip overlap by default.
+- **Per-protocol quirk profiles.** New `internal/quirks` package ships a
+  small named registry of dial-time overrides:
+  `openssh-legacy` (re-enables ssh-rsa + dh-group14-sha1 KEX for old sshd
+  installs), `ftp-no-epsv` / `ftp-no-mlsd` (disables the named feature
+  for misbehaving FTP servers), `ftp-iis` (the IIS bundle: no EPSV, no
+  MLSD, no UTF-8 NOOP), and `default` (no overrides). Wired through
+  `protocol.DialOpts.QuirkProfile`, applied to `ssh.ClientConfig` for
+  SFTP and to `jlaffaye/ftp` DialOptions for FTP/FTPS. New
+  `/api/quirks` endpoint surfaces the name list so the UI dropdown
+  doesn't need a frontend redeploy when a new profile is added.
+- **Bastion / SSH ProxyJump.** New `internal/bastion` package opens one
+  SSH session to the configured jump host, then routes every per-user
+  pool slot through `ssh.Client.Dial` — multiplexed onto channels of
+  the single TCP. Bastion auth supports password or its own private
+  key (with optional passphrase), independent from the target's auth.
+  Shares the host-key TOFU store with target dials so the bastion's
+  first contact pins identically. SFTP-only — runs configured with a
+  bastion against FTP/FTPS abort with a clear "not supported" error
+  before any handshake fires. `RunConfig.Bastion*` fields and a
+  collapsible Bastion section in the Target panel ship the operator
+  surface; the export/import round-trip preserves every field.
+
+### Changed
+- `Run.ID` format changed from `run-<unix>` to `run-<unixNano>-<seq>`.
+  Persisted CSV / meta paths follow the new format. Existing on-disk
+  history with the old format is unaffected — the format is opaque to
+  the persist layer.
+- `/api/stop` now returns `{run_id}` in the success body. Multi-active
+  callers without `?run=` get HTTP 409 + `{error, active_ids[]}` so the
+  UI can prompt for which run to stop.
+
+### Internal
+- Added `runner.runSeq atomic.Uint64` for collision-free run IDs.
+- `protocol.DialOpts` gained `QuirkProfile` (string) and `BastionDialer`
+  (`func(network, addr string) (net.Conn, error)`).
+- `sftpx.DialOpts` gained `HostKeyAlgorithms`, `KeyExchanges`, and
+  `BastionDialer`. New exported `sftpx.CurrentCallback()` lets the
+  bastion package reuse the process-wide TOFU callback.
+- Tests: `internal/quirks/quirks_test.go` covers default fallback,
+  legacy SSH algorithm presence, and FTP flag bundles.
+  `internal/bastion/bastion_test.go` covers the four input-validation
+  failure modes plus nil-receiver safety on `Close` and `Dialer`.
+
 ## [v0.13.7] — 2026-05-01
 ### Security
 - **CVE fix:** Bumped `golang.org/x/crypto` from `v0.33.0` to `v0.50.0` —
