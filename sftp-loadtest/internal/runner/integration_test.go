@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -529,6 +530,103 @@ func TestRunner_VerifyHashes_RealFileSource(t *testing.T) {
 		t.Fatal("no successful upload rows to assert against")
 	}
 	t.Logf("real-file source wiring confirmed: %d rows all carry expected SHA-256 %s", checked, expectedHex)
+}
+
+// TestRunner_AllUserPatternsUsed asserts that EVERY filename pattern
+// configured for a single user is exercised during a run. Pre-v0.18.8
+// pattern selection used time.Now().UnixNano() % len(patterns), which
+// under parallel concurrency could starve a pattern that lined up
+// poorly with the clock. The atomic round-robin in Run.nextPattern
+// guarantees N uploads ÷ K patterns ≈ N/K uses per pattern (±1 due
+// to integer division).
+//
+// We give the user three distinct patterns ("alpha-*", "beta-*",
+// "gamma-*"), drive enough uploads to amortise startup jitter, and
+// then assert every pattern shows up at least once AND the per-pattern
+// counts are within ±1 of each other (proving even distribution, not
+// just non-zero coverage).
+func TestRunner_AllUserPatternsUsed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test (mockserver) skipped under -short")
+	}
+	srv, err := mocksftp.Start(mocksftp.Options{
+		Addr:   "127.0.0.1:0",
+		Delay:  10 * time.Millisecond, // tight delay so we get many uploads in 3s
+		Logger: log.New(io.Discard, "", 0),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Stop()
+	host, portStr, _ := net.SplitHostPort(srv.Addr().String())
+	port, _ := strconv.Atoi(portStr)
+	sftpx.SetHostKeyCallback(ssh.InsecureIgnoreHostKey())
+
+	patterns := []string{"alpha-*", "beta-*", "gamma-*"}
+	cfg := &config.RunConfig{
+		Host:            host,
+		Port:            port,
+		UploadFolder:    "inbox",
+		ParallelStreams: 4, // 4-way parallelism to expose the old nano-skew
+		DurationHours:   3.0 / 3600.0,
+		PollInterval:    250 * time.Millisecond,
+		TrackIDTimeout:  5 * time.Second,
+		Normal: &config.NormalLoad{
+			FilesPerMinute: 1200, // 20 files/sec — plenty of pattern cycles
+			MinSizeMB:      1,
+			MaxSizeMB:      1,
+		},
+		NormalUsers: []config.UserCreds{
+			{Username: "u1", Password: "p", Patterns: patterns},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	run, err := runner.Start(ctx, cfg)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	select {
+	case <-run.Done():
+	case <-ctx.Done():
+		t.Fatal("run did not complete in time")
+	}
+
+	rows := run.Report.Snapshot()
+	if len(rows) < 6 {
+		t.Fatalf("need at least 6 uploads to evaluate distribution; got %d", len(rows))
+	}
+	// Bucket each row by which pattern's prefix its filename starts with.
+	counts := map[string]int{"alpha-": 0, "beta-": 0, "gamma-": 0}
+	for _, r := range rows {
+		for prefix := range counts {
+			if strings.HasPrefix(r.Filename, prefix) {
+				counts[prefix]++
+				break
+			}
+		}
+	}
+	for prefix, n := range counts {
+		if n == 0 {
+			t.Errorf("pattern prefix %q was NEVER used — round-robin is starving it", prefix)
+		}
+	}
+	// Strict-rotation invariant: counts differ by at most 1. With N
+	// uploads and 3 patterns, the math is (N/3) and (N/3 + 1) at most.
+	min, max := -1, -1
+	for _, n := range counts {
+		if min < 0 || n < min {
+			min = n
+		}
+		if max < 0 || n > max {
+			max = n
+		}
+	}
+	if max-min > 1 {
+		t.Errorf("pattern counts skew too far apart (min=%d max=%d, diff > 1) — round-robin is biased: %v", min, max, counts)
+	}
+	t.Logf("pattern coverage confirmed: %v across %d uploads", counts, len(rows))
 }
 
 // _ keeps the fmt import alive if we add diagnostic prints later.

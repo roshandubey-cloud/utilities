@@ -816,6 +816,14 @@ type Run struct {
 	// need it; computing it once avoids re-locking the bastion Client
 	// on the hot dial path. nil when no bastion is configured.
 	bastionDialer func(network, addr string) (net.Conn, error)
+
+	// patternCursors holds one atomic.Uint64 per (kind, username) so
+	// pattern selection is strict round-robin, NOT clock-based. Lazily
+	// populated on first use via sync.Map.LoadOrStore so we don't have
+	// to walk the user list at Start. Same user may appear in normal
+	// and large-file CSVs with different patterns; keying by kind keeps
+	// those rotations independent.
+	patternCursors sync.Map // map[string]*atomic.Uint64
 }
 
 // ReportStreamPath returns the on-disk CSV being streamed (empty if not
@@ -1957,9 +1965,33 @@ func stageToCode(stage string) string {
 	}
 }
 
+// nextPattern picks the next filename pattern for (kind, user) using a
+// strict round-robin atomic counter. v0.18.8 — replaces the prior
+// `time.Now().UnixNano() % len` heuristic which under-served some
+// patterns when parallel-stream concurrency made multiple uploaders
+// read the same nanosecond. Returns the user's first pattern when
+// they have only one (the common case) so this doesn't add overhead
+// for single-pattern CSVs.
+func (r *Run) nextPattern(kind string, u config.UserCreds) string {
+	if len(u.Patterns) == 1 {
+		return u.Patterns[0]
+	}
+	key := kind + ":" + u.Username
+	v, _ := r.patternCursors.LoadOrStore(key, new(atomic.Uint64))
+	cursor := v.(*atomic.Uint64)
+	idx := cursor.Add(1) - 1 // 1-based after Add → subtract 1 so first pick = patterns[0]
+	return u.Patterns[int(idx%uint64(len(u.Patterns)))]
+}
+
 func (r *Run) uploadOne(u config.UserCreds, size int64, kind string, intendedStart time.Time) {
-	// pick pattern round-robin-ish using nano clock
-	pat := u.Patterns[int(time.Now().UnixNano())%len(u.Patterns)]
+	// v0.18.8 — strict round-robin pattern selection per (kind, user).
+	// Pre-v0.18.8 this used (UnixNano % len) which is "round-robin-ish"
+	// but skews under parallel-stream concurrency: two goroutines
+	// reading the same nanosecond pick the same pattern, starving the
+	// next one in the rotation. The atomic counter guarantees every
+	// pattern in the user's list gets exercised in proportion (N
+	// uploads ÷ K patterns = exactly N/K per pattern, ±1).
+	pat := r.nextPattern(kind, u)
 	// In filename mode the download phase will look this file up by a
 	// 12-char marker we inject into the name. Generate the marker
 	// upfront so we can both name the file with it AND record it on

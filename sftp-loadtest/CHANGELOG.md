@@ -10,6 +10,32 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.18.8] — 2026-05-03
+### Fixed
+- **Filename pattern selection is now strict round-robin per (kind,
+  user).** A user CSV row of `u1,p1,alpha-*,beta-*,gamma-*` now
+  guarantees every one of the three patterns gets exercised in
+  proportion (N uploads ÷ K patterns = N/K each, ±1). Pre-v0.18.8 the
+  selection was `time.Now().UnixNano() % len(patterns)` — fine at
+  steady single-stream cadence, but under parallel-stream concurrency
+  multiple uploaders could read the same nanosecond and pick the
+  same pattern, starving the next one in the rotation. The honest
+  round-robin uses an atomic counter per (kind, user) so the rotation
+  is independent of clock jitter and concurrency-safe.
+- **Same user appearing in normal + large-file CSVs** keeps separate
+  rotations because the cursor is keyed by `kind:username`.
+- **Single-pattern users skip the cursor entirely** (no overhead) —
+  the common-case fast path is unchanged.
+
+### Internal
+- New `Run.patternCursors sync.Map` (lazy init, zero allocations
+  until first multi-pattern user).
+- New `Run.nextPattern(kind, u)` helper.
+- New `TestRunner_AllUserPatternsUsed` integration test against the
+  mock SFTP server: 59 uploads × 3 patterns at 4-way parallelism
+  yielded 20/20/19 — exactly the strict-rotation invariant the
+  test asserts (`max - min ≤ 1`).
+
 ## [v0.18.7] — 2026-05-03
 ### Changed
 - **Central UI gating: never let an operator click a control that
