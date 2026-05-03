@@ -537,3 +537,75 @@ jobs:
             sftp-loadtest-desktop-app-${{ github.ref_name }}-windows-amd64.zip
             sftp-loadtest-desktop-app-windows-amd64.zip
           fail_on_unmatched_files: true
+
+  # End-to-end asset-matrix verification. Runs after every build job
+  # publishes its zips. Lists the assets actually attached to the release
+  # via gh API and asserts the full 21-asset matrix is present (10
+  # binaries × 2 link styles + 1 SBOM). A silent build-job failure (e.g.
+  # apt mirror flake on the arm64 runner mid-build) used to produce a
+  # release missing one zip with no operator-visible signal until a
+  # download 404 — this gate refuses to leave the workflow green when
+  # any expected asset is absent.
+  verify-asset-matrix:
+    name: verify asset matrix on release
+    needs: [build-mac, build-linux, build-linux-arm64-desktop, build-windows, build-sbom]
+    runs-on: ubuntu-latest
+    steps:
+      - name: assert every expected asset is attached to the release
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Pull asset names directly from the release object — same source
+          # of truth the README's `releases/latest/download/<asset>` URLs
+          # resolve against.
+          mapfile -t HAVE < <(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets[].name' | sort)
+
+          OSES=(mac-apple-silicon mac-intel linux-amd64 linux-arm64 windows-amd64)
+          SKUS=(webui desktop-app)
+
+          MISSING=()
+          for sku in "${SKUS[@]}"; do
+            for os in "${OSES[@]}"; do
+              for nm in \
+                "sftp-loadtest-${sku}-${TAG}-${os}.zip" \
+                "sftp-loadtest-${sku}-${os}.zip"; do
+                if ! printf '%s\n' "${HAVE[@]}" | grep -qx "$nm"; then
+                  MISSING+=("$nm")
+                fi
+              done
+            done
+          done
+          # SBOM is attached by build-sbom; presence asserts the SBOM job
+          # didn't silently no-op.
+          if ! printf '%s\n' "${HAVE[@]}" | grep -q "^sftp-loadtest-sbom-${TAG}.cdx.json$"; then
+            MISSING+=("sftp-loadtest-sbom-${TAG}.cdx.json")
+          fi
+          # Refuse to allow ANY asset whose name doesn't fit the
+          # documented matrix — catches accidental "all", "universal",
+          # or stray dev builds that snuck into the release upload step.
+          STRAY=()
+          for nm in "${HAVE[@]}"; do
+            case "$nm" in
+              sftp-loadtest-webui-${TAG}-*-*.zip) ;;
+              sftp-loadtest-webui-*-*.zip) ;;
+              sftp-loadtest-desktop-app-${TAG}-*-*.zip) ;;
+              sftp-loadtest-desktop-app-*-*.zip) ;;
+              sftp-loadtest-sbom-${TAG}.cdx.json) ;;
+              *) STRAY+=("$nm") ;;
+            esac
+          done
+
+          echo "release: $TAG"
+          echo "asset count attached: ${#HAVE[@]}"
+          if [[ ${#MISSING[@]} -gt 0 ]]; then
+            echo "::error::missing assets:"
+            printf '  - %s\n' "${MISSING[@]}"
+          fi
+          if [[ ${#STRAY[@]} -gt 0 ]]; then
+            echo "::error::unexpected assets (do not fit the documented matrix):"
+            printf '  - %s\n' "${STRAY[@]}"
+          fi
+          [[ ${#MISSING[@]} -eq 0 && ${#STRAY[@]} -eq 0 ]]
