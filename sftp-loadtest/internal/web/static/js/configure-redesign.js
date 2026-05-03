@@ -259,11 +259,15 @@ export function mountConfigureRedesign() {
   const fSpeedFloor   = fieldFor('speed_floor_percent');
   const fSpeedWarmup  = fieldFor('speed_floor_warmup_sec');
   const fSpeedBreach  = fieldFor('speed_floor_breach_sec');
-  const fVerifyHashes = fieldFor('verify_hashes');
+  // v0.18.x — verify_hashes is no longer extracted into Run controls;
+  // it lives inside the Download workload card so the operator
+  // discovers it next to the round-trip mode picker (the only place
+  // a hash check is meaningful — no download phase, nothing to
+  // verify against).
 
   if (fParallel)  upSlot.appendChild(fParallel);
   if (fDParallel) dlSlot.appendChild(fDParallel);
-  for (const f of [fDuration, fPoll, fTimeout, fMaxFails, fSpeedFloor, fSpeedWarmup, fSpeedBreach, fVerifyHashes]) {
+  for (const f of [fDuration, fPoll, fTimeout, fMaxFails, fSpeedFloor, fSpeedWarmup, fSpeedBreach]) {
     if (f) runSlot.appendChild(f);
   }
 

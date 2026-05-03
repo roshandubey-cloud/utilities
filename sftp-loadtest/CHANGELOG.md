@@ -10,6 +10,28 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.18.3] — 2026-05-03
+### Changed
+- **Verify SHA-256 checkbox moved into the Download workload card.**
+  v0.18.0 placed it in Run controls; v0.18.x relocated it next to the
+  round-trip mode picker — the only place a hash check is meaningful
+  (no download phase = nothing to verify against). Replaced the
+  cosmetic "How download verification works" disclosure that lived
+  there before; the checkbox is more useful real estate.
+- **Export bundle is now version 2.** A single JSON now captures the
+  whole operator-facing setup: run config (as before) PLUS schedules
+  and alerts. Importing a v2 bundle restores all three sections via
+  the existing `/api/schedule` (one POST per schedule) and
+  `/api/alerts` (single POST) endpoints. Pre-v2 bundles continue to
+  load — `schedules` and `alerts` default to empty when absent.
+- Alert SMTP password follows the same `passwords_included` gate as
+  CSV / private-key / target-password / bastion creds.
+
+### Internal
+- Removed `verify_hashes` from the Configure-redesign extraction
+  list — the checkbox now lives inside the Download card and travels
+  with it through the redesign's workload-card wrap.
+
 ## [v0.18.2] — 2026-05-03
 ### Changed
 - **Speed-floor auto-stop is now SUSTAINED, not instantaneous.** v0.18.0

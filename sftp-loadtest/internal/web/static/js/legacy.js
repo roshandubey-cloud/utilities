@@ -1023,7 +1023,7 @@ function setDownloadMatchMode(v) {
 // opts in for cases where the operator deliberately wants the credentials in
 // the file (e.g. for an automated runner). A second confirm() guards the
 // non-default path.
-function exportConfig() {
+async function exportConfig() {
   const cfg = buildRequestBody();
 
   // v0.14.20 — round-trip fixes for previously-silent drops:
@@ -1069,11 +1069,36 @@ function exportConfig() {
   } else if (!confirm('Export will include plaintext passwords. Continue?')) {
     return;
   }
+  // v0.18.3 — include schedules + alerts in the export so a single
+  // JSON captures the WHOLE operator-facing setup, not just the run
+  // config. Both endpoints already exist on the server (GET
+  // /api/schedules + GET /api/alerts) so this is a pure read-and-
+  // attach. Failures are silent (offline server, restricted env);
+  // the export still ships with whatever sections succeed.
+  let schedules = null, alertsCfg = null;
+  try {
+    const r1 = await apiFetch('/api/schedules');
+    if (r1 && r1.ok) {
+      const j = await r1.json();
+      schedules = j.schedules || [];
+    }
+  } catch {}
+  try {
+    const r2 = await apiFetch('/api/alerts');
+    if (r2 && r2.ok) alertsCfg = await r2.json();
+  } catch {}
+  // Strip alert SMTP password unless includePwd — same gate as
+  // run-config credentials.
+  if (alertsCfg && !includePwd) {
+    alertsCfg.smtp_password = '';
+  }
   const payload = {
-    version: 1,
+    version: 2, // bumped from 1 because the new sections are additive
     exported_at: new Date().toISOString(),
     passwords_included: !!includePwd,
     config: cfg,
+    schedules: schedules || [],
+    alerts: alertsCfg || null,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
@@ -1261,6 +1286,30 @@ $('importFile').addEventListener('change', async (ev) => {
     // Accept either "{config: {...}}" wrapper or a bare config object.
     const cfg = (parsed && typeof parsed === 'object' && parsed.config) ? parsed.config : parsed;
     importConfigPayload(cfg);
+    // v0.18.3 — version-2 bundles also carry schedules + alerts.
+    // Apply them by POSTing to the existing endpoints. Failures
+    // surface in the err line but do NOT block the run-config
+    // import (the operator may have intended a config-only file).
+    if (parsed && parsed.schedules && Array.isArray(parsed.schedules)) {
+      for (const sch of parsed.schedules) {
+        try {
+          await apiFetch('/api/schedule', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ run_at: sch.run_at, every: sch.every || '', config: sch.config }),
+          });
+        } catch (e) { console.warn('schedule import failed', e); }
+      }
+    }
+    if (parsed && parsed.alerts && typeof parsed.alerts === 'object') {
+      try {
+        await apiFetch('/api/alerts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(parsed.alerts),
+        });
+      } catch (e) { console.warn('alerts import failed', e); }
+    }
     $('err').textContent = '';
     if (wantRun) {
       // start() reads straight from the form (which we just populated), posts

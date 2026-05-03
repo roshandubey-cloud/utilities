@@ -895,14 +895,6 @@
               <input id="speed_floor_breach_sec" type="number" value="90" min="10">
             </div>
           </div>
-          <div class="row">
-            <div>
-              <label class="toggle-label" title="When ticked, the runner streams a SHA-256 hash over every uploaded file and over every matched download, then compares them. Mismatches surface as download_error=HASH_MISMATCH and the meta JSON carries verified/mismatch counters.">
-                <input type="checkbox" id="verify_hashes">
-                Verify upload/download SHA-256 <span class="badge-mini">v0.18</span>
-              </label>
-            </div>
-          </div>
           <div class="hint">
             Set the track-ID timeout to however long your SFTP server might take to process a file. The tool polls patiently and records the <b>actual</b> processing time once the server renames the file; a file only gets the <code>TRACKID_TIMEOUT</code> error code if it never shows up before this limit. <b>Wall-clock cost:</b> after the upload phase ends, the run keeps draining for up to this much longer to give pending track-IDs time to resolve — a 4 h timeout means the run can stay "active" up to ~4 h past its scheduled end.
           </div>
@@ -1168,10 +1160,17 @@
             <input type="radio" name="download_match_mode" value="trackid" id="dmm_trackid" checked hidden>
             <input type="radio" name="download_match_mode" value="filename" id="dmm_filename" hidden>
           </div>
-          <details class="hint-disclosure">
-            <summary>How download verification works</summary>
-            <div class="hint">Each download user lists its <code>folder</code> on every poll tick and pulls every filename matching the chosen mode. Each download is attributed back to the originating upload row — no pre-configured mapping required on the tool side.</div>
-          </details>
+          <!-- v0.18.x — SHA-256 verify checkbox lives INSIDE the
+               Download card (where it belongs functionally) rather
+               than up in Run controls. Operator opts in here; the
+               runner streams sha256 over upload + download and
+               compares per-row. Mismatches surface as
+               download_error=HASH_MISMATCH. -->
+          <label class="toggle-label" style="margin-top:10px"
+                 title="When ticked, the runner streams a SHA-256 hash over every uploaded file and over every matched download, then compares them. Mismatches surface as download_error=HASH_MISMATCH and the meta JSON carries verified/mismatch counters.">
+            <input type="checkbox" id="verify_hashes">
+            Verify upload/download SHA-256 <span class="badge-mini">v0.18</span>
+          </label>
           <label for="download_users" style="margin-top:10px">Download users (CSV)</label>
           <textarea class="csv-users" id="download_users" placeholder="dl1,pwd1,*&#10;dl2,pwd2,*"></textarea>
 
