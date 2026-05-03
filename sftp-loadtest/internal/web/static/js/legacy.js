@@ -242,34 +242,6 @@ document.querySelectorAll('input[data-toggles]').forEach(cb => {
 });
 
 // v0.15.0 — ramp checkbox reveals the 4 ramp fields.
-// v0.16.0 — populate the quirk profile dropdown from /api/quirks at
-// page load. Names come from the server registry so adding a new
-// profile in Go doesn't require a frontend redeploy. Falls back
-// silently if the endpoint is unreachable (legacy server build).
-(async function populateQuirkProfiles() {
-  const sel = document.getElementById('quirk_profile');
-  if (!sel) return;
-  try {
-    const res = await apiFetch('/api/quirks');
-    if (!res || !res.ok) return;
-    const { profiles } = await res.json();
-    if (!Array.isArray(profiles)) return;
-    const current = sel.value;
-    // Re-render: keep the leading "Default" placeholder, append everything
-    // except "default" (which IS the placeholder).
-    const placeholder = sel.querySelector('option[value=""]');
-    sel.innerHTML = '';
-    if (placeholder) sel.appendChild(placeholder);
-    profiles.forEach(name => {
-      if (name === 'default') return;
-      const opt = document.createElement('option');
-      opt.value = name; opt.textContent = name;
-      sel.appendChild(opt);
-    });
-    if (current) sel.value = current;
-  } catch {}
-})();
-
 (function wireRampToggle() {
   const cb = document.getElementById('ramp_enabled');
   if (!cb) return;
@@ -291,8 +263,19 @@ const CFG_KEYS = ['host','port','folder','parallel','duration','poll','timeout_m
   'dfolder','dparallel','download_users',
   // v0.15.0 — step-load ramp fields. Persisted across refreshes so
   // a typo + reload doesn't wipe the ramp the operator was setting up.
-  'ramp_start','ramp_step','ramp_every','ramp_ceiling'];
-const TOGGLES = ['normal_enabled','large_enabled','download_enabled','ramp_enabled'];
+  'ramp_start','ramp_step','ramp_every','ramp_ceiling',
+  // v0.17.2 — TLS + bastion text fields. Pre-v0.17.2 these were left
+  // out of the CFG_KEYS set so a page refresh wiped them; the
+  // operator had to retype the bastion host every time. Passwords
+  // (bastion_pass, bastion_passphrase) flow through the same
+  // shouldSavePasswords() guard already used for CSV creds.
+  'tls_server_name','bastion_host','bastion_port','bastion_user',
+  'bastion_pass','bastion_pem','bastion_passphrase'];
+// v0.17.2 — checkboxes/dropdowns that need persistence too. tls_policy
+// is a <select>; tls_skip_verify is a checkbox. tls_mode is a
+// segmented control backed by a hidden #tls_mode input.
+const SELECT_KEYS = ['tls_policy','tls_mode'];
+const TOGGLES = ['normal_enabled','large_enabled','download_enabled','ramp_enabled','tls_skip_verify'];
 const LS_KEY = 'sftp-loadtest-config-v1';
 const SAVE_PWD_KEY = 'sftp-loadtest-save-passwords-v1';
 
@@ -328,6 +311,9 @@ function restoreConfig() {
       if (CSV_FIELDS.includes(k)) setCsvRaw(k, saved[k]);   // seed masked view from saved raw
       else $(k).value = saved[k];
     });
+    SELECT_KEYS.forEach(k => {
+      if (saved[k] !== undefined && $(k)) $(k).value = saved[k];
+    });
     TOGGLES.forEach(k => {
       if (saved[k] !== undefined && $(k)) {
         $(k).checked = !!saved[k];
@@ -335,11 +321,24 @@ function restoreConfig() {
       }
     });
     if (saved.download_match_mode) setDownloadMatchMode(saved.download_match_mode);
+    // v0.17.2 — auto-open bastion disclosure on restore when any
+    // bastion field is populated, so operators don't have to hunt for
+    // the now-restored config behind a closed details element.
+    if (saved.bastion_host || saved.bastion_user || saved.bastion_pem) {
+      const bd = document.querySelector('[data-role="bastion-disclosure"]');
+      if (bd) bd.open = true;
+    }
   } catch {}
   // Reflect the persisted save-passwords toggle into the UI on load.
   const cb = $('save_passwords');
   if (cb) cb.checked = shouldSavePasswords();
 }
+// v0.17.2 — bastion-credential persistence is gated by the same
+// shouldSavePasswords() flag that protects CSV creds. PEM is treated
+// as a credential too (it's effectively a password equivalent when no
+// passphrase is set).
+const BASTION_PWD_KEYS = new Set(['bastion_pass','bastion_passphrase','bastion_pem']);
+
 function saveConfig() {
   const out = {};
   const keepPwd = shouldSavePasswords();
@@ -348,10 +347,13 @@ function saveConfig() {
     if (CSV_FIELDS.includes(k)) {
       const raw = getCsvRaw(k);
       out[k] = keepPwd ? raw : stripPasswordsFromCSV(raw);
+    } else if (BASTION_PWD_KEYS.has(k)) {
+      out[k] = keepPwd ? el.value : '';
     } else {
       out[k] = el.value;
     }
   });
+  SELECT_KEYS.forEach(k => { const el = $(k); if (el) out[k] = el.value; });
   TOGGLES.forEach(k => { const el = $(k); if (el) out[k] = el.checked; });
   out.download_match_mode = getDownloadMatchMode();
   try { localStorage.setItem(LS_KEY, JSON.stringify(out)); } catch {}
@@ -380,7 +382,7 @@ function clearStoredCredentials() {
   alert('Saved passwords cleared. Hosts and connection history kept.');
 }
 
-CFG_KEYS.concat(TOGGLES).forEach(k => { const el = $(k); if (el) el.addEventListener('change', saveConfig); });
+CFG_KEYS.concat(TOGGLES, SELECT_KEYS).forEach(k => { const el = $(k); if (el) el.addEventListener('change', saveConfig); });
 restoreConfig();
 
 // ---------- start / stop ----------
@@ -912,9 +914,6 @@ function buildRequestBody() {
     // v0.15.0 — TLS minimum-version policy. Only emitted for FTPS;
     // SFTP / FTP runs ignore it.
     tls_policy: protocol === 'ftps' ? (document.getElementById('tls_policy')?.value || '') : '',
-    // v0.16.0 — server-quirk profile. Always emitted (covers SFTP +
-    // FTP + FTPS); empty value means "default / no overrides".
-    quirk_profile: document.getElementById('quirk_profile')?.value || '',
     // v0.16.0 — bastion / SSH ProxyJump. SFTP-only on the runner side
     // (the runner errors if bastion_host is set on a non-SFTP run);
     // we still emit unconditionally so the export payload survives a
@@ -1054,6 +1053,12 @@ function exportConfig() {
     cfg.private_key_pem = '';
     cfg.private_key_passphrase = '';
     cfg.target_password = '';
+    // v0.17.2 — bastion credentials follow the same gate. Pre-v0.17.2
+    // an exported config with passwords-off still leaked the bastion
+    // PEM and pass into the JSON.
+    cfg.bastion_pass = '';
+    cfg.bastion_passphrase = '';
+    cfg.bastion_private_key_pem = '';
   } else if (!confirm('Export will include plaintext passwords. Continue?')) {
     return;
   }
@@ -1115,9 +1120,8 @@ function importConfigPayload(cfg) {
   // v0.15.0 — TLS minimum-version policy.
   const tlsPolicy = document.getElementById('tls_policy');
   if (tlsPolicy) tlsPolicy.value = cfg.tls_policy || '';
-  // v0.16.0 — server-quirk profile + bastion / ProxyJump fields.
-  const quirk = document.getElementById('quirk_profile');
-  if (quirk) quirk.value = cfg.quirk_profile || '';
+  // v0.16.0 — bastion / ProxyJump fields. (Server-quirk profile
+  // accepted in cfg payload but no UI field since v0.17.2.)
   const bSet = (id, v) => { const el = document.getElementById(id); if (el) el.value = v == null ? '' : String(v); };
   bSet('bastion_host',        cfg.bastion_host);
   bSet('bastion_port',        cfg.bastion_port);

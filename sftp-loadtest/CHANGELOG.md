@@ -10,6 +10,32 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.17.2] — 2026-05-03
+### Removed
+- **Server-quirk profile dropdown** in the Configure panel. The
+  `internal/quirks` registry, `/api/quirks` endpoint, and
+  `RunConfig.QuirkProfile` field are kept for advanced API/automation
+  callers, but the UI no longer surfaces it — most operators never
+  touched it and the names ("ftp-iis", "ftp-no-epsv", "openssh-legacy")
+  were cryptic. JSON exports retain the field for compatibility but
+  the UI ignores it on import.
+
+### Fixed
+- **Bastion + TLS form fields lost on page refresh.** Pre-v0.17.2 only
+  the core run-config keys were persisted in localStorage; bastion
+  host/port/user/pass/PEM/passphrase, TLS server name, TLS minimum
+  policy, TLS skip-verify, and TLS mode all reverted to defaults on
+  reload. Persistence now covers the full Target panel. Bastion
+  credentials (pass, passphrase, PEM) flow through the same
+  shouldSavePasswords() guard already used for CSV creds — they ship
+  to localStorage only when the operator explicitly opted in via
+  Save passwords.
+- **Bastion credentials leaked on export with passwords-off.** Pre-
+  v0.17.2 an exported config had `bastion_pass`, `bastion_passphrase`,
+  and `bastion_private_key_pem` populated even when the operator left
+  Include passwords unchecked. They're now blanked alongside the
+  other credentials in that path.
+
 ## [v0.17.1] — 2026-05-03
 ### Fixed
 - **Concurrent-run download-sink path collisions.** When two runs wrote

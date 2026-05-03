@@ -612,21 +612,6 @@
           </div>
         </div>
 
-        <!-- v0.16.0 — server-quirk profile. Applies whether SFTP, FTP,
-             or FTPS — name list is fetched from /api/quirks at load
-             time so a new profile doesn't need a frontend redeploy. -->
-        <div class="field" style="margin-top:var(--sp-3)">
-          <label class="label" for="quirk_profile" title="Server quirks: pick a named profile when the target sshd is old (ssh-rsa, dh-group14-sha1) or the FTP server rejects EPSV / MLSD / UTF-8 NOOP (typical IIS-FTP).">Server quirks <span class="badge-mini">v0.16</span></label>
-          <select class="input" id="quirk_profile" data-role="quirk-profile">
-            <option value="">Default (no overrides)</option>
-          </select>
-          <div class="help" style="white-space:normal">
-            Leave on Default unless your target rejects modern algorithms.
-            <strong>openssh-legacy</strong> re-enables ssh-rsa + dh-group14-sha1.
-            <strong>ftp-no-epsv</strong> / <strong>ftp-no-mlsd</strong> / <strong>ftp-iis</strong> turn off the named feature for misbehaving FTP servers.
-          </div>
-        </div>
-
         <!-- v0.16.0 — Bastion / SSH ProxyJump disclosure. SFTP-only.
              When BastionHost is non-empty the runner opens one bastion
              SSH session up front and reuses it as transport for every
