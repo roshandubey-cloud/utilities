@@ -10,6 +10,16 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.18.4] — 2026-05-03
+### Changed
+- **Duration moved from Run controls to the Workload section header.**
+  Operators decide "how long should this run last" before they pick
+  flows; the form now mirrors that — Duration sits right under the
+  "Combine up to three flows" subtitle. Poll interval, track-id
+  timeout, disable-after-fails, and the speed-floor knobs stay in
+  the Run controls group at the bottom (those are tuning knobs the
+  operator rarely touches per-run).
+
 ## [v0.18.3] — 2026-05-03
 ### Changed
 - **Verify SHA-256 checkbox moved into the Download workload card.**

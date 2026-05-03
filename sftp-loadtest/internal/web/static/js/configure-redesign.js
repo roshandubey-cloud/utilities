@@ -117,6 +117,11 @@ export function mountConfigureRedesign() {
         <header class="cfg-section-head">
           <div class="cfg-section-eyebrow">2 · Workload</div>
           <p class="cfg-section-sub">Combine up to three flows. Each can be enabled independently.</p>
+          <!-- v0.18.4 — Duration is the run-shape decision the operator
+               makes BEFORE picking flows. Hoisted here from "Run
+               controls" so it sits next to the workload framing
+               instead of buried at the bottom of the form. -->
+          <div class="cfg-workload-headline" data-slot="workload-headline"></div>
         </header>
         <div class="cfg-section-body cfg-workload-body" data-slot="workload"></div>
       </section>
@@ -267,7 +272,13 @@ export function mountConfigureRedesign() {
 
   if (fParallel)  upSlot.appendChild(fParallel);
   if (fDParallel) dlSlot.appendChild(fDParallel);
-  for (const f of [fDuration, fPoll, fTimeout, fMaxFails, fSpeedFloor, fSpeedWarmup, fSpeedBreach]) {
+  // v0.18.4 — Duration goes to the Workload section's headline slot
+  // (right under "Combine up to three flows…") instead of the bottom
+  // Run controls group. The remaining run-wide knobs stay in their
+  // original limits group.
+  const workloadHeadline = layout.querySelector('[data-slot="workload-headline"]');
+  if (fDuration && workloadHeadline) workloadHeadline.appendChild(fDuration);
+  for (const f of [fPoll, fTimeout, fMaxFails, fSpeedFloor, fSpeedWarmup, fSpeedBreach]) {
     if (f) runSlot.appendChild(f);
   }
 
