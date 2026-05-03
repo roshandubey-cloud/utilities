@@ -2554,6 +2554,22 @@ button.primary:hover:not(:disabled),
   padding: var(--sp-1) var(--sp-2);
 }
 
+/* v0.18.7 — UI gating. When wireGating() disables a control because
+   a prerequisite isn't met (no workers, FTP+bastion combo, Download
+   off etc.) we mark the parent label / disclosure with
+   data-gate-disabled="1" so the surrounding text dims alongside the
+   input. The native :disabled selector on the input itself only dims
+   the form control; this rule extends the cue to its label. */
+[data-gate-disabled="1"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+[data-gate-disabled="1"] input,
+[data-gate-disabled="1"] textarea,
+[data-gate-disabled="1"] select,
+[data-gate-disabled="1"] button { cursor: not-allowed; }
+[data-gate-disabled="1"] details > summary { cursor: not-allowed; }
+
 /* The Target slot already hosts the existing Quick-checks panel; flatten
    its outer box so we don't double up borders. */
 .cfg-section[data-section="target"] [data-component="connection"] {

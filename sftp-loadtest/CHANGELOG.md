@@ -10,6 +10,35 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.18.7] — 2026-05-03
+### Changed
+- **Central UI gating: never let an operator click a control that
+  can't possibly succeed.** New `wireGating()` IIFE re-evaluates every
+  prerequisite-bound input on every relevant change and disables
+  controls with a tooltip explaining why. Rules:
+  - **Distribute load across workers** — disabled when 0 workers
+    configured, or 0 workers enabled. Pre-v0.18.7 the row was
+    hidden when no workers were configured, which made the feature
+    invisible. Now the affordance shows but reads "Add a worker in
+    the sidebar to distribute load across machines."
+  - **Test connection** button — disabled until host + port are set.
+  - **Verify SHA-256** checkbox — disabled when Download phase is
+    off (verification needs both sides; an upload-only run has
+    nothing to compare against).
+  - **Bastion / SSH ProxyJump** disclosure inputs — disabled when
+    the protocol picker is on FTP / FTPS (the runner rejects that
+    combo at start time).
+  - **SSH private key** disclosure inputs — disabled when the
+    protocol picker is on FTP / FTPS (keys are SFTP-only).
+
+### Internal
+- Generic `setDisabled(el, reason)` helper writes `el.disabled`,
+  `el.title`, and propagates a `data-gate-disabled="1"` flag to the
+  parent label so surrounding text dims alongside the form control.
+- New CSS rule `[data-gate-disabled="1"] { opacity: 0.55; cursor:
+  not-allowed }` cascades the visual cue to the disclosure / label
+  body without needing per-control overrides.
+
 ## [v0.18.6] — 2026-05-03
 ### Changed
 - **Labels reworded for the operator's vocabulary, not the implementation's:**

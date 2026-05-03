@@ -242,6 +242,118 @@ document.querySelectorAll('input[data-toggles]').forEach(cb => {
 });
 
 // v0.15.0 — ramp checkbox reveals the 4 ramp fields.
+// v0.18.7 — central UI gating. The principle: never let an operator
+// click something that can't possibly succeed. Each rule below
+// disables a control with a clear tooltip explaining why. Re-runs on
+// every relevant change.
+(function wireGating() {
+  const $$ = (sel) => document.querySelector(sel);
+  const setDisabled = (el, reason) => {
+    if (!el) return;
+    if (reason) {
+      el.disabled = true;
+      el.dataset.gateReason = reason;
+      el.title = reason;
+      // Sneak a visual cue onto the parent label for checkboxes so the
+      // text dims along with the input.
+      const lbl = el.closest('label');
+      if (lbl) lbl.dataset.gateDisabled = '1';
+    } else {
+      el.disabled = false;
+      delete el.dataset.gateReason;
+      el.title = el.dataset.gateTitle || '';
+      const lbl = el.closest('label');
+      if (lbl) delete lbl.dataset.gateDisabled;
+    }
+  };
+  function evaluate() {
+    // ---- Test connection button ----
+    // Need host + port before a probe can happen.
+    const probeBtn = $$('[data-role="submit"]');
+    const connHost = (document.getElementById('conn-host')?.value || '').trim();
+    const connPort = parseInt(document.getElementById('conn-port')?.value || '0', 10);
+    if (probeBtn) {
+      const reason = !connHost
+        ? 'Enter a host before testing the connection.'
+        : !connPort || connPort <= 0
+          ? 'Enter a valid port before testing the connection.'
+          : '';
+      setDisabled(probeBtn, reason);
+    }
+
+    // ---- Verify SHA-256 checkbox ----
+    // Only meaningful when Download phase is enabled — otherwise
+    // there's nothing to compare the upload hash against.
+    const verifyBox = document.getElementById('verify_hashes');
+    const downloadOn = !!document.getElementById('download_enabled')?.checked;
+    if (verifyBox) {
+      if (!downloadOn) {
+        const reason = 'Enable Download to compare upload + download hashes — verification needs both sides.';
+        if (verifyBox.checked) verifyBox.checked = false;
+        setDisabled(verifyBox, reason);
+      } else {
+        setDisabled(verifyBox, '');
+      }
+    }
+
+    // ---- Bastion / SSH ProxyJump section ----
+    // SFTP-only on the runner side; the runner errors on FTP+bastion
+    // before any handshake. Disable the disclosure body when the
+    // protocol picker is on FTP/FTPS so operators can't fill fields
+    // that will be rejected at start time.
+    const proto = (document.getElementById('protocol')?.value || 'sftp').toLowerCase();
+    const isSFTP = proto === 'sftp';
+    const bastionDis = document.querySelector('[data-role="bastion-disclosure"]');
+    if (bastionDis) {
+      const inputs = bastionDis.querySelectorAll('input, textarea');
+      inputs.forEach((el) => {
+        if (!isSFTP) {
+          setDisabled(el, 'Bastion / SSH ProxyJump is supported only for SFTP. Switch protocol to use this.');
+        } else {
+          setDisabled(el, '');
+        }
+      });
+      bastionDis.dataset.gateDisabled = isSFTP ? '0' : '1';
+    }
+
+    // ---- SSH private-key disclosure ----
+    // Same rule: keys are SFTP-only. FTP/FTPS use TLS certs (handled
+    // in the FTPS-specific section, which is hidden via CSS for non-FTPS).
+    const keyDis = document.querySelector('[data-role="key-disclosure"]');
+    if (keyDis) {
+      const inputs = keyDis.querySelectorAll('input, textarea');
+      inputs.forEach((el) => {
+        if (!isSFTP) {
+          setDisabled(el, 'SSH private key is used only for SFTP authentication.');
+        } else {
+          setDisabled(el, '');
+        }
+      });
+      keyDis.dataset.gateDisabled = isSFTP ? '0' : '1';
+    }
+  }
+  // Re-evaluate on any change to the inputs that drive these gates.
+  ['conn-host','conn-port','download_enabled','protocol'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', evaluate);
+    el.addEventListener('change', evaluate);
+  });
+  // Protocol picker is a hidden input written by the segmented
+  // control; listen for the click bubbled from the buttons too so we
+  // gate without waiting for a roundtrip through the form-change
+  // listeners.
+  document.addEventListener('click', (ev) => {
+    if (ev.target && ev.target.matches('.seg-btn[data-value]')) {
+      // Schedule after the segmented control has a chance to update
+      // the hidden #protocol value.
+      setTimeout(evaluate, 0);
+    }
+  });
+  // First pass.
+  evaluate();
+})();
+
 (function wireRampToggle() {
   const cb = document.getElementById('ramp_enabled');
   if (!cb) return;

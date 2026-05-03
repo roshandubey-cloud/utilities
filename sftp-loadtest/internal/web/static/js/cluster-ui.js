@@ -1342,20 +1342,24 @@ export function mountDistributeToggle() {
   function syncStatus() {
     const all = readAll();
     const enabled = all.filter((w) => w.enabled);
-    // Hide the entire row when the operator has no workers configured
-    // at all. Show it (with status line) the moment they add one in
-    // the sidebar. v0.14.14 — was burning a row + a "no workers
-    // enabled" warning on every fresh form even though the operator
-    // doesn't know clusters exist yet.
-    if (all.length === 0) {
-      row.hidden = true;
-      return;
-    }
+    // v0.18.7 — always show the toggle so the affordance is
+    // discoverable; disable it (with a clear status line) when no
+    // workers are usable. Pre-v0.18.7 hid the row entirely when
+    // 0 workers were configured, which left operators wondering
+    // whether the feature existed at all.
     row.hidden = false;
-    if (enabled.length === 0) {
-      status.textContent = 'no workers enabled — toggle one in the sidebar';
+    const reason =
+      all.length === 0
+        ? 'Add a worker in the sidebar (WORKERS panel) to distribute load across machines.'
+        : enabled.length === 0
+          ? 'No workers enabled — toggle one in the sidebar to use this option.'
+          : null;
+    if (reason) {
+      status.textContent = reason;
       status.dataset.kind = 'warn';
       cb.disabled = true;
+      cb.title = reason;
+      row.title = reason;
       if (cb.checked) {
         cb.checked = false;
         try { localStorage.setItem('sftp-loadtest-distribute-v1', '0'); } catch {}
@@ -1365,6 +1369,8 @@ export function mountDistributeToggle() {
       status.textContent = `${enabled.length} worker${enabled.length === 1 ? '' : 's'} enabled · fpm will be split across them`;
       status.dataset.kind = '';
       cb.disabled = false;
+      cb.title = '';
+      row.title = '';
       row.dataset.disabled = '0';
     }
   }
