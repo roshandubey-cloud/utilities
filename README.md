@@ -9,6 +9,68 @@
 
 ![sftp-loadtest workbench — live throughput, latency percentiles, per-file activity tail](sftp-loadtest/docs/screenshots/workbench-active-dark.png)
 
+## Top 5 reasons this load tester is honest
+
+A real load tester earns its trust by *doing exactly what the operator
+asked*, with reports that survive a tester's challenge. These are the
+five we hold ourselves to — every one is exercised by integration
+tests against a mock SFTP server, not a slide deck.
+
+<table>
+  <tr>
+    <td width="20%" align="center"><sub><b>1</b></sub><br><b>Honest concurrency</b></td>
+    <td>When you ask for <b>N parallel streams per user</b> and <b>K filename patterns per user</b>, you get exactly that. Pattern selection is a strict atomic round-robin, not a clock-skewed approximation — integration tests assert <code>max(per-pattern uploads) − min ≤ 1</code> across N uploads, so a 3-pattern × 4-stream run can't silently starve one pattern.</td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>2</b></sub><br><b>End-to-end byte integrity</b></td>
+    <td>Tick <b>Verify upload/download SHA-256</b> and the runner streams a SHA-256 over every uploaded byte (<code>io.TeeReader</code>) and every downloaded byte (<code>io.MultiWriter</code>). Mismatches surface as <code>download_error=HASH_MISMATCH</code> and bump <code>RunMeta.HashMismatch</code>; matches bump <code>HashVerified</code>. Two test cases pin synthetic and on-disk source bytes against the wire-faithful round-trip.</td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>3</b></sub><br><b>Multi-protocol with one config</b></td>
+    <td>SFTP, FTP, and FTPS under a single runner. <b>Bastion / SSH ProxyJump</b> for targets behind a jump host. <b>TOFU pinning</b> for both SSH host keys and FTPS leaf certs — first contact pins the fingerprint, subsequent runs verify strictly, changes refuse. Quirk profiles re-enable legacy ssh-rsa or disable EPSV/MLSD/UTF-8 NOOP for misbehaving servers.</td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>4</b></sub><br><b>Smart auto-stop on slowness</b></td>
+    <td>Set a <b>Slowdown threshold (% of peak)</b> and <b>Allow slowness for (sec)</b>. The sampler counts consecutive sub-threshold ticks; a single sample back above resets the streak. Only a SUSTAINED breach trips the stop — labelled <code>stop_reason=speed-floor</code> with a sentence in the report explaining what was measured, what the threshold was, and how long the breach lasted. No wasting eight hours when the partner rate-limits at 9 PM.</td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>5</b></sub><br><b>Reports a tester can defend</b></td>
+    <td>Per-file CSV with the upload + download stages, both SHA-256 columns, error code, latency, and per-row stage attribution. Run-meta JSON with p50/p95/p99/p99.9 latency histograms, peak CPU/FD/heap with the concurrent-runs-at-peak count for shared-box context, suggestions narrative, stop reason. Slack / generic webhook / SMTP alerts on operator-configurable triggers (failures, p99 ms, error rate %, dispatch skips, hash mismatch, speed-floor stop).</td>
+  </tr>
+</table>
+
+### Available in this release (v0.18.8)
+
+- ✅ **Concurrent runs** against the same or different targets — each
+  with its own pools, watcher, metrics, persisted CSV / meta;
+  self-DoS warning when targeting the same host:port.
+- ✅ **Speed-floor auto-stop** with operator-tunable threshold,
+  warmup, and sustained-breach window.
+- ✅ **SHA-256 round-trip verification** (optional checkbox).
+- ✅ **Step-load ramp** — start at 60 fpm, step +20 fpm every 5 min,
+  ceiling 180 fpm. Find capacity without splitting a run.
+- ✅ **Strict round-robin** filename-pattern rotation per (kind, user).
+- ✅ **Bastion / SSH ProxyJump** for SFTP through a jump host.
+- ✅ **Quirk profiles** (`openssh-legacy`, `ftp-no-epsv`, `ftp-iis`, …)
+  for partner servers that reject modern algorithms.
+- ✅ **Schedule recurring runs** with `Xh`, `Xd`, `Xm` cadences.
+- ✅ **Alerts** (Slack / generic webhook / SMTP) with configurable
+  triggers and per-channel test buttons.
+- ✅ **Multi-worker fan-out via SSH wizard** — no preinstalled agent.
+  Cluster runs aggregate per-worker reports into one cumulative CSV.
+- ✅ **Full export/import JSON bundle (v2)** — captures run config,
+  schedules, AND alerts in one file. Import to a fresh instance,
+  every dial / template / trigger restored.
+- ✅ **Workload sources & sinks** — synthetic generator OR real
+  on-disk files; download to discard OR persist to local-disk with
+  `{run_id}/{user}/{filename}` template by default.
+- ✅ **TOFU trust store** for SSH host keys + FTPS leaf certs, all
+  manageable in the Trust panel UI.
+- ✅ **UI gating** — never offer an action that can't succeed (Test
+  Connection blocked until host+port set, Verify-SHA-256 blocked
+  when Download is off, Bastion fields disabled when protocol ≠
+  SFTP, Distribute-load disabled when 0 workers, etc.).
+
 <table>
   <tr>
     <td width="33%"><a href="sftp-loadtest/docs/screenshots/configure-dark.png"><img src="sftp-loadtest/docs/screenshots/configure-dark.png" alt="Configure"></a><br><sub><b>Configure</b> — Target, Workload (Upload + Large + Download), Limits</sub></td>
