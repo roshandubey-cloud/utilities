@@ -71,21 +71,39 @@ Walk-through scripts (production-ready storyboards with timestamps, exact UI act
 
 ## How it compares
 
-Most general-purpose load testers are HTTP-first; SFTP / FTP / FTPS
-have been a long-running gap. The honest landscape:
+Purpose-built MFT load testers barely exist as a category. Most teams
+cobble something together — JMeter with the SSH-SFTP plugin, or bash
+loops wrapping `lftp` / `curl` / `sftp` in GNU parallel. Both work
+until they don't:
 
-| Tool | Native SFTP | Native FTP / FTPS | Round-trip byte verify | Multi-worker fan-out | Form factor |
-|---|---|---|---|---|---|
-| **sftp-loadtest** | ✅ via `pkg/sftp` | ✅ Explicit + Implicit FTPS | ✅ SHA-256 streaming both legs | ✅ SSH bootstrap, no agent install | Single binary + native desktop app |
-| JMeter | via plugin (limited) | via plugin | ❌ | ✅ (distributed mode) | JVM, GUI / CLI |
-| k6 | ❌ (HTTP / gRPC / WS) | ❌ | n/a | ✅ (k6 Cloud) | JS scripting |
-| Locust | ❌ (HTTP via requests) | ❌ | n/a | ✅ (master/worker) | Python scripting |
-| Custom script (paramiko, jsch, lftp) | ✅ | ✅ | DIY | DIY | hand-rolled |
+- **JMeter's SFTP plugin** chokes past a few hundred concurrent
+  sessions and can't capture server-side processing time (the
+  rename-and-move that distinguishes a real MFT pipeline from a
+  raw SFTP put).
+- **`lftp` / `parallel` scripts** scale fine but produce no
+  per-file CSV, no latency percentiles, and no way to assert
+  byte-for-byte integrity of what landed back on disk.
+- **k6, Locust, Gatling, vegeta** are HTTP-first by design. SFTP
+  via custom Python/JS glue exists, but you build most of it.
+
+This tool fills the gap between "ten-line bash script" and
+"enterprise LoadRunner site licence."
+
+| Tool | Native SFTP | Native FTP / FTPS | Round-trip byte verify | Server-side processing time | Tested concurrency | Form factor |
+|---|---|---|---|---|---|---|
+| **sftp-loadtest** | ✅ via `pkg/sftp` | ✅ Explicit + Implicit FTPS | ✅ SHA-256 streaming both legs | ✅ track-id rename capture | 1,500+ concurrent streams (50 users × 30 streams) | Single binary + native desktop app |
+| JMeter | via plugin (limited) | via plugin | ❌ | ❌ | ~few hundred sessions before plugin starves | JVM, GUI / CLI |
+| k6 | ❌ (HTTP / gRPC / WS) | ❌ | n/a | n/a | high (HTTP) | JS scripting |
+| Locust | ❌ (HTTP via requests) | ❌ | n/a | n/a | high (HTTP) | Python scripting |
+| Custom `lftp` / `parallel` scripts | ✅ | ✅ | DIY | DIY | high, but no metrics | hand-rolled |
+| LoadRunner / NeoLoad | ✅ FTP, partial SFTP | ✅ | ❌ | ❌ | high | Commercial, site licence |
 
 If your workload is HTTP, use k6 or Locust. If it's file transfer
 against an MFT / SFTP server with a server-side processing step
 (rename, suffix, move-to-outbox), this is what the round-trip
-match + processing-time capture were built for.
+match + processing-time capture were built for. AS2 / EDIINT MDN
+correlation is **not** in scope — that remains a real gap in the
+ecosystem and a likely follow-up.
 
 ## Quick start
 
