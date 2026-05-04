@@ -1594,6 +1594,27 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 				}
 				basename = name[:hash]
 			}
+			// Per-run ownership filter (v0.19.x). Crucial in filename mode
+			// because the server doesn't move processed files out of the
+			// folder — without this check the poller would redownload
+			// every leftover from previous runs on every tick. Defensive
+			// in trackid mode for the same reason against stale outboxes.
+			// The check is O(1) (hash-map lookup) and authoritative —
+			// uploads register their basename + marker in Report at
+			// AddUpload time, and the index survives flush-to-disk. We
+			// add to `seen` even on a miss so we don't re-evaluate the
+			// same leftover file every poll cycle.
+			var ours bool
+			if filenameMode {
+				ours = r.Report.HasUploadByFilenameID(marker)
+			} else {
+				ours = r.Report.HasUploadByBasename(basename)
+			}
+			if !ours {
+				seen[name] = struct{}{}
+				r.DownloadOrphans.Add(1)
+				continue
+			}
 			seen[name] = struct{}{}
 
 			c, slot, dialDur, err := pool.get()

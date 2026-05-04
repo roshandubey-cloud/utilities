@@ -10,6 +10,35 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.19.2] — 2026-05-04
+### Fixed — round-trip download owns its own files
+The download poller would re-pull files left in the outbox by previous
+runs (or any tool that happened to drop a `_slt_*_` marker in the
+folder) on every poll tick — the SFTP server doesn't move processed
+files out of the folder in either filename- or trackid-mode, so the
+poller would see the same leftover entries forever and waste bandwidth
+plus skew orphan counters.
+
+- **Per-run ownership filter at the source.** The download poller now
+  asks `Report.HasUploadByFilenameID(marker)` (filename mode) or
+  `Report.HasUploadByBasename(name)` (trackid mode) before opening a
+  read. Files that aren't ours are skipped, counted as orphans once,
+  and added to `seen` so subsequent ticks don't re-evaluate them.
+- **Index survives flush.** `byFilenameID` and `byBasename` are
+  intentionally retained when a record is released to disk by
+  `FlushFinalized`, so a long-running test still recognises its own
+  early uploads when the server delivers the round-trip late.
+  Pinned by `TestStore_HasUpload_SurvivesFlush`.
+- **Defence-in-depth in trackid mode.** Same check applies to track-id
+  mode against stale outboxes the operator forgot to drain.
+  `TestStore_HasUpload_PerRunOwnershipFilter` pins both modes.
+
+Operator-visible effect: a run started against an outbox with N files
+left over from a prior run now reports those N as orphans on the
+first poll and ignores them forever after, instead of redownloading
+all N every poll cycle. Bandwidth + p99 latency under those conditions
+both improve.
+
 ## [v0.19.1] — 2026-05-04
 ### Bastion / SSH ProxyJump — wired end-to-end
 The runtime path for bastion was correct in v0.16.0, but four UI / API

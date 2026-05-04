@@ -234,6 +234,41 @@ func (s *Store) AttachDownloadByFilenameID(marker string, d DownloadResult) bool
 	return true
 }
 
+// HasUploadByFilenameID reports whether THIS run uploaded a file
+// carrying the supplied filename-mode marker. Used by the download
+// poller to refuse files left in the outbox by a previous run (or by
+// any tool that happens to use the same _slt_ marker pattern) — those
+// files would otherwise be redownloaded every poll tick because the
+// server isn't moving them out of the folder. Survives FlushFinalized:
+// the byFilenameID index is preserved even after the live record is
+// released to disk, so a long-running test still reliably says "yes,
+// that one's mine" for early uploads.
+func (s *Store) HasUploadByFilenameID(marker string) bool {
+	if marker == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.byFilenameID[marker]
+	return ok
+}
+
+// HasUploadByBasename reports whether THIS run uploaded a file with
+// the supplied basename (no track-id suffix). Used by the download
+// poller in track-id mode to refuse files the server already had on
+// disk before the run started — typical case is a stale outbox the
+// operator forgot to drain between tests. Same flush-survives
+// semantics as HasUploadByFilenameID.
+func (s *Store) HasUploadByBasename(basename string) bool {
+	if basename == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.byBasename[basename]
+	return ok
+}
+
 // AttachDownloadByBasename attaches a DownloadResult to whichever upload
 // record has this basename. Returns false if we never uploaded a file with
 // that basename in this run (caller can count orphans) or if the record has

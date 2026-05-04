@@ -5,6 +5,84 @@ import (
 	"time"
 )
 
+// TestStore_HasUpload_PerRunOwnershipFilter pins the v0.19.x download
+// ownership check: a run can only "own" files it actually uploaded.
+// HasUploadByFilenameID and HasUploadByBasename are the O(1) lookups
+// the download poller uses to refuse files left behind by previous
+// runs. Without this gate, a server that doesn't drain its outbox
+// would cause every poll tick to redownload every leftover.
+func TestStore_HasUpload_PerRunOwnershipFilter(t *testing.T) {
+	s := NewStore()
+	now := time.Now()
+	s.AddUpload(FileRecord{
+		User:       "u1",
+		Filename:   "invoice_slt_abc123def456_.csv",
+		FilenameID: "abc123def456",
+		StartTime:  now,
+	})
+
+	// Filename-mode: a marker we uploaded must be ours.
+	if !s.HasUploadByFilenameID("abc123def456") {
+		t.Error("HasUploadByFilenameID returned false for our own marker")
+	}
+	// A marker we never uploaded (leftover from a prior run) must NOT be.
+	if s.HasUploadByFilenameID("zzzzzzzzzzzz") {
+		t.Error("HasUploadByFilenameID returned true for a marker we never uploaded")
+	}
+	// Empty marker is never ours (defensive).
+	if s.HasUploadByFilenameID("") {
+		t.Error("HasUploadByFilenameID(empty) must be false")
+	}
+
+	// Trackid-mode: the basename (without #trackid suffix) must be ours.
+	s.AddUpload(FileRecord{
+		User:      "u1",
+		Filename:  "report.txt",
+		StartTime: now,
+	})
+	if !s.HasUploadByBasename("report.txt") {
+		t.Error("HasUploadByBasename returned false for our own basename")
+	}
+	if s.HasUploadByBasename("leftover-from-yesterday.txt") {
+		t.Error("HasUploadByBasename returned true for a basename we never uploaded")
+	}
+	if s.HasUploadByBasename("") {
+		t.Error("HasUploadByBasename(empty) must be false")
+	}
+}
+
+// TestStore_HasUpload_SurvivesFlush pins that the ownership lookup
+// remains accurate after FlushFinalized has released the live record.
+// The byFilenameID + byBasename indices are intentionally NOT pruned
+// on flush precisely so a long-running test can still recognise its
+// own early uploads when the server delivers the round-trip late.
+func TestStore_HasUpload_SurvivesFlush(t *testing.T) {
+	s := NewStore()
+	now := time.Now()
+	s.AddUpload(FileRecord{
+		User:       "u1",
+		Filename:   "early_slt_oldmarker001_.csv",
+		FilenameID: "oldmarker001",
+		StartTime:  now,
+		EndTime:    now.Add(10 * time.Millisecond),
+	})
+
+	// Flush everything finalisable. With no stream attached we don't
+	// actually write to disk, but the in-memory release path still
+	// nils s.records[idx] — the index map is what's load-bearing.
+	_, _ = s.FlushFinalized(func(*FileRecord) bool { return true }, nil, nil)
+
+	// Lookup must still succeed even though the live record was
+	// released — otherwise the download poller would orphan our own
+	// late round-trips on long high-fpm runs.
+	if !s.HasUploadByFilenameID("oldmarker001") {
+		t.Error("HasUploadByFilenameID lost the marker after flush — late round-trips would now orphan")
+	}
+	if !s.HasUploadByBasename("early_slt_oldmarker001_.csv") {
+		t.Error("HasUploadByBasename lost the basename after flush")
+	}
+}
+
 func TestStore_AttachDownloadByFilenameID_RoundTrip(t *testing.T) {
 	s := NewStore()
 	now := time.Now()
