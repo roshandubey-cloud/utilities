@@ -1,0 +1,91 @@
+# sftp-loadtest
+
+> Multi-protocol load testing for SFTP, FTP, and FTPS. Single-binary CLI/server plus a native desktop app, sharing one engine. Real files, multi-worker SSH fan-out, optional SHA-256 round-trip byte verification, streaming CSV + JSON reports.
+
+sftp-loadtest exercises file-transfer servers under realistic operator workloads. It uploads files (synthetic random bytes or real source files from disk) at a configured files-per-minute rate, optionally polls for the server's processing-suffix rename (`foo.txt` → `foo.txt#<trackid>`), then optionally pulls the processed file back through a download phase and matches it to the upload by track-id or by filename pattern. Per-file CSV plus per-run JSON metadata stream to disk as the run progresses, so memory stays flat over 24-hour tests.
+
+Use it when your workload is SFTP / FTP / FTPS file transfer with a server-side processing step — typical of Managed File Transfer (MFT) platforms, EDI gateways, partner-onboarding pipelines, and any setup where the server renames-then-moves processed files.
+
+Do **not** use it for HTTP, gRPC, WebSocket, or database load — k6, Locust, vegeta, JMeter cover those domains and this tool does not.
+
+## Documentation
+
+- [README](https://github.com/roshandubey-cloud/utilities/blob/main/sftp-loadtest/README.md): overview, screenshots, feature tour, comparison vs JMeter / k6 / Locust, quick start, CLI flags, server requirements.
+- [How-to guide](https://github.com/roshandubey-cloud/utilities/blob/main/sftp-loadtest/docs/howto.md): ten step-by-step walkthroughs (first-time setup, SSH key auth, scheduling, cluster fan-out, real-files end-to-end).
+- [Security model](https://github.com/roshandubey-cloud/utilities/blob/main/sftp-loadtest/docs/security.md): SSH host-key TOFU, FTPS leaf-cert pinning, password handling, threat model.
+- [Tutorials directory](https://github.com/roshandubey-cloud/utilities/tree/main/sftp-loadtest/docs/tutorials): six production-ready scripts with timestamps and exact UI actions.
+- [CHANGELOG](https://github.com/roshandubey-cloud/utilities/blob/main/sftp-loadtest/CHANGELOG.md): every release documented; v0.19.0 is current (2026-05-04).
+- [Sample config](https://github.com/roshandubey-cloud/utilities/blob/main/sftp-loadtest/examples/sample-50users.json): a complete `/api/start` body for a 50-user run.
+
+## HTTP API (CLI/server SKU)
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /healthz` | liveness — `{status, uptime_sec, active_run, active_run_id}` |
+| `GET /api/host` | one-shot host capacity (CPU, RAM, FD limit, NICs) |
+| `GET /api/status` | live run state, metrics, error counts, disabled users, FD-in-use |
+| `GET /api/runs` | history — both live (in-memory) and historical (on-disk) runs |
+| `POST /api/start` | start a run with a JSON config |
+| `POST /api/stop` | stop the active run |
+| `GET /api/report.csv?run=<id>` | streaming CSV download (live or historical) |
+| `POST /api/probe` | TCP / SSH / SFTP / folder-list pre-flight check |
+| `POST /api/schedule` | queue a future run |
+| `GET /api/schedules` | list pending schedules |
+| `POST /api/schedule/cancel?id=<id>` | cancel a pending schedule |
+| `POST /api/cluster/start` | fan-out a single config across N worker URLs |
+
+Default bind: `127.0.0.1:8080`. SSH-tunnel for remote access (`ssh -L 8080:localhost:8080 user@host`). No web-UI authentication shipped; front with nginx / Caddy basic-auth for multi-tenant.
+
+## Authentication to the target server
+
+- **SFTP**: password (per-user CSV row) or SSH public-key (one PEM applied to all users in the run; per-user keys are a v2 follow-up). Host-key TOFU is **on by default** — first connection captures the SHA-256 fingerprint, subsequent connections refuse on mismatch.
+- **FTP**: password only (protocol is plaintext; prefer FTPS for non-lab use).
+- **FTPS**: password + leaf-certificate fingerprint capture. UI consent prompt for first-trust is a v2 follow-up; the "Trust self-signed cert" toggle covers lab use today.
+
+## Server contract for round-trip mode
+
+For the round-trip story to work, the target server must:
+
+1. Append `#<trackid>` to each processed file's name (anywhere in the upload folder).
+2. Place the processed file in the configured download folder (e.g. `outbox`).
+
+Without this, uploads will succeed but the download phase sees nothing — the tool will not invent files.
+
+## Reports
+
+- **CSV** (one row per uploaded file): track-id, user, filename, upload-start/end, upload-bytes, processing-time-min, download-start/end, download-bytes, latency-ms, error-code, optional SHA-256 hash (upload and download legs).
+- **JSON** (one object per run): `total_files`, `total_bytes`, `overall_mbps`, `peak_window_mbps`, `failed_files`, `dispatch_skips`, `latency.upload.{p50,p95,p99,p99_9}_ns`, `stop_reason` (`duration` / `user` / `speed-floor` / `max-failures`), `concurrent_runs_at_peak`, `host_capacity` (CPU, RAM, FD limit), `suggestions` (narrative).
+
+## Alerting
+
+Slack, generic webhook, and SMTP alerts on configurable triggers: failure count, p99 ms, error rate %, dispatch skips, hash mismatch, speed-floor stop. Configured per run; alerts fire from the runner, not from a separate agent.
+
+## Limitations
+
+- Single concurrent run per process — run multiple processes on different ports, or use Cluster fan-out for true parallelism.
+- Per-user SSH keys: one PEM is shared across all users (v2 follow-up).
+- No SSH-agent integration — paste a PEM, no socket-based forwarding.
+- FTPS cert TOFU: fingerprint capture today, UI consent prompt is v2.
+- S3, WebDAV, HTTP transports: not supported (use the right tool).
+
+## Performance posture (v0.19.0)
+
+- Pipelined SFTP writes (`pkg/sftp` opened with `UseConcurrentWrites(true)`) — estimated 2–5× per-file throughput on long-haul links where round-trip time was the binding constraint pre-v0.19; localhost mocks won't show much because RTT is sub-microsecond.
+- CSV stream writer batches flushes (`WriteRowsBatch` cuts flush syscalls 50–150× during high-fpm windows).
+- `LocalDisk` sink wraps the file with a 1 MiB `bufio.Writer` (1.1 M syscalls → ~36 k over a 36 GB/hour persistence run).
+
+## Form factors
+
+- **webui SKU**: single CLI binary, hosts the web UI on a TCP port. For lab racks, CI, long-running scheduled tests, server installs.
+- **desktop-app SKU** (Wails-based): native macOS / Linux / Windows window, no allocated port. For client laptops, ad-hoc tests, shipping to non-technical users.
+
+Both share the same load engine, UI, security model, and CSV report format. Released in lockstep — every tagged release contains both.
+
+## Releases
+
+Pre-built binaries for macOS (Apple Silicon, Intel), Linux (amd64, arm64), Windows (amd64). Each download is a single binary or single `.app` bundle; URLs follow the `releases/latest/download/<asset>` pattern so README links self-update.
+
+- [Latest release](https://github.com/roshandubey-cloud/utilities/releases/latest)
+- [All releases](https://github.com/roshandubey-cloud/utilities/releases)
+- License: MIT
+- Source: [github.com/roshandubey-cloud/utilities/tree/main/sftp-loadtest](https://github.com/roshandubey-cloud/utilities/tree/main/sftp-loadtest)
