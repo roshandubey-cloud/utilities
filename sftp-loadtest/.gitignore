@@ -11,3 +11,8 @@ e2e/schedules/
 # Build output
 dist/
 .bin/
+
+# Local dev binaries — CI builds the real release artifacts via wails on tag push.
+/desktop
+/cmd/desktop/desktop
+/cmd/desktop/build/bin/
