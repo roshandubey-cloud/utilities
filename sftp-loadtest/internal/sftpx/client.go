@@ -428,10 +428,27 @@ func DialWithOpts(host string, port int, user, pass string, opts DialOpts) (*Cli
 			return nil, fmt.Errorf("ssh dial %s: %w", addr, err)
 		}
 	}
-	// Use pkg/sftp defaults everywhere — no packet-size tuning, no concurrency
-	// overrides. Servers that advertise a 32 KiB max-packet limit drop connections
-	// when we push bigger frames, so staying on defaults is the compatible choice.
-	sc, err := sftp.NewClient(sshc)
+	// v0.19.0 — enable pipelined writes. pkg/sftp's default behaviour
+	// is to ack each WRITE packet before sending the next, which makes
+	// per-file throughput round-trip-bound on any non-trivial latency
+	// (the partner's library doc itself says "not using them will
+	// degrade performance"). Pipelining sends multiple write requests
+	// without waiting per-ack — 2-5x per-file throughput on long-haul
+	// links, no behaviour change on localhost.
+	//
+	// Safety in our setting: pkg/sftp warns "if you receive an error
+	// during io.Copy you may need to Truncate the target". We don't —
+	// failed uploads are already marked Incomplete with a stable
+	// ErrorCode and never read back as authoritative; if a partner
+	// renames a partial file (rare), the optional SHA-256 round-trip
+	// verifier correctly detects it as HASH_MISMATCH (the right
+	// outcome).
+	//
+	// Packet size and per-file concurrency stay on pkg/sftp defaults
+	// (32 KiB / 64 in-flight requests). Some servers cap at 32 KiB; we
+	// don't probe the cap automatically yet, so leave room for a future
+	// quirk-profile knob to bump it on modern OpenSSH.
+	sc, err := sftp.NewClient(sshc, sftp.UseConcurrentWrites(true))
 	if err != nil {
 		sshc.Close()
 		return nil, fmt.Errorf("sftp open: %w", err)

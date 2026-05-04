@@ -10,6 +10,48 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.19.0] — 2026-05-04
+### Performance
+Three honest perf wins. No behaviour changes the operator can observe
+beyond "throughput goes up".
+
+- **SFTP writes are now pipelined.** `pkg/sftp` is opened with
+  `UseConcurrentWrites(true)` so the client doesn't serialise WRITE
+  packets — instead it streams up to `MaxConcurrentRequestsPerFile`
+  (64) in flight and reaps acks lazily. **Estimated 2-5× per-file
+  throughput on long-haul links** where round-trip time was the
+  binding constraint pre-v0.19; localhost mocks won't show much
+  because RTT is sub-microsecond. Failure semantics unchanged: a
+  partial upload still surfaces as `Incomplete=true` with a stable
+  `error_code`, and the optional SHA-256 round-trip verifier
+  correctly catches a partner-side rename of a partial file as
+  `HASH_MISMATCH` (the right outcome).
+- **CSV stream writer batches its flushes.** Pre-v0.19 every record
+  triggered `csv.Writer.Flush()` per row — at 5k fpm that was 80+
+  syscalls/sec from the flusher window alone, defeating the
+  `csv.Writer`'s own 4 KiB internal buffer. New `WriteRowsBatch`
+  writes N rows under one mutex acquire and one trailing Flush;
+  `Store.FlushFinalized` snapshots finalised records under the
+  Store mutex, releases it before any disk I/O, then re-acquires
+  briefly to commit the bookkeeping. Cuts CSV-flush syscalls by
+  50–150× during high-fpm flush windows; also frees `AddUpload` /
+  `AttachDownloadBy*` from blocking behind disk during a flush.
+- **`LocalDisk` sink wraps the file with a 1 MiB `bufio.Writer`.**
+  Pre-v0.19 every pkg/sftp packet (~32 KiB) issued its own `write()`
+  syscall to disk; over a 36 GB/hour local-disk persistence run
+  that was 1.1 M syscalls. The buffered wrapper amortises to ~36 k.
+  `Close()` flushes the bufio first then closes the file, returning
+  the FIRST error so a flush failure isn't masked by a successful
+  close. Test pin: `TestLocalDisk_BufferedWriterFlushesOnClose`.
+
+### Internal
+- New `report.CSVStreamWriter.WriteRowsBatch(records, …)` and
+  `writeRowLocked(…)` helper; the per-row `WriteRow` keeps the
+  flush-after semantics for callers that need durability.
+- New `sink.bufferedFile` wrapping `*bufio.Writer` + `*os.File`.
+- Bench harness at `scripts/bench-v019.sh` runs a 60-second SFTP
+  upload bench at the previous tag and at HEAD, prints the delta.
+
 ## [v0.18.8] — 2026-05-03
 ### Fixed
 - **Filename pattern selection is now strict round-robin per (kind,

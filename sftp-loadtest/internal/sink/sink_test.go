@@ -52,6 +52,40 @@ func TestLocalDisk_TemplateRendersUserAndFilename(t *testing.T) {
 	}
 }
 
+// TestLocalDisk_BufferedWriterFlushesOnClose pins the v0.19.0
+// behaviour: the bufio.Writer wrapper must Flush before closing the
+// underlying file, otherwise the last sub-1MiB chunk is lost. Pre-
+// v0.19.0 returned the raw *os.File; this test would have been
+// trivial (no buffer). We assert all bytes survive Close even when
+// the write is well under the 1 MiB buffer.
+func TestLocalDisk_BufferedWriterFlushesOnClose(t *testing.T) {
+	root := t.TempDir()
+	s, err := NewLocalDisk(root, "{user}/{filename}", false)
+	if err != nil {
+		t.Fatalf("NewLocalDisk: %v", err)
+	}
+	w, err := s.Open(Request{User: "u1", Filename: "tail.bin"})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	// Write a payload smaller than the 1 MiB buffer. Without the
+	// Close() flush, this would be lost.
+	payload := []byte("the bytes you most need to survive Close")
+	if _, err := w.Write(payload); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(root, "u1", "tail.bin"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != string(payload) {
+		t.Errorf("post-close bytes lost — got %q want %q", got, payload)
+	}
+}
+
 // TestLocalDisk_DefaultTemplateIncludesRunID pins the v0.17.1 default
 // template upgrade: passing template="" now yields
 // "{run_id}/{user}/{filename}" so two concurrent runs writing to the

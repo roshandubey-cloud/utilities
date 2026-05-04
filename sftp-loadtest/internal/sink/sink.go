@@ -35,6 +35,7 @@
 package sink
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -144,7 +145,33 @@ func (l *LocalDisk) Open(req Request) (io.WriteCloser, error) {
 	if err != nil {
 		return nil, fmt.Errorf("local-disk: open %q: %w", full, err)
 	}
-	return f, nil
+	// v0.19.0 — wrap the file with a 1 MiB bufio.Writer so io.Copy
+	// from the SFTP read side amortises write() syscalls. Pre-v0.19
+	// every pkg/sftp packet (~32 KiB) hit disk as its own syscall;
+	// at 36 GB/hour that was 1.1M syscalls. The buffered wrapper cuts
+	// it to ~36k. Close() flushes the bufio before closing the file
+	// so partial bytes never get silently dropped.
+	return &bufferedFile{buf: bufio.NewWriterSize(f, 1<<20), file: f}, nil
+}
+
+// bufferedFile is a bufio-backed write-closer. Close flushes the
+// bufio writer first, then closes the underlying file. Returns the
+// FIRST error encountered so a buffered-flush failure isn't masked
+// by a successful file close.
+type bufferedFile struct {
+	buf  *bufio.Writer
+	file *os.File
+}
+
+func (b *bufferedFile) Write(p []byte) (int, error) { return b.buf.Write(p) }
+
+func (b *bufferedFile) Close() error {
+	flushErr := b.buf.Flush()
+	closeErr := b.file.Close()
+	if flushErr != nil {
+		return flushErr
+	}
+	return closeErr
 }
 
 // renderTemplate substitutes {var} placeholders. Both {var} and ${var}

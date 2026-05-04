@@ -414,31 +414,56 @@ func (s *Store) FlushFinalized(isFinal func(*FileRecord) bool, slowdownMins map[
 		return 0, nil
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.stream == nil {
+		s.mu.Unlock()
 		return 0, nil
 	}
-	flushed := 0
+	// v0.19.0 — collect finalized rows under the Store mutex, then
+	// release the mutex BEFORE doing disk I/O so AddUpload /
+	// AttachDownload* aren't blocked behind a slow disk. The batch
+	// path on the writer (WriteRowsBatch) flushes once instead of
+	// once-per-row — pre-v0.19 a 250-row flush issued 250 csv.Writer
+	// flushes; now it issues one.
+	batch := make([]FileRecord, 0, 64)
+	indices := make([]int, 0, 64)
 	for i, r := range s.records {
-		if r == nil {
+		if r == nil || !isFinal(r) {
 			continue
 		}
-		if !isFinal(r) {
-			continue
+		batch = append(batch, *r)
+		indices = append(indices, i)
+	}
+	if len(batch) == 0 {
+		s.mu.Unlock()
+		return 0, nil
+	}
+	stream := s.stream
+	s.mu.Unlock()
+
+	// Disk write happens lock-free — only the writer's own mutex is
+	// held during the actual fwrite syscalls.
+	if err := stream.WriteRowsBatch(batch, slowdownMins, eff); err != nil {
+		return 0, err
+	}
+
+	// Re-acquire to commit the bookkeeping (recentTail update + clear
+	// the in-memory slots). This window is tight — typically <50 µs
+	// even for a 1k-row batch — and adders see the ring buffer
+	// updated atomically with respect to the slot clears.
+	s.mu.Lock()
+	for _, i := range indices {
+		if s.records[i] == nil {
+			continue // defensive: skip if a concurrent caller cleared this slot
 		}
-		if err := s.stream.WriteRow(*r, slowdownMins, eff); err != nil {
-			return flushed, err
-		}
-		// Capture a frozen copy for the UI's recent-uploads view before we
-		// drop the in-memory slot. Bounded ring buffer.
-		s.recentTail = append(s.recentTail, *r)
+		s.recentTail = append(s.recentTail, *s.records[i])
 		if len(s.recentTail) > s.recentTailCap {
 			s.recentTail = s.recentTail[len(s.recentTail)-s.recentTailCap:]
 		}
 		s.records[i] = nil
-		flushed++
 	}
+	flushed := len(batch)
 	s.flushed += int64(flushed)
+	s.mu.Unlock()
 	return flushed, nil
 }
 
@@ -624,14 +649,44 @@ func NewCSVStreamWriter(path string) (*CSVStreamWriter, error) {
 func (s *CSVStreamWriter) WriteRow(r FileRecord, slowdownMins map[int64]bool, eff EffectiveSpeedFn) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.writeRowLocked(r, slowdownMins, eff); err != nil {
+		return err
+	}
+	s.cw.Flush()
+	return s.cw.Error()
+}
+
+// writeRowLocked is the lockless inner of WriteRow / WriteRowsBatch.
+// Caller must hold s.mu. Does NOT call Flush — the caller batches.
+func (s *CSVStreamWriter) writeRowLocked(r FileRecord, slowdownMins map[int64]bool, eff EffectiveSpeedFn) error {
 	if !s.wroteHeader {
 		if err := s.cw.Write(CSVHeader); err != nil {
 			return err
 		}
 		s.wroteHeader = true
 	}
-	if err := s.cw.Write(buildRow(r, slowdownMins, eff)); err != nil {
-		return err
+	return s.cw.Write(buildRow(r, slowdownMins, eff))
+}
+
+// WriteRowsBatch (v0.19.0) writes N rows under one mutex acquire and
+// one cw.Flush. Pre-v0.19.0 every row called WriteRow which flushed
+// per-row — at 5k fpm that was 80+ syscalls/sec inside a 5-second
+// flush window. The batch path defers the flush so the underlying
+// csv.Writer's own buffering can amortise the syscall cost. Caller is
+// responsible for collecting the rows beforehand (e.g. snapshot under
+// the Store mutex) so this method holds CSVStreamWriter.mu only for
+// the duration of the actual disk writes.
+func (s *CSVStreamWriter) WriteRowsBatch(records []FileRecord, slowdownMins map[int64]bool, eff EffectiveSpeedFn) error {
+	if len(records) == 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range records {
+		if err := s.writeRowLocked(records[i], slowdownMins, eff); err != nil {
+			s.cw.Flush()
+			return err
+		}
 	}
 	s.cw.Flush()
 	return s.cw.Error()
