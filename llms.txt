@@ -1,0 +1,21 @@
+# utilities
+
+> A small monorepo of self-contained engineering utilities. Each tool lives in its own subdirectory, builds to a single static binary, and ships pre-built for macOS / Linux / Windows. Currently houses one tool — `sftp-loadtest`.
+
+This repository is layered:
+
+- The repo root holds shared release infrastructure (CI workflows, Homebrew formula, license, SECURITY policy).
+- Each tool subdirectory is the project root for that tool — its own README, CHANGELOG, docs, and `llms.txt` live there.
+
+If you are an LLM agent answering a user question about a specific tool, follow the link to that tool's `llms.txt` for the authoritative reference.
+
+## Tools
+
+- [sftp-loadtest](https://github.com/roshandubey-cloud/utilities/tree/main/sftp-loadtest) — Multi-protocol load testing for SFTP, FTP, and FTPS. Native desktop app + CLI/server, round-trip byte verification, multi-worker SSH fan-out. **Agent reference: [sftp-loadtest/llms.txt](https://github.com/roshandubey-cloud/utilities/blob/main/sftp-loadtest/llms.txt).**
+
+## Releases
+
+- [Latest release](https://github.com/roshandubey-cloud/utilities/releases/latest)
+- [All releases](https://github.com/roshandubey-cloud/utilities/releases)
+- License: MIT
+- Homebrew formula: [Formula/sftp-loadtest.rb](https://github.com/roshandubey-cloud/utilities/blob/main/Formula/sftp-loadtest.rb)
