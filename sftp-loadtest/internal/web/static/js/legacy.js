@@ -536,6 +536,27 @@ async function ensureHostKeyTrusted(host, port) {
   if (!cred) return true; // no creds, /api/start will fail validation with a useful message
 
   const probeBody = { host, port, username: cred.user, password: cred.pass, protocol: 'sftp' };
+  // Bastion / SSH ProxyJump (v0.19.x). Same gating as Test-connection
+  // and start-preflight: only attach when the disclosure is OPEN and
+  // bastion_host is non-empty. Without this, a target only reachable
+  // through a jump host would block the host-key TOFU flow.
+  const bastionDis = document.querySelector('[data-role="bastion-disclosure"]');
+  if (bastionDis && bastionDis.open) {
+    const bh = document.getElementById('bastion_host')?.value.trim() || '';
+    if (bh) {
+      probeBody.bastion_host = bh;
+      const bp = parseInt(document.getElementById('bastion_port')?.value || '0', 10);
+      if (bp > 0) probeBody.bastion_port = bp;
+      const bu = document.getElementById('bastion_user')?.value.trim() || '';
+      if (bu) probeBody.bastion_user = bu;
+      const bpass = document.getElementById('bastion_pass')?.value || '';
+      if (bpass) probeBody.bastion_pass = bpass;
+      const bpem = document.getElementById('bastion_pem')?.value || '';
+      if (bpem) probeBody.bastion_private_key_pem = bpem;
+      const bphr = document.getElementById('bastion_passphrase')?.value || '';
+      if (bphr) probeBody.bastion_passphrase = bphr;
+    }
+  }
   let r;
   try {
     r = await (await apiFetch('/api/probe', {

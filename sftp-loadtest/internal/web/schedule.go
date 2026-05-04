@@ -197,7 +197,19 @@ func (s *Server) handleScheduleCreate(w http.ResponseWriter, r *http.Request) {
 	if s.getHostKeyStore() != nil || s.getKnownHostsPath() != "" {
 		creds := firstStartCredential(req.Cfg)
 		if creds.user != "" && req.Cfg.Host != "" && req.Cfg.Port > 0 {
-			if pre := s.preflightHostKey(req.Cfg.Host, req.Cfg.Port, creds.user, creds.pass, nil); pre != nil {
+			// Bastion / SSH ProxyJump (v0.19.x). Same reasoning as the
+			// /api/start preflight — schedules fire hours later with no
+			// operator around, so the host-key consent must clear *now*
+			// against the same wiring (bastion + target) the run will use.
+			var preBastion *bastionPreflight
+			if req.Cfg.BastionHost != "" {
+				preBastion = &bastionPreflight{
+					Host: req.Cfg.BastionHost, Port: req.Cfg.BastionPort,
+					User: req.Cfg.BastionUser, Pass: req.Cfg.BastionPass,
+					PrivateKeyPEM: req.Cfg.BastionPrivateKeyPEM, Passphrase: req.Cfg.BastionPassphrase,
+				}
+			}
+			if pre := s.preflightHostKey(req.Cfg.Host, req.Cfg.Port, creds.user, creds.pass, nil, preBastion); pre != nil {
 				writeJSON(w, pre)
 				return
 			}

@@ -40,13 +40,22 @@ type Config struct {
 	HostKeyCallback ssh.HostKeyCallback
 }
 
+// keepaliveInterval is how often the bastion sends an out-of-band
+// keepalive request so middleboxes / NAT timers don't silently
+// idle-close the single TCP that every forwarded target channel
+// rides. Mirrors the target sftpx.Client cadence — corporate
+// network proxies typically idle-close at 5–15 min, so 30 s is
+// well inside the safety margin.
+const keepaliveInterval = 30 * time.Second
+
 // Client is an opened bastion SSH session. Dial wires its
 // ssh.Client.Dial as the underlying transport for SFTP target dials;
 // Close terminates the bastion session (target dials done through it
 // continue working until they Close themselves — Go's ssh stack
 // multiplexes channels over the single TCP).
 type Client struct {
-	c *ssh.Client
+	c      *ssh.Client
+	stopCh chan struct{}
 }
 
 // Open dials the bastion and authenticates. Returns a Client that can
@@ -91,7 +100,33 @@ func Open(cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("bastion dial %s: %w", addr, err)
 	}
-	return &Client{c: c}, nil
+	bc := &Client{c: c, stopCh: make(chan struct{})}
+	go bc.keepalive()
+	return bc, nil
+}
+
+// keepalive sends out-of-band keepalive requests every keepaliveInterval
+// so the bastion's single TCP doesn't get silently closed by NAT
+// idle-timeout or a middlebox while the runner is between dials. Exits
+// the first time the server fails to reply — every forwarded channel
+// will then EOF on next read and the runner will see surfaced errors
+// instead of hanging on a half-open connection.
+func (b *Client) keepalive() {
+	t := time.NewTicker(keepaliveInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-b.stopCh:
+			return
+		case <-t.C:
+			if b == nil || b.c == nil {
+				return
+			}
+			if _, _, err := b.c.SendRequest("keepalive@openssh.com", true, nil); err != nil {
+				return
+			}
+		}
+	}
 }
 
 // Dialer returns a function with the same signature as net.Dial that
@@ -109,10 +144,20 @@ func (b *Client) Dialer() func(network, addr string) (net.Conn, error) {
 }
 
 // Close terminates the bastion SSH session. Forwarded channels still
-// in use will receive EOF on their next read. Idempotent.
+// in use will receive EOF on their next read. Stops the keepalive
+// goroutine. Idempotent — safe to call from teardown paths that may
+// double-fire on cancel + run-end.
 func (b *Client) Close() error {
 	if b == nil || b.c == nil {
 		return nil
+	}
+	if b.stopCh != nil {
+		select {
+		case <-b.stopCh:
+			// already closed
+		default:
+			close(b.stopCh)
+		}
 	}
 	err := b.c.Close()
 	b.c = nil

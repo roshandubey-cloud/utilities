@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/bastion"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/config"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/hostinfo"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/hostkeys"
@@ -278,6 +279,19 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 		TLSMode               string `json:"tls_mode"`
 		TLSInsecureSkipVerify bool   `json:"tls_insecure_skip_verify"`
 		TLSServerName         string `json:"tls_server_name"`
+
+		// Bastion / SSH ProxyJump (v0.19.x). When BastionHost is set
+		// AND protocol resolves to SFTP, the probe opens a bastion
+		// session and tunnels the target SSH dial through it — same
+		// wiring the runner uses, so the operator validates bastion
+		// auth + reachability without starting a real run. Ignored on
+		// FTP/FTPS (the runner rejects bastion + non-SFTP combos).
+		BastionHost              string `json:"bastion_host,omitempty"`
+		BastionPort              int    `json:"bastion_port,omitempty"`
+		BastionUser              string `json:"bastion_user,omitempty"`
+		BastionPass              string `json:"bastion_pass,omitempty"`
+		BastionPrivateKeyPEM     string `json:"bastion_private_key_pem,omitempty"`
+		BastionPassphrase        string `json:"bastion_passphrase,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -429,6 +443,47 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 		}
 		dialOpts.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
 	}
+
+	// Bastion / SSH ProxyJump (v0.19.x). When BastionHost is set, open
+	// the jump session up front and tunnel the target SSH dial through
+	// it. Mirrors the runner's bastion path so the operator validates
+	// jump-host creds + reachability before starting a real run. Bastion
+	// is SFTP-only on the runner side; we mirror that here so an FTP/FTPS
+	// probe with bastion fields surfaces a clear "not supported" error
+	// instead of silently ignoring them.
+	if req.BastionHost != "" {
+		if proto != protocol.SFTP {
+			out["stage"] = "bastion"
+			out["error"] = "bastion / SSH ProxyJump is only supported for SFTP"
+			writeJSON(w, out)
+			return
+		}
+		bcfg := bastion.Config{
+			Host:            req.BastionHost,
+			Port:            req.BastionPort,
+			User:            req.BastionUser,
+			Pass:            req.BastionPass,
+			Passphrase:      req.BastionPassphrase,
+			HostKeyCallback: sftpx.CurrentCallback(),
+		}
+		if req.BastionPrivateKeyPEM != "" {
+			bcfg.PrivateKey = []byte(req.BastionPrivateKeyPEM)
+		}
+		bc, berr := bastion.Open(bcfg)
+		if berr != nil {
+			log.Printf("probe %s: bastion: %v", addr, berr)
+			out["stage"] = "bastion"
+			out["error"] = "bastion: " + berr.Error()
+			writeJSON(w, out)
+			return
+		}
+		// Close the bastion session as soon as the probe returns; the
+		// target SFTP client below opens its own forwarded channel and
+		// will tear down cleanly when its Close is called.
+		defer bc.Close()
+		dialOpts.BastionDialer = bc.Dialer()
+	}
+
 	c, err := sftpx.DialWithOpts(req.Host, req.Port, req.Username, req.Password, dialOpts)
 	if err != nil {
 		log.Printf("probe %s user=%s: ssh: %v", addr, req.Username, err)
@@ -1511,7 +1566,21 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 					preAuth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
 				}
 			}
-			if pre := s.preflightHostKey(req.Host, req.Port, creds.user, creds.pass, preAuth); pre != nil {
+			// Bastion / SSH ProxyJump (v0.19.x). When the run is configured
+			// with a bastion, the preflight must traverse it too — a direct
+			// dial to a target only reachable via the jump host would TCP-fail
+			// and the consent prompt would never fire. Pass the same fields
+			// the run will use; preflightHostKey opens the bastion, dials,
+			// closes both ends so this is an end-to-end pin of the wiring.
+			var preBastion *bastionPreflight
+			if req.BastionHost != "" && preflightProto == protocol.SFTP {
+				preBastion = &bastionPreflight{
+					Host: req.BastionHost, Port: req.BastionPort,
+					User: req.BastionUser, Pass: req.BastionPass,
+					PrivateKeyPEM: req.BastionPrivateKeyPEM, Passphrase: req.BastionPassphrase,
+				}
+			}
+			if pre := s.preflightHostKey(req.Host, req.Port, creds.user, creds.pass, preAuth, preBastion); pre != nil {
 				writeJSON(w, pre)
 				return
 			}
@@ -1642,6 +1711,18 @@ func (s *Server) findActiveAtTarget(host string, port int) string {
 	return ""
 }
 
+// bastionPreflight carries the optional bastion fields through to
+// preflightHostKey when /api/start runs with a configured jump host.
+// nil = direct dial (legacy behaviour).
+type bastionPreflight struct {
+	Host          string
+	Port          int
+	User          string
+	Pass          string
+	PrivateKeyPEM string
+	Passphrase    string
+}
+
 // preflightHostKey runs a single capture-callback dial. Returns a non-nil
 // JSON payload only when the UI needs to show a consent prompt — unknown
 // host (requires_consent) or changed host key (requires_renewal). All other
@@ -1649,8 +1730,10 @@ func (s *Server) findActiveAtTarget(host string, port int) string {
 // run can start and propagate them as ordinary per-file failures.
 //
 // Mode selection mirrors handleProbe: store-mode when SetHostKeyStore was
-// called, file-mode otherwise.
-func (s *Server) preflightHostKey(host string, port int, user, pass string, auth []ssh.AuthMethod) map[string]any {
+// called, file-mode otherwise. When bp is non-nil, the dial traverses the
+// bastion exactly like the run will — closes the bastion before returning
+// so this preflight has zero ongoing footprint.
+func (s *Server) preflightHostKey(host string, port int, user, pass string, auth []ssh.AuthMethod, bp *bastionPreflight) map[string]any {
 	var capturedFP, capturedPrev string
 	var capturedChanged bool
 	var dialOpts sftpx.DialOpts
@@ -1674,6 +1757,35 @@ func (s *Server) preflightHostKey(host string, port int, user, pass string, auth
 		dialOpts.HostKeyCallback = cb
 	} else {
 		return nil
+	}
+	// Bastion / SSH ProxyJump (v0.19.x). When the run is configured to
+	// use a jump host, the preflight must traverse it — otherwise a
+	// target only reachable through the bastion would TCP-fail here
+	// and the host-key consent prompt would never fire on /api/start.
+	// Open it, hand the dialer to sftpx, close it before returning so
+	// the preflight leaves no SSH session behind.
+	if bp != nil && bp.Host != "" {
+		bcfg := bastion.Config{
+			Host:            bp.Host,
+			Port:            bp.Port,
+			User:            bp.User,
+			Pass:            bp.Pass,
+			Passphrase:      bp.Passphrase,
+			HostKeyCallback: sftpx.CurrentCallback(),
+		}
+		if bp.PrivateKeyPEM != "" {
+			bcfg.PrivateKey = []byte(bp.PrivateKeyPEM)
+		}
+		bc, berr := bastion.Open(bcfg)
+		if berr != nil {
+			log.Printf("start preflight bastion %s: %v", bp.Host, berr)
+			// Treat bastion failure as tolerable here — the run will
+			// fail loudly with the same error and the operator sees it
+			// in /api/start's response.
+			return nil
+		}
+		defer bc.Close()
+		dialOpts.BastionDialer = bc.Dialer()
 	}
 	c, err := sftpx.DialWithOpts(host, port, user, pass, dialOpts)
 	if err == nil {

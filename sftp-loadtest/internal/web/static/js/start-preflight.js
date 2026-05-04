@@ -85,6 +85,30 @@ async function onStartClick(ev) {
       protocol: 'sftp',
       trust_on_first_use: true,
     };
+    // Bastion / SSH ProxyJump (v0.19.x). When the operator has a
+    // bastion configured, the target SFTP server is typically only
+    // reachable through it — a direct probe would fail with "SSH dial"
+    // and block Start before the run ever fires. Thread the same
+    // bastion fields the run will use so the host-key TOFU dial
+    // traverses the jump host. Disclosure-open gating mirrors the
+    // Test-connection button.
+    const bastionDis = document.querySelector('[data-role="bastion-disclosure"]');
+    if (bastionDis && bastionDis.open) {
+      const bh = document.getElementById('bastion_host')?.value.trim() || '';
+      if (bh) {
+        probeBody.bastion_host = bh;
+        const bp = parseInt(document.getElementById('bastion_port')?.value || '0', 10);
+        if (bp > 0) probeBody.bastion_port = bp;
+        const bu = document.getElementById('bastion_user')?.value.trim() || '';
+        if (bu) probeBody.bastion_user = bu;
+        const bpass = document.getElementById('bastion_pass')?.value || '';
+        if (bpass) probeBody.bastion_pass = bpass;
+        const bpem = document.getElementById('bastion_pem')?.value || '';
+        if (bpem) probeBody.bastion_private_key_pem = bpem;
+        const bphr = document.getElementById('bastion_passphrase')?.value || '';
+        if (bphr) probeBody.bastion_passphrase = bphr;
+      }
+    }
     const res = await apiPostJSON('/api/probe', probeBody);
     if (res.ok) {
       cleared.add(key);

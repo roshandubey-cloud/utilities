@@ -10,6 +10,55 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.19.1] — 2026-05-04
+### Bastion / SSH ProxyJump — wired end-to-end
+The runtime path for bastion was correct in v0.16.0, but four UI / API
+seams were dialing direct, so an operator with a jump host configured
+saw confusing "TCP refused" errors when they clicked Test connection
+or Start. All four are now wired through the same bastion the runner
+will use, so the operator validates jump-host reachability + auth +
+host-key consent without starting a real load.
+
+- **Test connection** (UI button) — `connection.js` now attaches all
+  six bastion fields (host, port, user, pass, PEM, passphrase) when
+  the disclosure is open and `bastion_host` is non-empty.
+- **Start preflight** (UI guard before `/api/start`) — `start-preflight.js`
+  threads the same fields so the host-key TOFU dial traverses the
+  bastion. Targets reachable only via jump host no longer block Start.
+- **Legacy ensureHostKeyTrusted** — same fix in `legacy.js` for the
+  fallback path that drives the consent prompt outside the new
+  preflight flow.
+- **`/api/probe`** — the server-side handler accepts six new optional
+  fields (`bastion_host`, `bastion_port`, `bastion_user`, `bastion_pass`,
+  `bastion_private_key_pem`, `bastion_passphrase`). When set AND the
+  protocol resolves to SFTP, the probe opens the bastion, dials the
+  target through it, and closes both ends — same wiring as a run.
+  FTP/FTPS + bastion surfaces a clear `bastion: only supported for sftp`
+  error instead of a silent direct-dial fallback.
+- **`/api/start` preflightHostKey + `/api/schedule` preflight** — both
+  now accept a `*bastionPreflight` and traverse the jump host so a
+  schedule firing hours later doesn't silently fail at TOFU time.
+
+### Bastion runtime hardening
+- **Keepalive on the bastion's own SSH session.** Mirrors the target
+  `sftpx.Client` cadence — every 30 s an out-of-band
+  `keepalive@openssh.com` request keeps the single TCP alive across
+  middlebox idle-timeouts (corporate network proxies typically idle-
+  close at 5–15 min). Pre-v0.19.1 a quiet bastion would silently
+  close mid-run, taking every forwarded target channel with it. The
+  goroutine exits cleanly on `Close()`; idempotent stop channel.
+- **Integration test pinning the happy path.** New
+  `TestBastion_ConcurrentSFTPThroughBastion` stands up an in-process
+  SSH bastion (accepts password auth, forwards `direct-tcpip` channels
+  to a real `mocksftp.Server`) and opens 8 concurrent SFTP sessions
+  through one `bastion.Client`. Each goroutine writes a unique 4 KiB
+  payload and the test asserts every dial + upload succeeds. Failure
+  modes the test catches: dialer not concurrent-safe (would hang),
+  nil dialer reaching `sftpx`, target SSH handshake breaking through
+  the multiplexed channel, byte garbling from shared per-channel
+  state. Pre-v0.19.1 the bastion package only tested error paths;
+  this is the first runtime pin of the wiring.
+
 ## [v0.19.0] — 2026-05-04
 ### Performance
 Three honest perf wins. No behaviour changes the operator can observe

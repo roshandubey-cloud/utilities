@@ -434,6 +434,31 @@ export function mountConnectionCard(rootSelector) {
         if (privateKeyPassEl && privateKeyPassEl.value) body.passphrase = privateKeyPassEl.value;
       }
 
+      // Bastion / SSH ProxyJump: only attach when the disclosure is OPEN
+      // and the bastion host is non-empty. Same gating as private-key —
+      // a closed disclosure with stale text in it must NOT silently
+      // route the probe through a stale bastion. The runner SFTP-only
+      // gate is mirrored server-side; we still send fields if protocol
+      // is SFTP so the operator gets a usable "bastion: ..." stage error
+      // rather than a silent direct-dial fallback.
+      const bastionDis = document.querySelector('[data-role="bastion-disclosure"]');
+      if (bastionDis && bastionDis.open) {
+        const bh = document.getElementById('bastion_host')?.value.trim() || '';
+        if (bh) {
+          body.bastion_host = bh;
+          const bp = parseInt(document.getElementById('bastion_port')?.value || '0', 10);
+          if (bp > 0) body.bastion_port = bp;
+          const bu = document.getElementById('bastion_user')?.value.trim() || '';
+          if (bu) body.bastion_user = bu;
+          const bpass = document.getElementById('bastion_pass')?.value || '';
+          if (bpass) body.bastion_pass = bpass;
+          const bpem = document.getElementById('bastion_pem')?.value || '';
+          if (bpem) body.bastion_private_key_pem = bpem;
+          const bphr = document.getElementById('bastion_passphrase')?.value || '';
+          if (bphr) body.bastion_passphrase = bphr;
+        }
+      }
+
       const reply = await apiPostJSON('/api/probe', body);
       if (reply.ok) {
         setOk(reply, host);
