@@ -69,6 +69,24 @@ Walk-through scripts (production-ready storyboards with timestamps, exact UI act
 | **Saved connections** | Curated host:port:user (and optionally password) entries. The sidebar Connections section keeps these above the auto-tracked recents; click any row to refill all four credential fields in one shot. |
 | **Theme switcher** | Three-state segmented control on the topbar: Auto follows the OS, Light and Dark force the theme via `<html data-theme>`. The choice persists across reloads. |
 
+## How it compares
+
+Most general-purpose load testers are HTTP-first; SFTP / FTP / FTPS
+have been a long-running gap. The honest landscape:
+
+| Tool | Native SFTP | Native FTP / FTPS | Round-trip byte verify | Multi-worker fan-out | Form factor |
+|---|---|---|---|---|---|
+| **sftp-loadtest** | ✅ via `pkg/sftp` | ✅ Explicit + Implicit FTPS | ✅ SHA-256 streaming both legs | ✅ SSH bootstrap, no agent install | Single binary + native desktop app |
+| JMeter | via plugin (limited) | via plugin | ❌ | ✅ (distributed mode) | JVM, GUI / CLI |
+| k6 | ❌ (HTTP / gRPC / WS) | ❌ | n/a | ✅ (k6 Cloud) | JS scripting |
+| Locust | ❌ (HTTP via requests) | ❌ | n/a | ✅ (master/worker) | Python scripting |
+| Custom script (paramiko, jsch, lftp) | ✅ | ✅ | DIY | DIY | hand-rolled |
+
+If your workload is HTTP, use k6 or Locust. If it's file transfer
+against an MFT / SFTP server with a server-side processing step
+(rename, suffix, move-to-outbox), this is what the round-trip
+match + processing-time capture were built for.
+
 ## Quick start
 
 > **Need a step-by-step?** See [docs/howto.md](docs/howto.md) for ten flow walkthroughs (first-time setup, SSH key auth, scheduling, cluster fan-out, …).
