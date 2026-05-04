@@ -40,3 +40,7 @@ go.work.sum
 # auto-generated frontend bindings are not.
 **/cmd/desktop/build/bin/
 **/cmd/desktop/frontend/wailsjs/
+
+# Playwright e2e runner artifacts — created when the suite runs.
+test-results/
+playwright-report/
