@@ -714,8 +714,9 @@ type Run struct {
 	// (closeListClients below) unblocks List() with an EOF and lets
 	// workers exit promptly. Map keyed by download user; entries are
 	// added in ensureList and removed on dropList / shutdown.
-	listClientsMu sync.Mutex
-	listClients   map[string]protocol.Conn
+	listClientsMu      sync.Mutex
+	listClients        map[string]protocol.Conn
+	listClientsClosed  bool // set by closeListClients so a late ensureList refuses to register
 
 	// DispatchSkips counts ticks where the semaphore was full and we had to
 	// skip an upload. Surfaces capacity bottlenecks to the UI.
@@ -1453,6 +1454,7 @@ func (r *Run) closeListClients() {
 		clients = append(clients, c)
 	}
 	r.listClients = map[string]protocol.Conn{}
+	r.listClientsClosed = true // refuse late registrations from ensureList
 	r.listClientsMu.Unlock()
 	for _, c := range clients {
 		_ = c.Close()
@@ -1584,7 +1586,18 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 		// can unblock a stuck List() call during shutdown. Saw 8 h-run
 		// hang where workers couldn't observe ctx.Done() between ticks
 		// because List() was taking minutes against a saturated server.
+		// Race-safe: if closeListClients ran in the tiny window between
+		// our successful Dial and this registration, listClientsClosed
+		// will be set, and we close the just-dialed client immediately
+		// instead of leaving it dangling. Worker's next select sees
+		// ctx.Done and returns.
 		r.listClientsMu.Lock()
+		if r.listClientsClosed {
+			r.listClientsMu.Unlock()
+			c.Close()
+			listClient = nil
+			return nil, errors.New("runner shutting down")
+		}
 		r.listClients[u.Username] = c
 		r.listClientsMu.Unlock()
 		return listClient, nil
@@ -1752,18 +1765,29 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 			// Attribute back to the originating upload row. Trackid mode
 			// matches by basename (after stripping "#<id>"); filename
 			// mode looks the marker up directly. In either path, a
-			// miss means the server delivered a file we did not
-			// upload — count it as orphan and move on.
+			// miss after the v0.19.2 ownership gate normally only
+			// happens when the record's grace window expired and it
+			// was sealed to disk before the round-trip arrived — a
+			// late arrival the operator deliberately tolerates.
+			//
+			// v0.19.3 — make DownloadCompleted and DownloadOrphans
+			// mutually exclusive. Pre-fix, the legacy "if !attached
+			// orphan++; completed++" path counted late arrivals in
+			// BOTH metrics, inflating completed by ~2x in pathological
+			// runs (8 h post-mortem showed completed > total uploads).
+			// Now the file is counted exactly once: completed if it
+			// attached to an upload row, orphan if it didn't.
 			var attached bool
 			if filenameMode {
 				attached = r.Report.AttachDownloadByFilenameID(marker, result)
 			} else {
 				attached = r.Report.AttachDownloadByBasename(basename, result)
 			}
-			if !attached {
+			if attached {
+				r.DownloadCompleted.Add(1)
+			} else {
 				r.DownloadOrphans.Add(1)
 			}
-			r.DownloadCompleted.Add(1)
 		}
 	}
 }

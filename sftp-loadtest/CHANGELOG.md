@@ -10,6 +10,37 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.19.4] — 2026-05-05
+### Fixed — metric correctness + shutdown race
+Two follow-up fixes after the v0.19.3 pprof + 8 h post-mortem
+session. Both surfaced from a careful re-read of the runner shutdown
+sequence; both verified live with `go test -race ./...` (all 14
+packages clean) and a fresh 2-minute end-to-end run.
+
+- **`DownloadCompleted` was inflated by late-arrival round trips.**
+  The legacy `if !attached { orphans++ }; completed++` block always
+  incremented `DownloadCompleted` regardless of whether the file
+  attached to an upload row. On the v0.19.2 8 h run this manifested
+  as `download_completed` reaching ~2× the upload count, which was
+  metric noise on top of an already-degraded run. Now mutually
+  exclusive: `completed++` if the file attached, `orphans++` if it
+  didn't. Live verification: 5,550 uploads → completed/uploads ratio
+  held at perfect 1.0 throughout the run, 0 orphans.
+
+- **`ensureList` could register a fresh client AFTER
+  `closeListClients` ran during shutdown.** Tiny race window: a
+  worker's Dial completed just before `cancel()` triggered, then
+  `closeListClients` ran and cleared the registry, then the worker
+  registered the dangling client. New `listClientsClosed` flag set
+  by `closeListClients` makes a late-registering `ensureList` close
+  the just-dialed connection and return `runner shutting down`. The
+  worker's next select observes `ctx.Done()` and exits cleanly.
+
+### Verified
+- `go test -race ./...` — all 14 packages clean.
+- Live 2-minute SFTP run: 5,550 uploads, 0 failures, 0 orphans, 69.6
+  MB peak heap, p99 79 ms. Counter ratio perfect throughout.
+
 ## [v0.19.3] — 2026-05-05
 ### Fixed — heap growth + duration boundary
 Two real bugs surfaced by an 8-hour real-byte-flow run against an
