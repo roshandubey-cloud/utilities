@@ -485,14 +485,57 @@ func (s *Store) FlushFinalized(isFinal func(*FileRecord) bool, slowdownMins map[
 	// the in-memory slots). This window is tight — typically <50 µs
 	// even for a 1k-row batch — and adders see the ring buffer
 	// updated atomically with respect to the slot clears.
+	//
+	// v0.19.3 — also prune the byKey / byBasename / byFilenameID entries
+	// for records whose round-trip is settled (download attached OR
+	// upload failed cleanly with no download possible). pprof on an 8 h
+	// run showed AddUpload retaining ~600 B per record across these
+	// indices, ~91 MB at 152 k records. Pruning here cuts that to ~0
+	// for the dominant case (downloads succeeded). Late-arrival round
+	// trips for records that timed out without a download keep their
+	// indices through run-end (their entries are released only when
+	// records[idx] = nil and we never repopulate them either).
 	s.mu.Lock()
 	for _, i := range indices {
 		if s.records[i] == nil {
 			continue // defensive: skip if a concurrent caller cleared this slot
 		}
-		s.recentTail = append(s.recentTail, *s.records[i])
+		rec := s.records[i]
+		s.recentTail = append(s.recentTail, *rec)
 		if len(s.recentTail) > s.recentTailCap {
 			s.recentTail = s.recentTail[len(s.recentTail)-s.recentTailCap:]
+		}
+		// Prune index entries when no further mutation is possible.
+		// Three cases qualify, derived from the same "final" predicate
+		// the caller used to select this row:
+		//   1. Upload failed (ErrorCode != "" && TrackID == "") — no
+		//      download path was ever opened, indices are dead weight.
+		//   2. Download attached (DownloadEndTime != zero) — round-trip
+		//      complete, no late arrival possible.
+		//   3. Download error recorded (DownloadError != "") — explicit
+		//      failure, no further attach expected.
+		// Cases 1+2+3 cover the dominant heap-growth path on long runs.
+		// Records that don't qualify (track-id resolved but download
+		// timed out within grace) keep their indices — late arrivals
+		// can still try to attach, although by definition the attach
+		// will fail because s.records[idx] is now nil. That's fine —
+		// AttachDownloadByFilenameID returns false in that case and
+		// the caller counts it as orphan.
+		canPrune := false
+		switch {
+		case rec.ErrorCode != "" && rec.TrackID == "":
+			canPrune = true
+		case !rec.DownloadEndTime.IsZero():
+			canPrune = true
+		case rec.DownloadError != "":
+			canPrune = true
+		}
+		if canPrune {
+			delete(s.byKey, rec.User+"|"+rec.Filename)
+			delete(s.byBasename, rec.Filename)
+			if rec.FilenameID != "" {
+				delete(s.byFilenameID, rec.FilenameID)
+			}
 		}
 		s.records[i] = nil
 	}

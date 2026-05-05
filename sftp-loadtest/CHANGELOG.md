@@ -10,6 +10,53 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.19.3] — 2026-05-05
+### Fixed — heap growth + duration boundary
+Two real bugs surfaced by an 8-hour real-byte-flow run against an
+SFTP target. Both root-caused via pprof + post-mortem, not guessed.
+
+**Heap retention in the Store index maps.** pprof on a 5-minute run
+showed `report.(*Store).AddUpload` retaining ~285 B per record across
+the byKey / byBasename / byFilenameID indices. Extrapolated to a
+152k-record run that's ~43 MB of dead weight, before Go-GC headroom
+doubles it. Fix: `FlushFinalized` now prunes those entries when a
+record's round-trip is settled — DownloadEndTime set, OR upload-
+failed-pre-trackid, OR explicit DownloadError. The v0.19.2 retention
+contract is preserved for records still waiting for a late round-
+trip (TrackID resolved but no DownloadEndTime yet). New retention:
+~58 B per record, **~5× reduction** measured live with `pprof -base`.
+Pinned by `TestStore_HasUpload_PrunedAfterSettledFlush` and
+`TestStore_HasUpload_PrunedAfterUploadFailure`; the v0.19.2 case is
+preserved by `TestStore_HasUpload_SurvivesFlush`.
+
+**`duration_hours` not honored — run continued 4 h past its boundary.**
+Root cause: download workers spent most of their time inside slow
+`protocol.List()` calls (mock state grew unboundedly so listing
+became O(N)), so `ctx.Done()` between ticks was never observed.
+After the deadline timer cancelled dispatch, the post-dispatch
+sequence reached `r.downloadsWG.Wait()` — which blocked because no
+worker would exit until its current List() returned. Fix:
+- New `Run.listClients` registry tracks every download worker's
+  lazily-dialled list connection (added in `ensureList`, removed in
+  `dropList` and on worker exit).
+- New `Run.closeListClients()` is called immediately after
+  `cancel()` in the post-dispatch sequence — this forces every
+  pending List() to EOF so workers can observe ctx.Done() at their
+  next select.
+- Belt-and-suspenders: `r.downloadsWG.Wait()` is now bounded at
+  `TrackIDTimeout + 30 s`. If a worker is wedged in some other
+  library call past that, we log and proceed with teardown rather
+  than letting the run hang indefinitely.
+
+Verified live: a 3-minute basename-mode run terminated naturally
+with `stop_reason: "duration"`, peak heap 74 MB (vs 285 MB on the
+8 h v0.19.2 run), 8,992 uploads = 8,992 downloads = 0 orphans.
+
+### Internal
+- `Run.listClients` map + `listClientsMu` mutex on `Run`.
+- `Run.closeListClients()` — idempotent.
+- `Store.FlushFinalized` prune branch — touches only settled records.
+
 ## [v0.19.2] — 2026-05-04
 ### Fixed — round-trip download owns its own files
 The download poller would re-pull files left in the outbox by previous

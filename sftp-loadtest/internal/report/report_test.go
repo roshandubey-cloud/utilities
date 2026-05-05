@@ -51,11 +51,99 @@ func TestStore_HasUpload_PerRunOwnershipFilter(t *testing.T) {
 	}
 }
 
+// TestStore_HasUpload_PrunedAfterSettledFlush pins the v0.19.3 heap
+// fix: when a record's round-trip is settled (download attached, or
+// upload-failed-with-no-download-path, or download-error-final) and
+// the record is flushed to disk, the byKey / byBasename / byFilenameID
+// entries are pruned. pprof on an 8 h run showed AddUpload retaining
+// ~600 B per record across these indices — at 152 k records that's
+// 91 MB of dead weight. Pruning here keeps long-run heap flat for
+// the dominant case (uploads succeed, downloads complete).
+//
+// The v0.19.2 retention contract is preserved for records that aren't
+// settled — see TestStore_HasUpload_SurvivesFlush.
+func TestStore_HasUpload_PrunedAfterSettledFlush(t *testing.T) {
+	s := NewStore()
+	stream, err := NewCSVStreamWriter(t.TempDir() + "/x.csv")
+	if err != nil {
+		t.Fatalf("NewStream: %v", err)
+	}
+	s.SetStream(stream)
+	now := time.Now()
+	s.AddUpload(FileRecord{
+		User:              "u1",
+		Filename:          "settled_slt_donedownload_.csv",
+		FilenameID:        "donedownload",
+		StartTime:         now,
+		EndTime:           now.Add(10 * time.Millisecond),
+		TrackID:           "FILENAME:donedownload",
+		DownloadStartTime: now.Add(2 * time.Second),
+		DownloadEndTime:   now.Add(3 * time.Second), // round-trip complete
+	})
+
+	// Sanity: index is populated before flush.
+	if !s.HasUploadByFilenameID("donedownload") {
+		t.Fatal("setup: HasUploadByFilenameID should be true before flush")
+	}
+
+	// Flush all (the record qualifies — DownloadEndTime is non-zero).
+	flushed, err := s.FlushFinalized(func(*FileRecord) bool { return true }, nil, nil)
+	if err != nil {
+		t.Fatalf("FlushFinalized: %v", err)
+	}
+	if flushed != 1 {
+		t.Fatalf("expected 1 record flushed, got %d", flushed)
+	}
+
+	// Prune assertion: indices were freed because the round-trip is
+	// settled and no late arrival is possible.
+	if s.HasUploadByFilenameID("donedownload") {
+		t.Error("v0.19.3: HasUploadByFilenameID still true after settled flush — index not pruned")
+	}
+	if s.HasUploadByBasename("settled_slt_donedownload_.csv") {
+		t.Error("v0.19.3: HasUploadByBasename still true after settled flush — index not pruned")
+	}
+}
+
+// TestStore_HasUpload_PrunedAfterUploadFailure pins the second prune
+// case: an upload that failed before the trackid stage was reached
+// has no possible download path, so its indices are dead weight too.
+func TestStore_HasUpload_PrunedAfterUploadFailure(t *testing.T) {
+	s := NewStore()
+	stream, err := NewCSVStreamWriter(t.TempDir() + "/x.csv")
+	if err != nil {
+		t.Fatalf("NewStream: %v", err)
+	}
+	s.SetStream(stream)
+	now := time.Now()
+	s.AddUpload(FileRecord{
+		User:       "u1",
+		Filename:   "broken_slt_failedupload_.csv",
+		FilenameID: "failedupload",
+		StartTime:  now,
+		EndTime:    now.Add(10 * time.Millisecond),
+		ErrorCode:  "DIAL_FAILED", // upload failed pre-trackid
+		// TrackID empty — no rename ever happened
+	})
+
+	flushed, err := s.FlushFinalized(func(*FileRecord) bool { return true }, nil, nil)
+	if err != nil {
+		t.Fatalf("FlushFinalized: %v", err)
+	}
+	if flushed != 1 {
+		t.Fatalf("expected 1 record flushed, got %d", flushed)
+	}
+	if s.HasUploadByFilenameID("failedupload") {
+		t.Error("v0.19.3: failed-upload index not pruned after flush")
+	}
+}
+
 // TestStore_HasUpload_SurvivesFlush pins that the ownership lookup
-// remains accurate after FlushFinalized has released the live record.
-// The byFilenameID + byBasename indices are intentionally NOT pruned
-// on flush precisely so a long-running test can still recognise its
-// own early uploads when the server delivers the round-trip late.
+// remains accurate after FlushFinalized has released the live record
+// when the round-trip is NOT yet settled (no DownloadEndTime, no
+// upload error). v0.19.2 retention contract — late-arriving round
+// trips still need their marker recognised. The v0.19.3 prune is
+// scoped to settled records only.
 func TestStore_HasUpload_SurvivesFlush(t *testing.T) {
 	s := NewStore()
 	now := time.Now()

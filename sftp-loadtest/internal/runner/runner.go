@@ -706,6 +706,17 @@ type Run struct {
 	// downloadsWG tracks in-flight downloads for graceful Stop.
 	downloadsWG sync.WaitGroup
 
+	// listClients holds the lazily-dialled list connection owned by each
+	// downloadWorker. v0.19.3 — pprof + post-mortem of the 8 h run showed
+	// the post-dispatch sequence could hang in r.downloadsWG.Wait()
+	// because workers were stuck inside slow protocol.List() calls and
+	// didn't observe ctx.Done() between ticks. Closing these on shutdown
+	// (closeListClients below) unblocks List() with an EOF and lets
+	// workers exit promptly. Map keyed by download user; entries are
+	// added in ensureList and removed on dropList / shutdown.
+	listClientsMu sync.Mutex
+	listClients   map[string]protocol.Conn
+
 	// DispatchSkips counts ticks where the semaphore was full and we had to
 	// skip an upload. Surfaces capacity bottlenecks to the UI.
 	DispatchSkips atomic.Int64
@@ -1091,6 +1102,7 @@ func StartWithPersistAndTLS(parent context.Context, cfg *config.RunConfig, repor
 		doneCh:         make(chan struct{}),
 		pools:          map[string]*clientPool{},
 		downloadPools:  map[string]*clientPool{},
+		listClients:    map[string]protocol.Conn{},
 		tlsStore:       tlsStore,
 	}
 	if cfg.MaxConsecutiveFailures > 0 {
@@ -1293,7 +1305,22 @@ func StartWithPersistAndTLS(parent context.Context, cfg *config.RunConfig, repor
 		// exit their select on ctx.Done; wait for them before tearing pools down.
 		time.Sleep(cfg.PollInterval + 500*time.Millisecond)
 		cancel()
-		r.downloadsWG.Wait()
+		// v0.19.3 — close every download worker's list client so any
+		// pending List() unblocks with EOF. Without this, workers could
+		// stay stuck inside a slow List call (saw multi-hour hangs in
+		// the 8 h post-mortem) and downloadsWG.Wait() never returned.
+		// Belt-and-braces: also bound the wait at TrackIDTimeout + 30 s
+		// so a worker that's wedged in some other library call still
+		// can't hold the run alive forever.
+		r.closeListClients()
+		drainHardCap := cfg.TrackIDTimeout + 30*time.Second
+		drained := make(chan struct{})
+		go func() { r.downloadsWG.Wait(); close(drained) }()
+		select {
+		case <-drained:
+		case <-time.After(drainHardCap):
+			log.Printf("download workers did not exit within %s after cancel — forcing teardown", drainHardCap)
+		}
 		r.teardown()   // close SFTP pools
 		if reportsDir != "" {
 			if err := sealAllAndWriteMeta(r, reportsDir); err != nil {
@@ -1412,6 +1439,26 @@ func (r *Run) IsActive() bool {
 	}
 }
 
+// closeListClients forces every download worker's lazily-dialed list
+// connection closed. Used during shutdown to unblock a List() call that's
+// running against a slow / saturated server, so the worker can observe
+// ctx.Done() at its next select rather than spin in a multi-minute List.
+// v0.19.3 — root-cause fix for the 8 h post-mortem where the run wouldn't
+// terminate at duration boundary because downloadsWG.Wait() blocked on
+// these in-flight List calls. Idempotent.
+func (r *Run) closeListClients() {
+	r.listClientsMu.Lock()
+	clients := make([]protocol.Conn, 0, len(r.listClients))
+	for _, c := range r.listClients {
+		clients = append(clients, c)
+	}
+	r.listClients = map[string]protocol.Conn{}
+	r.listClientsMu.Unlock()
+	for _, c := range clients {
+		_ = c.Close()
+	}
+}
+
 // Stop halts new uploads. In-flight uploads finish, track-id polling continues
 // until all pending IDs resolve (or TrackIDTimeout expires), then teardown runs.
 func (r *Run) Stop() {
@@ -1503,6 +1550,9 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 	defer func() {
 		if listClient != nil {
 			listClient.Close()
+			r.listClientsMu.Lock()
+			delete(r.listClients, u.Username)
+			r.listClientsMu.Unlock()
 		}
 	}()
 	proto := protocol.Normalize(r.Cfg.Protocol)
@@ -1530,11 +1580,21 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 			return nil, derr
 		}
 		listClient = c
+		// v0.19.3 — register with the central registry so closeListClients
+		// can unblock a stuck List() call during shutdown. Saw 8 h-run
+		// hang where workers couldn't observe ctx.Done() between ticks
+		// because List() was taking minutes against a saturated server.
+		r.listClientsMu.Lock()
+		r.listClients[u.Username] = c
+		r.listClientsMu.Unlock()
 		return listClient, nil
 	}
 	dropList := func() {
 		if listClient != nil {
 			listClient.Close()
+			r.listClientsMu.Lock()
+			delete(r.listClients, u.Username)
+			r.listClientsMu.Unlock()
 			listClient = nil
 		}
 	}
