@@ -95,6 +95,18 @@ func NewServer(reportsDir, schedulesDir string) *Server {
 	return s
 }
 
+// pendingTrackIDsSafe reads the watcher's pending count when the run
+// is still active, and returns 0 once the watcher has been released
+// (post-seal, v0.19.5). The /api/status response paths through this
+// helper for any run regardless of state, including sealed runs that
+// no longer have a Watcher.
+func pendingTrackIDsSafe(run *runner.Run) int {
+	if run == nil || run.Watcher == nil {
+		return 0
+	}
+	return run.Watcher.PendingCount()
+}
+
 // alertsConfigPath returns the on-disk JSON path for the alerts
 // configuration. Lives next to reports so backups capture both.
 func (s *Server) alertsConfigPath() string {
@@ -1935,7 +1947,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"metrics":             run.Metrics.Snapshot(),
 		"slowdowns_enriched":  run.EnrichSlowdowns(),
 		"records":             recs,
-		"pending_trackids":    run.Watcher.PendingCount(),
+		"pending_trackids":    pendingTrackIDsSafe(run),
 		"dispatch_skips":      run.DispatchSkips.Load(),
 		"download_completed":  run.DownloadCompleted.Load(),
 		"download_orphans":    run.DownloadOrphans.Load(),

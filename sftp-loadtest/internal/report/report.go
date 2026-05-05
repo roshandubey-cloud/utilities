@@ -701,6 +701,43 @@ func WriteCSV(w io.Writer, records []FileRecord, slowdownMinutes map[int64]bool,
 	return nil
 }
 
+// ReleaseHeavyState drops the in-memory bookkeeping that's only useful
+// during an active run — once sealed, the only remaining consumer is
+// the /api/runs history pane reading recentTail for the "recent rows"
+// preview. Everything else (records slice, byKey/byBasename/
+// byFilenameID/byMinute indexes) is freed so the Server's run-history
+// retention doesn't keep ~150 KB / Run alive after the JSON metadata
+// is on disk. v0.19.5 — closes the "true idle" gap surfaced by the
+// 30-min hash-verify test (heap residue was ~+1 MB after 6 runs).
+//
+// recentTail is kept (capped at 256 × ~500 B = ~128 KB worst case)
+// because the UI uses it to render the last few rows of a finished
+// run without re-reading the CSV from disk. That's a deliberate
+// tradeoff: a tiny constant cost per retained Run vs unbounded
+// structures that grew with file count.
+//
+// Safe to call multiple times (idempotent). After release, AddUpload
+// would silently no-op (records is nil) — callers must not write to
+// a Store after ReleaseHeavyState. The runner only calls it from
+// teardown's seal path, after dispatchers + watcher have stopped.
+func (s *Store) ReleaseHeavyState() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Drop the unbounded indexes; their only consumer (the runner's
+	// dispatch + ownership filter + flusher) is already shut down.
+	s.byKey = nil
+	s.byBasename = nil
+	s.byFilenameID = nil
+	s.byMinute = nil
+	// recentTail kept — bounded at recentTailCap, used by /api/runs UI.
+	// records[] kept — entries are mostly nil after flush; Snapshot()
+	// callers (tests + /api/report.csv on a sealed run) skip nils
+	// and pay only the 8 B/slot cost of the slice itself.
+}
+
 // CSVStreamWriter appends finalized rows to an open CSV file. Thread-safe;
 // the runner flusher + the teardown path may call WriteRow concurrently
 // with the live-CSV-download handler acquiring its own lock.

@@ -1328,6 +1328,20 @@ func StartWithPersistAndTLS(parent context.Context, cfg *config.RunConfig, repor
 				log.Printf("report flush: %v", err)
 			}
 		}
+		// v0.19.5 — release the in-memory state that's only useful
+		// during an active run. The Server keeps Run objects in
+		// Server.runs (capped at maxRetainedRuns=10) for the /api/runs
+		// history pane, but the byKey/byBasename/byFilenameID/byMinute
+		// indexes have no consumer post-seal. Dropping them lets a
+		// long-lived server return to true-idle heap after every run.
+		// recentTail is preserved so the UI can still render the last
+		// 200 rows without re-reading the CSV from disk. Watcher is
+		// NOT nil-out'd because consumeTrackIDs reads r.Watcher
+		// without a mutex (the data-race detector catches it); its
+		// internal maps drain via its own ctx.Done path instead.
+		if r.Report != nil {
+			r.Report.ReleaseHeavyState()
+		}
 		// v0.17.0 — decrement *after* sealing so a sampler tick on
 		// another concurrent run still observes this run as live up
 		// until its meta JSON is written. Order: teardown → seal →

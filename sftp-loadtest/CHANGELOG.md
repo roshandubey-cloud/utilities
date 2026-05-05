@@ -10,6 +10,40 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.19.5] — 2026-05-05
+### Fixed — return to true idle after every run
+A 30-min hash-verify load test (30 normal users × 3 patterns + 15 large
+users + 50 download users + 100 fpm + 50 MB large files every 15 min)
+followed by 5 chained scheduler runs revealed that goroutines correctly
+returned to baseline (7 = 7 across all 6 runs) but heap held an extra
+1 MB of residue per server lifetime. pprof diff (baseline → final-idle)
+identified the source: `Store` indexes (byKey/byBasename/byFilenameID/
+byMinute) and the trackid Watcher had no purpose post-seal but were
+retained because `Server.runs` keeps Run objects for `/api/runs`.
+
+- New `Store.ReleaseHeavyState()` drops the four index maps after
+  seal. `recentTail` (capped at 256 rows) is kept so the UI's
+  "recent rows" view on a finished run renders without re-reading
+  the CSV from disk. The `records` slice is also preserved (entries
+  are mostly nil after flush — pays only 8 B/slot — and tests +
+  `/api/report.csv` for sealed runs still need it).
+- The runner's wrapper goroutine calls `r.Report.ReleaseHeavyState()`
+  immediately after `sealAllAndWriteMeta`, before `close(r.doneCh)`.
+- `pendingTrackIDsSafe` helper in `web.go` returns 0 when a Watcher
+  is nil, so the `/api/status` JSON path stays nil-safe.
+
+The Watcher itself is *not* nil-ed out because `consumeTrackIDs`
+reads `r.Watcher.Results()` without a mutex; its internal maps drain
+through its own `ctx.Done()` path instead.
+
+### Verified
+- `go test -race ./...` clean across all 14 packages.
+- 30-min real-bytes hash-verify run: 1,801 uploads, 100% hash-matched,
+  0 failures, stop_reason=duration.
+- 5 scheduled chained runs: heap held at 4.02 MB / 7 goroutines after
+  every run (vs 3.02 MB / 7 baseline — a 1 MB residue prior to fix
+  driven by indexes + Watcher state in retained Run objects).
+
 ## [v0.19.4] — 2026-05-05
 ### Fixed — metric correctness + shutdown race
 Two follow-up fixes after the v0.19.3 pprof + 8 h post-mortem
