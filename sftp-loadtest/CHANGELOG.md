@@ -11,6 +11,36 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.13] — 2026-05-06
+### Fixed — disable policy was silencing the load test's own signal
+The auto-disable policy treated every per-file error the same: 5
+consecutive failures of any kind retired the user. Under a real
+capacity-ceiling test the SERVER throws broken pipes (`WRITE`) at
+overload — the very signal we asked the load test to capture — and the
+disable policy was silently retiring all 21 users at ~28 min into a
+1 h stress run, ending it via `stop_reason=max-failures`. The capacity
+ceiling never reached the report.
+
+v0.19.13 narrows the disable policy to **account-level** failures only:
+
+- **Counts toward auto-disable** (account/runtime broken):
+  `POOL_EMPTY` (dial / auth couldn't establish), `PANIC` (load tester
+  crashed).
+- **Does NOT count** (server feedback = workload measurement):
+  `CREATE` / `WRITE` / `CLOSE` / `READ` / `DOWNLOAD` /
+  `TRACKID_TIMEOUT` / `HASH_MISMATCH` / `SOURCE` / `UNKNOWN`.
+
+Errors are still recorded in `errors_by_code`, `failed_files`, and the
+per-row CSV. The user just doesn't get retired for them, so the run
+keeps measuring.
+
+Pins: `TestDisablePolicy_ServerFeedbackDoesNotDisable`,
+`TestDisablePolicy_AccountFailuresDoDisable`,
+`TestDisablePolicy_MixedDoesNotDilute`,
+`TestRunner_ServerRejectionsKeepFlowing` (replaces the old
+`TestRunner_FailingUserDisablesNotCrashes`, which pinned the inverted
+contract).
+
 ## [v0.19.12] — 2026-05-05
 ### Added — `RunMeta` JSON now carries the download story end-to-end
 The sealed `<run-id>.json` only had upload latency + a flat `failed_files`

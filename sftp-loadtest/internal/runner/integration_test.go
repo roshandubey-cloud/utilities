@@ -109,7 +109,23 @@ func TestRunner_AgainstMockSFTP(t *testing.T) {
 // TestRunner_FailingUserDisablesNotCrashes covers the auto-disable policy:
 // a user the mock server is configured to fail must trip MaxConsecutive-
 // Failures and stop being dispatched, while OTHER users keep going.
-func TestRunner_FailingUserDisablesNotCrashes(t *testing.T) {
+// TestRunner_ServerRejectionsKeepFlowing: when the server rejects a
+// user's uploads (here via mocksftp.FailUsers, which surfaces as a
+// CREATE error in the runner's error code enum), the load tester MUST
+// keep pushing — that error rate IS the measurement we're capturing.
+// v0.19.13 reshaped the disable policy so server-feedback codes
+// (CREATE / WRITE / CLOSE / DOWNLOAD / TRACKID_TIMEOUT / HASH_MISMATCH /
+// SOURCE) no longer count toward MaxConsecutiveFailures; only
+// account-level codes (POOL_EMPTY, PANIC) do. Pre-fix, a server
+// returning broken pipes under stress retired every user at the
+// threshold, silencing the very capacity-ceiling signal we wanted.
+//
+// What we still pin:
+//   - The runner does NOT crash even after thousands of rejections.
+//   - The good user keeps producing successful uploads.
+//   - FailedFiles / errors_by_code reflect the rejections.
+//   - badguy is NOT auto-disabled (the inversion of the old contract).
+func TestRunner_ServerRejectionsKeepFlowing(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test (mockserver) skipped under -short")
 	}
@@ -159,24 +175,28 @@ func TestRunner_FailingUserDisablesNotCrashes(t *testing.T) {
 		t.Fatal("run did not complete in time")
 	}
 
-	disabled := run.DisabledUsers()
-	var badDisabled bool
-	for _, d := range disabled {
+	// New contract: badguy stays active despite repeated server
+	// rejections. Disabling them would silence the load test's signal.
+	for _, d := range run.DisabledUsers() {
 		if d.User == "badguy" {
-			badDisabled = true
-			break
+			t.Fatalf("badguy was auto-disabled on server-feedback rejections — load tester is silencing its own measurement (last_code=%s consecutive=%d)", d.LastCode, d.Consecutive)
 		}
 	}
-	if !badDisabled {
-		t.Errorf("badguy should have been auto-disabled after 3 consecutive failures, got %+v", disabled)
-	}
+
+	// Failures must still be counted + categorised so the report shows
+	// the rejection rate.
 	if run.FailedFiles.Load() == 0 {
-		t.Error("expected non-zero FailedFiles when one user always fails")
+		t.Error("expected non-zero FailedFiles when one user is always rejected")
+	}
+	errs := run.ErrorsByCode()
+	rejections := errs["CREATE"] + errs["WRITE"] + errs["CLOSE"]
+	if rejections == 0 {
+		t.Errorf("expected CREATE/WRITE/CLOSE failures from rejected uploads; got errors_by_code=%v", errs)
 	}
 
-	// And the run should still produce successful uploads from the good user.
+	// Good user still produces successful uploads.
 	if snap := run.Metrics.Snapshot(); snap.TotalFiles == 0 {
-		t.Error("good user produced zero uploads — disable policy may have killed both")
+		t.Error("good user produced zero uploads — runner stalled despite being fed work")
 	}
 }
 

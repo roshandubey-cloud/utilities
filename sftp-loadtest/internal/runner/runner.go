@@ -149,6 +149,14 @@ func (p *disablePolicy) onFailureFor(user, kind, code, basename string) bool {
 		fileCopy := basename
 		s.lastFile.Store(&fileCopy)
 	}
+	// v0.19.13 — only account/runtime-level failures count toward auto-disable.
+	// Server-side feedback (broken pipes, RETR errors, hash mismatches) is the
+	// load test's RESULT — disabling on it silences the very signal we're
+	// trying to capture. Pre-fix the 5×WRITE-from-server-overload self-stop
+	// at 28 min, masking the capacity ceiling we asked for.
+	if !accountLevelFailureCode(code) {
+		return false
+	}
 	n := s.consecutive.Add(1)
 	if p.threshold > 0 && n >= int64(p.threshold) {
 		if s.disabled.CompareAndSwap(false, true) {
@@ -157,6 +165,37 @@ func (p *disablePolicy) onFailureFor(user, kind, code, basename string) bool {
 		}
 	}
 	return false
+}
+
+// accountLevelFailureCode tells the disable policy which error codes
+// represent a fundamental account/runtime problem vs. server-side
+// feedback. The disable threshold should ONLY trip on the former — the
+// latter is the load test's measurement and must keep flowing so the
+// operator sees the true error rate at peak load.
+//
+//   account-level (counts toward disable):
+//     POOL_EMPTY  — pool unavailable / dial+auth couldn't even establish
+//     PANIC       — load tester crashed; protect the runtime by retiring
+//
+//   server-feedback / workload signal (does NOT count):
+//     CREATE / WRITE / CLOSE / READ — mid-transfer protocol errors; the
+//                                      server is overloaded or rejecting
+//     DOWNLOAD                       — LIST / RETR errors from the server
+//     TRACKID_TIMEOUT                — server didn't route the file
+//     SOURCE                         — test-config issue (synthetic gen
+//                                      / on-disk file unavailable); not
+//                                      a user-account fault
+//     HASH_MISMATCH                  — corruption finding; surface, don't
+//                                      retire the user
+//     UNKNOWN                        — unmapped stage; default to "keep
+//                                      pushing" to preserve the signal
+func accountLevelFailureCode(code string) bool {
+	switch code {
+	case "POOL_EMPTY", "PANIC":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *disablePolicy) isDisabled(user, kind string) bool {
