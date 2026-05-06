@@ -27,7 +27,7 @@ import (
 // freshness. Also surfaced via the `-version` flag — the SSH-bootstrap
 // smoke test on a remote host runs `<bin> -version` to confirm the
 // binary it just installed actually executes.
-const platformVersion = "0.19.5"
+const platformVersion = "0.19.6"
 
 func main() {
 	if len(os.Args) >= 2 && (os.Args[1] == "-version" || os.Args[1] == "--version") {
@@ -49,6 +49,8 @@ func main() {
 	insecureHostKey := flag.Bool("insecure-host-key", false, "DANGEROUS: disable SSH host-key verification entirely (only for ephemeral lab tests)")
 
 	trustProxy := flag.String("trust-proxy", "", "comma-separated CIDRs whose X-Forwarded-For header is honoured for rate-limit attribution; empty (default) ignores XFF entirely")
+
+	clusterTimeout := flag.Duration("cluster-timeout", 5*time.Minute, "max time the master waits for /api/cluster/start (and /stop) to fan out to every worker; raise on large clusters where dial setup at scale exceeds the default")
 
 	flag.Parse()
 
@@ -149,6 +151,7 @@ func main() {
 	srv := web.NewServer(absDir, absSchedules)
 	defer srv.Shutdown()
 	srv.SetVersion(platformVersion)
+	web.SetClusterFanOutTimeout(*clusterTimeout)
 	// Tell the probe handler where the known_hosts file lives — that's the
 	// only place TOFU will append to. When the operator launched in
 	// -insecure-host-key mode, this stays empty and the probe handler

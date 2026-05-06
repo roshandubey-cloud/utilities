@@ -10,6 +10,42 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.19.6] — 2026-05-05
+### Fixed — gaps surfaced during the cluster + scheduler validation cycles
+Two real lab-tested gaps from the 5.5 h two-phase cluster validation
+(2 worker nodes + 1 master + atmoz/sftp + Go router sidecar, 21 normal
+× 3 patterns + 21 large + 21 download users, hash verify ON, basename
+round-trip).
+
+- **`/api/cluster/start` 30-second hard-coded timeout was too short for
+  large clusters.** With 21+ users × 4 streams per worker, dial setup
+  takes 50–60 s per worker, exceeding the master's fan-out timeout —
+  the master then rolled back both workers and the cluster never
+  started. Default raised to **5 minutes** (covers ~50 users × 4
+  streams ≈ 200 SSH dials at ~1.5 s each = 300 s). Operators on
+  larger clusters can override via the new `-cluster-timeout`
+  CLI flag (`time.Duration` format, e.g. `-cluster-timeout=10m`).
+  Same default + flag govern `/api/cluster/stop` for symmetry.
+- **`parseRunAt` accepted RFC3339 only with a colon in the timezone
+  offset** (`-07:00`). Python's `strftime('%z')` and Go's
+  `time.Format(time.RFC3339)` with `-0700` both produce the colonless
+  form, which scripted scheduling hits routinely. Now accepts both
+  shapes (`-0700` and `-07:00`) plus the existing UTC and local-time
+  layouts. Pure additive — no existing input is rejected.
+
+### Internal
+- New `web.SetClusterFanOutTimeout(d)` setter; `clusterFanOutTimeout`
+  package var defaults to 5 min.
+- `parseRunAt` extended layout list with `2006-01-02T15:04:05Z0700`,
+  `-0700`, and `Z0700` (no seconds) variants.
+
+### Verified
+- `go test -race ./...` clean across all 14 packages.
+- The cluster-start timeout fix was identified during a 5.5 h two-phase
+  cluster validation; basename-mode round-trip held at master heap 1.5
+  MB / 7 goroutines throughout, 9,074 cluster uploads, 9,070 attached,
+  zero failures, zero TRACKID_TIMEOUT (correct for filename mode).
+
 ## [v0.19.5] — 2026-05-05
 ### Fixed — return to true idle after every run
 A 30-min hash-verify load test (30 normal users × 3 patterns + 15 large

@@ -272,7 +272,10 @@ func (s *Server) handleScheduleCancel(w http.ResponseWriter, r *http.Request) {
 //   - "2026-04-24T10:15"        (HTML datetime-local, no offset — local TZ)
 //   - "2026-04-24T10:15:30"
 //   - "2026-04-24T10:15:30Z"    (RFC3339)
-//   - "2026-04-24T10:15-07:00"  (RFC3339)
+//   - "2026-04-24T10:15-07:00"  (RFC3339 with colon)
+//   - "2026-04-24T10:15:30-0700" (RFC3339-ish without colon — what Python's
+//     %z emits by default; users hit this when scripting via python or
+//     Go's time.Format with "-0700")
 func parseRunAt(s string) (time.Time, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -281,14 +284,21 @@ func parseRunAt(s string) (time.Time, error) {
 	layouts := []string{
 		time.RFC3339Nano,
 		time.RFC3339,
+		"2006-01-02T15:04:05Z0700",      // colonless tz, with seconds
+		"2006-01-02T15:04:05-0700",      // alternate spelling
+		"2006-01-02T15:04Z0700",         // colonless tz, no seconds
 		"2006-01-02T15:04:05",
 		"2006-01-02T15:04",
+	}
+	tzlessSecondsLayouts := map[string]bool{
+		"2006-01-02T15:04:05": true,
+		"2006-01-02T15:04":    true,
 	}
 	for _, layout := range layouts {
 		// The tz-less layouts parse as UTC by default; interpret them as local
 		// time so "2026-04-24T10:15" behaves the way a user expects.
 		loc := time.UTC
-		if layout == "2006-01-02T15:04:05" || layout == "2006-01-02T15:04" {
+		if tzlessSecondsLayouts[layout] {
 			loc = time.Local
 		}
 		t, err := time.ParseInLocation(layout, s, loc)

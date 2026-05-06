@@ -12,6 +12,27 @@ import (
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/cluster"
 )
 
+// clusterFanOutTimeout caps how long /api/cluster/start and
+// /api/cluster/stop wait for the master to fan out to every worker.
+// Pre-v0.19.6 this was hard-coded at 30 s. The 8 h cluster validation
+// surfaced the limit: with 21+ users × 4 streams per worker, dial
+// setup at the worker's own /api/start exceeds 30 s and the master's
+// fan-out times out + rolls back. Operators on real clusters with
+// many users can override via -cluster-timeout (main.go). Default
+// raised to 5 min, which covers the practical worst case (50 users
+// × 4 streams ≈ 200 SSH dials at ~1.5 s each = 300 s).
+var clusterFanOutTimeout = 5 * time.Minute
+
+// SetClusterFanOutTimeout overrides the default. Called by main.go
+// when the operator passes -cluster-timeout. Idempotent and safe to
+// call before the server starts; not thread-safe at runtime (no
+// expected production caller).
+func SetClusterFanOutTimeout(d time.Duration) {
+	if d > 0 {
+		clusterFanOutTimeout = d
+	}
+}
+
 // CONCURRENT-RUNS NOTE (v0.17.0): the per-worker /api/start handler no
 // longer blocks a second concurrent run on a single worker (gate was
 // lifted in v0.16.0 to allow operator-initiated parallel loads). The
@@ -69,7 +90,7 @@ func (s *Server) handleClusterStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), clusterFanOutTimeout)
 	defer cancel()
 	ids, err := s.getClusterCoord().Start(ctx, req)
 	if err != nil {
@@ -94,7 +115,7 @@ func (s *Server) handleClusterStop(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "POST required", http.StatusMethodNotAllowed)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), clusterFanOutTimeout)
 	defer cancel()
 	coord := s.getClusterCoord()
 	if err := coord.Stop(ctx); err != nil {
