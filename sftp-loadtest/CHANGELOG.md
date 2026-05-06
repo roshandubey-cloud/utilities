@@ -11,6 +11,22 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.11] — 2026-05-05
+### Fixed — `mockftpserver` LIST silently returned wrong folder
+`splitPath("outbox")` defaulted to `(folder=inbox, name=outbox)` because of
+the no-slash branch (intentional for STOR — bare filename means "drop in
+inbox") which `listForUser` reused. Net effect: `LIST outbox` listed the
+caller's inbox; the cluster downloader saw 0 routed files and never issued
+RETR. v0.19.11 parses LIST args as folder names directly, so the FTPS
+cluster fan-out now closes the round-trip the same way SFTP does.
+
+- `mockftp.listForUser` parses `outbox` / `/outbox` / `outbox/...` into a
+  folder name without going through `splitPath`
+- New pin `TestListOutboxAfterPromotion` STOR→promote→LIST→RETR over real
+  FTP wire to lock the contract
+- STOR / RETR / DELE / RNFR-RNTO unchanged (they still need the original
+  splitPath semantics)
+
 ## [v0.19.10] — 2026-05-05
 ### Fixed — `mockftpserver` PASV cross-container reachability
 PASV listener bound `127.0.0.1:0` and advertised `127.0.0.1` in the 227

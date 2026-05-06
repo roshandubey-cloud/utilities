@@ -703,8 +703,16 @@ func (fs *mockFS) promoteAll() {
 func (fs *mockFS) listForUser(user, p string) []listEntry {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	folder, _ := splitPath(p)
-	if folder == "" {
+	// LIST takes a folder name (e.g. "outbox", "/outbox", "outbox/"), not a
+	// file path. splitPath defaults to inbox for slash-less inputs so it
+	// can't be reused here — that turned LIST outbox into a silent
+	// inbox listing (v0.19.10 cluster RETR was returning 0 files).
+	folder := strings.TrimSpace(p)
+	folder = strings.TrimPrefix(folder, "/")
+	if i := strings.IndexByte(folder, '/'); i >= 0 {
+		folder = folder[:i]
+	}
+	if folder == "" || folder == "." {
 		folder = "inbox"
 	}
 	prefix := user + "/" + folder + "/"
