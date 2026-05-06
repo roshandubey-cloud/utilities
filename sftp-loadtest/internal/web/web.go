@@ -2035,12 +2035,22 @@ func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request) {
 			"overall_mbps": snap.OverallMBps,
 			"failed_files": run.FailedFiles.Load(),
 			"dispatch_skips": run.DispatchSkips.Load(),
-			"source":       "memory",
+			// v0.19.16 — surface the same observability fields the
+			// post-seal historical entry carries, so a live run's card
+			// shows download progress + error breakdown immediately
+			// instead of going dark until seal.
+			"download_completed": run.DownloadCompleted.Load(),
+			"download_orphans":   run.DownloadOrphans.Load(),
+			"download_dropped":   run.DownloadDropped.Load(),
+			"errors_by_code":     run.ErrorsByCode(),
+			"source":             "memory",
 		}
 		if run.Cfg != nil {
 			entry["upload_users"] = len(run.Cfg.NormalUsers)
 			entry["parallel_streams"] = run.Cfg.ParallelStreams
+			entry["large_enabled"] = run.Cfg.LargeFile != nil
 			if run.Cfg.Normal != nil {
+				entry["normal_enabled"] = true
 				entry["files_per_minute"] = run.Cfg.Normal.FilesPerMinute
 			}
 			if run.Cfg.Download != nil {
@@ -2050,6 +2060,11 @@ func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request) {
 				if run.Cfg.Download.MatchMode != "" {
 					entry["download_match_mode"] = run.Cfg.Download.MatchMode
 				}
+			}
+			if run.Cfg.VerifyHashes {
+				verified, mismatch := run.Report.HashCounts()
+				entry["hash_verified"] = verified
+				entry["hash_mismatch"] = mismatch
 			}
 		}
 		// Latency: snapshot the live histograms so percentile points
@@ -2327,6 +2342,13 @@ func historicalForLiveID(reportsDir, id string) *persist.RunMeta {
 // has its seal complete on disk, the live branch can use this same
 // function to render the historical fields.
 func runMetaToMap(m persist.RunMeta, _live bool, source string) map[string]any {
+	// v0.19.16 — `/api/runs` was a hand-curated whitelist that lagged the
+	// RunMeta schema: every new field added in v0.19.12-15
+	// (download_completed/orphans/dropped, errors_by_code, hash_verified
+	// /mismatch, stop_reason/detail, normal_enabled/large_enabled,
+	// concurrent_runs_at_peak, disabled[]) was already in the sealed JSON
+	// but came back null on the runs-history cards because it wasn't
+	// listed here. Now mirrors the full schema.
 	return map[string]any{
 		"id":                        m.ID,
 		"started_at":                m.StartedAt,
@@ -2342,10 +2364,22 @@ func runMetaToMap(m persist.RunMeta, _live bool, source string) map[string]any {
 		"parallel_streams":          m.ParallelStreams,
 		"download_parallel_streams": m.DownloadParallelStreams,
 		"files_per_minute":          m.FilesPerMinute,
+		"normal_enabled":            m.NormalEnabled,
+		"large_enabled":             m.LargeEnabled,
 		"download_enabled":          m.DownloadEnabled,
 		"download_match_mode":       m.DownloadMatchMode,
 		"dispatch_skips":            m.DispatchSkips,
 		"download_stalled":          m.DownloadStalled,
+		"download_completed":        m.DownloadCompleted,
+		"download_orphans":          m.DownloadOrphans,
+		"download_dropped":          m.DownloadDropped,
+		"errors_by_code":            m.ErrorsByCode,
+		"hash_verified":             m.HashVerified,
+		"hash_mismatch":             m.HashMismatch,
+		"stop_reason":               m.StopReason,
+		"stop_detail":               m.StopDetail,
+		"concurrent_runs_at_peak":   m.ConcurrentRunsAtPeak,
+		"disabled":                  m.Disabled,
 		"interrupted":               m.Interrupted,
 		"latency":                   m.Latency,
 		"peak_cpu_percent":          m.PeakCPUPercent,

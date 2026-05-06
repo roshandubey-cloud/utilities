@@ -11,6 +11,29 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.16] — 2026-05-06
+### Fixed — `/api/runs` was hand-curating the schema, leaving new fields null on UI cards
+The runs-history endpoint built each entry from a hand-coded whitelist
+of RunMeta fields. Every observability field added since v0.19.12
+(`download_completed` / `_orphans` / `_dropped`, `errors_by_code`,
+`hash_verified` / `_mismatch`, `stop_reason` / `_detail`,
+`normal_enabled` / `large_enabled`, `concurrent_runs_at_peak`,
+`disabled[]`) was already in the sealed JSON but came back null in the
+UI's "Recent runs" cards because nobody updated the whitelist.
+
+v0.19.16 widens both branches of `/api/runs`:
+
+- **Historical** (sealed-on-disk): `runMetaToMap` now mirrors the full
+  `RunMeta` schema.
+- **Live** (active or finished-still-in-memory): the entry now also
+  carries `download_completed/orphans/dropped`, `errors_by_code`,
+  `normal_enabled`, `large_enabled`, and `hash_verified/_mismatch`
+  (when `verify_hashes=true`) so a card lights up with progress
+  immediately, not only after seal.
+
+Caught by a 5-min plain-FTP cluster validation run that reported clean
+seal data but came back null in the UI cards.
+
 ## [v0.19.15] — 2026-05-06
 ### Fixed — download users no longer require a fake filename pattern
 `ParseUsersCSV` was shared between upload and download roles and
