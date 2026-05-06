@@ -25,6 +25,7 @@ func main() {
 	implicitAddr := flag.String("implicit-addr", "127.0.0.1:9990", "implicit-TLS listen address")
 	persist := flag.Bool("persist-content", false, "store uploaded bytes and replay them on RETR (byte-faithful round trip; off → zero-filled downloads, lower memory)")
 	evictAfterRead := flag.Bool("evict-after-read", false, "drop a file's outbox + source-side inbox + sent entries from memory the moment its outbox copy is opened for RETR; pairs with -persist-content for hours-long hash-verify load runs without unbounded memory growth")
+	passiveAddr := flag.String("passive-addr", "", "IPv4 address advertised in PASV/EPSV responses; default empty → bind 127.0.0.1 (single-host). Set to the container's bridge IP when clients connect from a different Docker container so PASV data dials reach the right host.")
 	flag.Parse()
 
 	opts := mockftp.Options{
@@ -34,6 +35,7 @@ func main() {
 		FailUsers:      mockftp.ParseFailUsers(*failUsers),
 		PersistContent: *persist,
 		EvictAfterRead: *evictAfterRead,
+		PassiveAddr:    *passiveAddr,
 	}
 	if *enableExplicit || *enableImplicit {
 		opts.TLS = &mockftp.TLSOptions{

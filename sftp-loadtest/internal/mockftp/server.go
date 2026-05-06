@@ -79,6 +79,14 @@ type Options struct {
 	// would otherwise hit the Docker memory ceiling at ~30 min of 2 MB
 	// uploads at 60 fpm. v0.19.9. Mirrors the same flag on mocksftp.
 	EvictAfterRead bool
+
+	// PassiveAddr is the IPv4 address advertised in PASV responses (and
+	// implicit in EPSV via the |||port| form). Defaults to "127.0.0.1"
+	// when empty (the existing single-host behaviour). Set this to the
+	// container's bridge IP (or any reachable address) so a client in
+	// a separate Docker container can dial back. Listener binds to
+	// 0.0.0.0 when this is set, 127.0.0.1 when unset. v0.19.10.
+	PassiveAddr string
 }
 
 // TLSOptions parameterise the FTPS test paths.
@@ -105,6 +113,7 @@ type Server struct {
 	stopped     chan struct{}
 	closeOnce   sync.Once
 	fs          *mockFS
+	passiveAddr string // empty → 127.0.0.1 listener and advertise; non-empty → 0.0.0.0 listener, advertise this IP
 
 	// Cert + fingerprint — exposed for tests so they can pin the
 	// fingerprint without reaching into x509.
@@ -174,6 +183,7 @@ func Start(opts Options) (*Server, error) {
 	}
 	s.fs.persist = opts.PersistContent
 	s.fs.evictAfterRead = opts.EvictAfterRead
+	s.passiveAddr = opts.PassiveAddr
 
 	// Materialise a TLS config when any FTPS mode is on.
 	if opts.TLS != nil && (opts.TLS.EnableExplicit || opts.TLS.EnableImplicit) {
@@ -493,12 +503,22 @@ func (s *session) closeData() {
 	s.dataMu.Unlock()
 }
 
-// openPassive opens a passive-mode data listener bound to 127.0.0.1.
-// Returns ip + port for PASV. The listener is consumed by the next data
-// command (STOR/RETR/LIST), then closed.
+// openPassive opens a passive-mode data listener. By default it binds
+// 127.0.0.1 (single-host loopback) and advertises 127.0.0.1 in PASV.
+// When the operator set Server.passiveAddr (e.g. for cross-container
+// FTPS testing), the listener binds 0.0.0.0 and the advertised IP is
+// the configured one — so a client in a separate Docker container can
+// dial back. The listener is consumed by the next data command
+// (STOR/RETR/LIST), then closed.
 func (s *session) openPassive(srv *Server) (string, int, error) {
 	s.closeData()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	bindHost := "127.0.0.1"
+	advertise := "127.0.0.1"
+	if srv.passiveAddr != "" {
+		bindHost = "0.0.0.0"
+		advertise = srv.passiveAddr
+	}
+	l, err := net.Listen("tcp", bindHost+":0")
 	if err != nil {
 		return "", 0, err
 	}
@@ -510,7 +530,7 @@ func (s *session) openPassive(srv *Server) (string, int, error) {
 	s.dataListener = l
 	s.dataPort = addr.Port
 	s.dataMu.Unlock()
-	return "127.0.0.1", addr.Port, nil
+	return advertise, addr.Port, nil
 }
 
 // acceptStor accepts the data connection and ingests an upload.

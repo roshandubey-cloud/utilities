@@ -10,6 +10,20 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+
+## [v0.19.10] — 2026-05-05
+### Fixed — `mockftpserver` PASV cross-container reachability
+PASV listener bound `127.0.0.1:0` and advertised `127.0.0.1` in the 227
+response. Fine for single-host tests; useless when the FTPS client runs
+in a different Docker container — its 127.0.0.1 is itself, not the
+server. New `mockftp.Options.PassiveAddr` (and `-passive-addr` CLI):
+when set, listener binds 0.0.0.0 and advertises the configured IP, so
+clients in other containers on the same Docker network can dial back.
+
+- `Options.PassiveAddr string`
+- `cmd/mockftpserver -passive-addr` flag
+- Behaviour unchanged when unset (single-host loopback default)
+
 ## [v0.19.9] — 2026-05-05
 ### Added — `mockftpserver` now mirrors mocksftp's persist + evict-after-read
 Closes the FTPS hash-verify gap: pre-v0.19.9 `mockftpserver` discarded
