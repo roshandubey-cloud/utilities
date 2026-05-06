@@ -226,11 +226,20 @@ export function mountConnectionCard(rootSelector) {
     resultEl.dataset.state = 'consent';
     const fp = reply.captured_fingerprint || '(unavailable)';
     const target = reply.captured_for_host || host;
+    // v0.19.7 — protocol-aware language. FTPS presents a TLS leaf cert,
+    // not an SSH host key; the prior copy mentioned "SFTP / known_hosts"
+    // even when the user was probing FTPS, which was confusing on
+    // first-trust for FTPS targets.
+    const proto = getProtocol();
+    const isFTPS = proto === 'ftps';
+    const protoLabel = isFTPS ? 'FTPS' : 'SFTP';
+    const credLabel = isFTPS ? 'TLS certificate' : 'host key';
+    const storeLabel = isFTPS ? 'trust store' : '<code>known_hosts</code>';
     resultEl.innerHTML = `
-      <div class="probe-headline">${iconShield()}<span>New host key — your decision needed</span></div>
+      <div class="probe-headline">${iconShield()}<span>New ${credLabel} — your decision needed</span></div>
       <div class="help" style="white-space:normal">
-        The SFTP server at <strong class="mono">${escapeHTML(target)}:${port}</strong> presented a host
-        key that's not in <code>known_hosts</code> yet. This is normal the first time you connect to a
+        The ${protoLabel} server at <strong class="mono">${escapeHTML(target)}:${port}</strong> presented a
+        ${credLabel} that's not in the ${storeLabel} yet. This is normal the first time you connect to a
         new server — but always confirm the fingerprint matches one given to you out-of-band.
       </div>
       <div class="probe-fingerprint">
@@ -260,12 +269,16 @@ export function mountConnectionCard(rootSelector) {
     const fpNew = reply.captured_fingerprint || '(unavailable)';
     const fpOld = reply.captured_previous_fingerprint || '(unavailable)';
     const target = reply.captured_for_host || host;
+    const proto = getProtocol();
+    const isFTPS = proto === 'ftps';
+    const protoLabel = isFTPS ? 'FTPS' : 'SFTP';
+    const credLabel = isFTPS ? 'TLS certificate' : 'host key';
     resultEl.innerHTML = `
-      <div class="probe-headline">${iconAlert()}<span>Host key has CHANGED</span></div>
+      <div class="probe-headline">${iconAlert()}<span>${credLabel.charAt(0).toUpperCase() + credLabel.slice(1)} has CHANGED</span></div>
       <div class="help" style="white-space:normal">
-        The SFTP server at <strong class="mono">${escapeHTML(target)}:${port}</strong> presented a host key
-        <strong>different</strong> from the one previously trusted. This can mean a legitimate key rotation —
-        or a man-in-the-middle attack. Verify the new fingerprint out-of-band before accepting.
+        The ${protoLabel} server at <strong class="mono">${escapeHTML(target)}:${port}</strong> presented a
+        ${credLabel} <strong>different</strong> from the one previously trusted. This can mean a legitimate
+        rotation — or a man-in-the-middle attack. Verify the new fingerprint out-of-band before accepting.
       </div>
       <div class="probe-fingerprint" data-variant="renewal">
         <div class="eyebrow">Previously trusted</div>
@@ -281,16 +294,21 @@ export function mountConnectionCard(rootSelector) {
       ev.preventDefault();
       submitEl.disabled = true;
       try {
-        const body = { host, port, trust_on_first_use: true, accept_changed: true };
+        // v0.19.7 — route the TOFU intent to the right field per protocol.
+        // FTPS uses tls_trust_on_first_use; SSH uses trust_on_first_use.
+        const body = { host, port, accept_changed: true };
         if (userEl.value) body.username = userEl.value;
         if (passEl.value) body.password = passEl.value;
         if (folderEl && folderEl.value) body.folder = folderEl.value.trim();
         const proto = getProtocol();
         body.protocol = proto;
         if (proto === 'ftps') {
+          body.tls_trust_on_first_use = true;
           body.tls_mode = getTLSMode();
           if (tlsSkipEl && tlsSkipEl.checked) body.tls_insecure_skip_verify = true;
           if (tlsServerEl && tlsServerEl.value.trim()) body.tls_server_name = tlsServerEl.value.trim();
+        } else {
+          body.trust_on_first_use = true;
         }
         const renewed = await apiPostJSON('/api/probe', body);
         if (renewed.ok) {
@@ -415,12 +433,23 @@ export function mountConnectionCard(rootSelector) {
       if (userEl.value) body.username = userEl.value;
       if (passEl.value) body.password = passEl.value;
       if (folderEl.value) body.folder = folderEl.value.trim();
-      if (forceTOFU || (tofuEl && tofuEl.checked)) body.trust_on_first_use = true;
       // Multi-protocol fields. Always send the picker value (defaults to
       // "sftp"), and only attach TLS knobs when FTPS is selected so the
       // probe handler doesn't see noise on SFTP requests.
       const proto = getProtocol();
       body.protocol = proto;
+      // Trust-on-first-use flag is protocol-specific: SSH uses
+      // trust_on_first_use, FTPS uses tls_trust_on_first_use. Pre-v0.19.7
+      // we sent only the SSH knob even on FTPS, so the consent re-probe
+      // for an untrusted FTPS cert silently failed (server didn't see
+      // the TOFU intent). Now route to the right field.
+      if (forceTOFU || (tofuEl && tofuEl.checked)) {
+        if (proto === 'ftps') {
+          body.tls_trust_on_first_use = true;
+        } else {
+          body.trust_on_first_use = true;
+        }
+      }
       if (proto === 'ftps') {
         body.tls_mode = getTLSMode();
         if (tlsSkipEl && tlsSkipEl.checked) body.tls_insecure_skip_verify = true;
