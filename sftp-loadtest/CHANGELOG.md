@@ -10,6 +10,39 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.19.7] — 2026-05-05
+### Fixed — FTPS first-trust flow now works through the UI
+The README's known limitation ("FTPS cert TOFU is fingerprint-captured
+today; the consent prompt + persisted cert store land in a follow-up")
+is closed. Surfaced during the FTPS cluster validation when configuring
+the test through the form: an unknown FTPS cert showed the SSH-host-key
+consent modal (wrong copy: "host key", "known_hosts") AND the re-probe
+sent `trust_on_first_use: true` (the SSH knob) instead of
+`tls_trust_on_first_use: true` (the FTPS knob), so server kept rejecting
+the cert and the UI looped on the same modal with no path forward.
+
+- **`connection.js` consent re-probe routes the TOFU intent to the right
+  field per protocol.** FTPS → `tls_trust_on_first_use: true`. SFTP →
+  `trust_on_first_use: true`. Same fix on both Test-connection and the
+  renewal (cert-changed) Accept handler.
+- **Consent and renewal modals are protocol-aware.** Headlines and
+  body copy now say "TLS certificate" / "trust store" / "FTPS server"
+  on FTPS targets, and "host key" / `known_hosts` / "SFTP server" on
+  SFTP targets. Operator no longer sees SSH terminology when probing
+  an FTPS port.
+
+This was server-side ready already (probeFTP returns
+`requires_consent: true` + `captured_fingerprint` for an unknown cert);
+the UI wiring was the gap.
+
+### Verified
+- `go test -race ./...` clean across all 14 packages.
+- Manual configuration through the UI: protocol=FTPS + TLS-mode=Explicit
+  + skip-verify off + tofu-on-first-trust off → unknown cert renders
+  the new TLS-aware consent modal → Accept re-probes with
+  `tls_trust_on_first_use: true` → cert pinned in trust store →
+  subsequent connects succeed silently.
+
 ## [v0.19.6] — 2026-05-05
 ### Fixed — gaps surfaced during the cluster + scheduler validation cycles
 Two real lab-tested gaps from the 5.5 h two-phase cluster validation
