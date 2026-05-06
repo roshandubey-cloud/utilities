@@ -550,23 +550,16 @@ func sealAllAndWriteMeta(r *Run, reportsDir string) error {
 	// v0.18.0 — hash counters. Always written even when verify is off
 	// (both will be 0 in that case), so downstream tools don't need to
 	// special-case the field's absence.
-	// v0.18.0 — derive hash counters by walking the sealed record set
-	// rather than maintaining live atomics in the AttachDownloadBy*
-	// fast path. Walk is O(records) once at seal; AttachDownload* is
-	// per-file in the hot path. Verified+mismatch == count of rows
-	// that produced both an upload + download SHA-256.
+	// v0.19.14 — read the live tallies maintained inside AttachDownload*.
+	// The original v0.18.0 walker scanned r.Report.Snapshot() at seal
+	// time, but that returns only LIVE (not-yet-flushed) records. On
+	// any run long enough to stream rows to CSV (i.e. all real
+	// production runs), the walker saw post-flush stragglers ≈ 0 and
+	// the meta JSON came out with null hash counters even when every
+	// CSV row had hash_match=true. The live tallies are bumped under
+	// the same lock that sets HashMatch, so they're authoritative.
 	if r.Cfg != nil && r.Cfg.VerifyHashes {
-		var verified, mismatch int64
-		for _, rec := range r.Report.Snapshot() {
-			if rec.UploadSHA256 == "" || rec.DownloadSHA256 == "" {
-				continue
-			}
-			if rec.HashMatch {
-				verified++
-			} else {
-				mismatch++
-			}
-		}
+		verified, mismatch := r.Report.HashCounts()
 		meta.HashVerified = verified
 		meta.HashMismatch = mismatch
 	}

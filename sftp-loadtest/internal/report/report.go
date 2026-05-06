@@ -117,6 +117,14 @@ type Store struct {
 	stream     *CSVStreamWriter
 	// Monotonic counters for observability.
 	flushed int64
+	// Hash-verify tallies. Bumped in AttachDownload* the moment HashMatch
+	// is computed, so they survive even when the underlying record gets
+	// streamed to CSV and nil'd from memory mid-run. v0.19.14 — pre-fix
+	// the seal-time walker counted only LIVE records (post-flush ≈ 0),
+	// so meta.hash_verified / hash_mismatch came out null even when
+	// every CSV row showed hash_match=true.
+	hashVerified int64
+	hashMismatch int64
 	// recentTail keeps a copy of the last N records that were flushed to
 	// disk, so the UI's "Recent uploads" pane stays populated even though
 	// most records have been released from the live in-memory slice.
@@ -219,6 +227,11 @@ func (s *Store) AttachDownloadByFilenameID(marker string, d DownloadResult) bool
 		r.DownloadSHA256 = d.SHA256
 		if r.UploadSHA256 != "" {
 			r.HashMatch = r.UploadSHA256 == r.DownloadSHA256
+			if r.HashMatch {
+				s.hashVerified++
+			} else {
+				s.hashMismatch++
+			}
 			if !r.HashMatch && r.DownloadError == "" {
 				// Override an otherwise-clean download with a
 				// HASH_MISMATCH so the row's error column tells
@@ -299,6 +312,11 @@ func (s *Store) AttachDownloadByBasename(basename string, d DownloadResult) bool
 		r.DownloadSHA256 = d.SHA256
 		if r.UploadSHA256 != "" {
 			r.HashMatch = r.UploadSHA256 == r.DownloadSHA256
+			if r.HashMatch {
+				s.hashVerified++
+			} else {
+				s.hashMismatch++
+			}
 			if !r.HashMatch && r.DownloadError == "" {
 				// Override an otherwise-clean download with a
 				// HASH_MISMATCH so the row's error column tells
@@ -340,6 +358,11 @@ func (s *Store) AttachDownload(user, filename string, d DownloadResult) {
 		r.DownloadSHA256 = d.SHA256
 		if r.UploadSHA256 != "" {
 			r.HashMatch = r.UploadSHA256 == r.DownloadSHA256
+			if r.HashMatch {
+				s.hashVerified++
+			} else {
+				s.hashMismatch++
+			}
 			if !r.HashMatch && r.DownloadError == "" {
 				// Override an otherwise-clean download with a
 				// HASH_MISMATCH so the row's error column tells
@@ -417,6 +440,16 @@ func (s *Store) LiveCount() int {
 // FlushedCount returns the cumulative number of records moved from memory
 // to the stream file during this run.
 func (s *Store) FlushedCount() int64 { s.mu.Lock(); defer s.mu.Unlock(); return s.flushed }
+
+// HashCounts returns the live verify / mismatch tallies. Bumped inside the
+// AttachDownload* path so they survive record flushing — the seal-time
+// walker that read these from r.records only saw post-flush stragglers
+// (≈0) and reported null for every long run. v0.19.14.
+func (s *Store) HashCounts() (verified, mismatch int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hashVerified, s.hashMismatch
+}
 
 // RecordsInMinute returns records whose StartTime falls in the given
 // unix-minute, skipping any that have already been flushed.

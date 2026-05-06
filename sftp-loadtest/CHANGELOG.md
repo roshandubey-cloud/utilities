@@ -11,6 +11,24 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.14] — 2026-05-06
+### Fixed — `hash_verified` / `hash_mismatch` were null on every long run
+The seal-time walker scanned `r.Report.Snapshot()`, which returns only
+LIVE (not-yet-flushed) records. On any run long enough to stream rows
+to CSV — which is *every* real run — most rows had been released to
+disk by the time seal ran, so the walker counted ≈ 0 and `omitempty`
+dropped both fields from the meta JSON. Operators reading the report
+saw nulls even when every CSV row had `hash_match=true`.
+
+v0.19.14 maintains the tally inside `Store.AttachDownload*` under the
+same lock that sets `HashMatch`, so the counters survive flushing.
+`Store.HashCounts()` is the read API the seal uses now.
+
+Pin: `TestStore_HashCounts_SurviveFlush` flushes 7 hashed records to a
+real CSV stream (live count → 0) and asserts `HashCounts() == (5, 2)`.
+`TestRunMeta_DownloadFieldsPopulated` now also enables `verify_hashes`
+and asserts `meta.hash_verified > 0` end-to-end.
+
 ## [v0.19.13] — 2026-05-06
 ### Fixed — disable policy was silencing the load test's own signal
 The auto-disable policy treated every per-file error the same: 5

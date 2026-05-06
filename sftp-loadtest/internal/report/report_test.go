@@ -1,6 +1,7 @@
 package report
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -256,6 +257,72 @@ func TestStore_AttachDownload_HashMismatchSetsError(t *testing.T) {
 	}
 	if got.DownloadError != "HASH_MISMATCH" {
 		t.Errorf("DownloadError=HASH_MISMATCH expected; got %q", got.DownloadError)
+	}
+}
+
+// TestStore_HashCounts_SurviveFlush pins the v0.19.14 fix: HashCounts()
+// must report verified / mismatch tallies that include records already
+// streamed to CSV and nil'd from memory. Pre-fix the seal-time meta
+// walker scanned r.records (LIVE only) and reported null on every long
+// run because the rows had been flushed out by then.
+func TestStore_HashCounts_SurviveFlush(t *testing.T) {
+	s := NewStore()
+	// Attach a real CSV stream so FlushFinalized actually drains records
+	// and nils the in-memory slots — that's the long-run condition we're
+	// reproducing.
+	stream, err := NewCSVStreamWriter(filepath.Join(t.TempDir(), "stream.csv"))
+	if err != nil {
+		t.Fatalf("stream writer: %v", err)
+	}
+	s.SetStream(stream)
+	now := time.Now()
+
+	// 5 matching round-trips + 2 mismatches.
+	for i := 0; i < 5; i++ {
+		marker := "m-ok-" + string(rune('a'+i))
+		s.AddUpload(FileRecord{
+			Filename: "f-" + marker, FilenameID: marker,
+			StartTime: now, EndTime: now.Add(time.Millisecond), SizeBytes: 32,
+			UploadSHA256: "match",
+		})
+		s.AttachDownloadByFilenameID(marker, DownloadResult{
+			StartTime: now.Add(2 * time.Millisecond), EndTime: now.Add(3 * time.Millisecond),
+			SizeBytes: 32, SHA256: "match",
+		})
+	}
+	for i := 0; i < 2; i++ {
+		marker := "m-bad-" + string(rune('a'+i))
+		s.AddUpload(FileRecord{
+			Filename: "f-" + marker, FilenameID: marker,
+			StartTime: now, EndTime: now.Add(time.Millisecond), SizeBytes: 32,
+			UploadSHA256: "want",
+		})
+		s.AttachDownloadByFilenameID(marker, DownloadResult{
+			StartTime: now.Add(2 * time.Millisecond), EndTime: now.Add(3 * time.Millisecond),
+			SizeBytes: 32, SHA256: "got",
+		})
+	}
+
+	// Flush every record to nowhere — same effect as streaming to the
+	// CSV writer would have on long runs: live records become nil and
+	// the old walker would see zero.
+	flushed, err := s.FlushFinalized(func(*FileRecord) bool { return true }, nil, nil)
+	if err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+	if flushed != 7 {
+		t.Fatalf("expected 7 records flushed, got %d", flushed)
+	}
+	if got := s.LiveCount(); got != 0 {
+		t.Fatalf("expected 0 live records after flush, got %d", got)
+	}
+
+	verified, mismatch := s.HashCounts()
+	if verified != 5 {
+		t.Errorf("verified=5 expected, got %d", verified)
+	}
+	if mismatch != 2 {
+		t.Errorf("mismatch=2 expected, got %d", mismatch)
 	}
 }
 

@@ -54,6 +54,7 @@ func TestRunMeta_DownloadFieldsPopulated(t *testing.T) {
 		DurationHours:   3.0 / 3600.0,
 		PollInterval:    250 * time.Millisecond,
 		TrackIDTimeout:  5 * time.Second,
+		VerifyHashes:    true,
 		Normal: &config.NormalLoad{
 			FilesPerMinute: 600,
 			MinSizeMB:      1,
@@ -106,6 +107,17 @@ func TestRunMeta_DownloadFieldsPopulated(t *testing.T) {
 	if meta.Latency.Download.Mean <= 0 {
 		t.Fatalf("latency.download.mean_ns must be positive: %d", meta.Latency.Download.Mean)
 	}
+	// v0.19.14 — hash counters must be populated when verify_hashes is on
+	// AND at least one round-trip closed. Pre-fix, the seal-time walker
+	// scanned only LIVE records (post-flush ≈ 0) and these came out null
+	// every time on long runs.
+	if meta.HashVerified == 0 {
+		t.Fatalf("hash_verified is zero with verify_hashes=true and download_completed=%d (raw: %s)", meta.DownloadCompleted, string(raw))
+	}
+	if meta.HashMismatch != 0 {
+		t.Fatalf("hash_mismatch=%d on byte-faithful mock — comparator wiring is wrong", meta.HashMismatch)
+	}
+
 	// errors_by_code is optional — a clean run can have none. Just assert
 	// the field is at least serialised when non-empty so the contract is
 	// stable. We can't force errors deterministically in this test, so
