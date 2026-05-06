@@ -23,13 +23,17 @@ func main() {
 	enableExplicit := flag.Bool("explicit-tls", false, "honour AUTH TLS upgrade on the plain control channel")
 	enableImplicit := flag.Bool("implicit-tls", false, "additionally serve TLS-from-byte-0 on -implicit-addr")
 	implicitAddr := flag.String("implicit-addr", "127.0.0.1:9990", "implicit-TLS listen address")
+	persist := flag.Bool("persist-content", false, "store uploaded bytes and replay them on RETR (byte-faithful round trip; off → zero-filled downloads, lower memory)")
+	evictAfterRead := flag.Bool("evict-after-read", false, "drop a file's outbox + source-side inbox + sent entries from memory the moment its outbox copy is opened for RETR; pairs with -persist-content for hours-long hash-verify load runs without unbounded memory growth")
 	flag.Parse()
 
 	opts := mockftp.Options{
-		Addr:      *addr,
-		Delay:     *delay,
-		Pairs:     mockftp.ParsePairs(*pairs),
-		FailUsers: mockftp.ParseFailUsers(*failUsers),
+		Addr:           *addr,
+		Delay:          *delay,
+		Pairs:          mockftp.ParsePairs(*pairs),
+		FailUsers:      mockftp.ParseFailUsers(*failUsers),
+		PersistContent: *persist,
+		EvictAfterRead: *evictAfterRead,
 	}
 	if *enableExplicit || *enableImplicit {
 		opts.TLS = &mockftp.TLSOptions{

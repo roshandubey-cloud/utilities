@@ -65,6 +65,20 @@ type Options struct {
 	TLS *TLSOptions
 	// Logger overrides the default logger for diagnostic output.
 	Logger *log.Logger
+
+	// PersistContent makes the mock retain uploaded bytes in memory and
+	// stream them back verbatim on RETR. Off by default — the historical
+	// behaviour of synthesising zero-filled downloads keeps high-throughput
+	// load runs cheap. Turn ON to validate hash-verify byte fidelity over
+	// FTPS. v0.19.9.
+	PersistContent bool
+
+	// EvictAfterRead drops a file's outbox + source-side inbox + sent
+	// entries from memory the moment its outbox copy is opened for RETR.
+	// Pairs with PersistContent for hours-long FTPS hash-verify runs that
+	// would otherwise hit the Docker memory ceiling at ~30 min of 2 MB
+	// uploads at 60 fpm. v0.19.9. Mirrors the same flag on mocksftp.
+	EvictAfterRead bool
 }
 
 // TLSOptions parameterise the FTPS test paths.
@@ -158,6 +172,8 @@ func Start(opts Options) (*Server, error) {
 		stopped: make(chan struct{}),
 		fs:      newMockFS(opts.Delay, opts.Pairs, opts.FailUsers),
 	}
+	s.fs.persist = opts.PersistContent
+	s.fs.evictAfterRead = opts.EvictAfterRead
 
 	// Materialise a TLS config when any FTPS mode is on.
 	if opts.TLS != nil && (opts.TLS.EnableExplicit || opts.TLS.EnableImplicit) {
@@ -512,12 +528,15 @@ func (s *session) acceptStor(fs *mockFS, p string) (int64, error) {
 	fs.mu.Lock()
 	fs.files[key] = &fileState{}
 	fs.mu.Unlock()
-	w := &writeHandle{}
+	w := &writeHandle{persist: fs.persist}
 	n, copyErr := io.Copy(w, conn)
 	fs.mu.Lock()
 	if st, ok := fs.files[key]; ok {
 		st.size = n
 		st.completedAt = time.Now()
+		if fs.persist {
+			st.content = w.buf
+		}
 	}
 	fs.mu.Unlock()
 	return n, copyErr
@@ -577,14 +596,22 @@ type fileState struct {
 	size        int64
 	completedAt time.Time
 	trackID     string
+	// content holds the uploaded bytes when the server is started with
+	// PersistContent=true. Nil otherwise (saves memory on throughput
+	// runs where bytes don't matter — same trick mocksftp uses). Routed
+	// copies (inbox/outbox/sent) share the slice; the upload owner
+	// never mutates after Close.
+	content []byte
 }
 
 type mockFS struct {
-	mu        sync.Mutex
-	files     map[string]*fileState
-	delay     time.Duration
-	routes    map[string]string
-	failUsers map[string]bool
+	mu             sync.Mutex
+	files          map[string]*fileState
+	delay          time.Duration
+	routes         map[string]string
+	failUsers      map[string]bool
+	persist        bool
+	evictAfterRead bool
 }
 
 func newMockFS(delay time.Duration, routes map[string]string, fail map[string]bool) *mockFS {
@@ -645,8 +672,11 @@ func (fs *mockFS) promoteAll() {
 		if dst == "" {
 			dst = p.user
 		}
-		fs.files[dst+"/outbox/"+trackedName] = &fileState{size: st.size, completedAt: now, trackID: tid}
-		fs.files[p.user+"/sent/"+trackedName] = &fileState{size: st.size, completedAt: now, trackID: tid}
+		// v0.19.9 — copies share the same content slice (immutable after
+		// upload close), so inbox/outbox/sent count as one byte slice
+		// in memory, not three. Mirrors mocksftp's promote pattern.
+		fs.files[dst+"/outbox/"+trackedName] = &fileState{size: st.size, completedAt: now, trackID: tid, content: st.content}
+		fs.files[p.user+"/sent/"+trackedName] = &fileState{size: st.size, completedAt: now, trackID: tid, content: st.content}
 	}
 }
 
@@ -684,8 +714,30 @@ func (fs *mockFS) read(user, p string) ([]byte, bool) {
 	if !ok {
 		return nil, false
 	}
-	// Synthesise zero-filled bytes of recorded size — same trick as mocksftp.
-	return make([]byte, st.size), true
+	// v0.19.9 — byte-faithful replay when persist=on. Mirrors mocksftp.
+	var body []byte
+	if fs.persist && st.content != nil {
+		body = st.content
+	} else {
+		// Synthesise zero-filled bytes of recorded size.
+		body = make([]byte, st.size)
+	}
+	// v0.19.9 — evict-after-read. Drop the outbox entry plus the
+	// matching source-side inbox + sent copies so memory is bounded by
+	// in-flight files only. The body slice returned above keeps the
+	// underlying bytes alive for the duration of the actual streamRetr
+	// copy; once the caller is done writing to the wire and drops the
+	// reference, GC reclaims the memory.
+	if folder == "outbox" && fs.evictAfterRead {
+		delete(fs.files, key)
+		for src, dst := range fs.routes {
+			if dst == user {
+				delete(fs.files, src+"/inbox/"+name)
+				delete(fs.files, src+"/sent/"+name)
+			}
+		}
+	}
+	return body, true
 }
 
 func (fs *mockFS) delete(user, p string) bool {
@@ -726,11 +778,20 @@ func (fs *mockFS) size(user, p string) (int64, bool) {
 	return 0, false
 }
 
-// writeHandle counts bytes consumed during STOR.
-type writeHandle struct{ n int64 }
+// writeHandle counts bytes consumed during STOR. When persist is on,
+// it ALSO buffers the bytes so the server can replay them on RETR
+// (the byte-faithful path needed for hash-verify round trips).
+type writeHandle struct {
+	n       int64
+	persist bool
+	buf     []byte
+}
 
 func (w *writeHandle) Write(p []byte) (int, error) {
 	w.n += int64(len(p))
+	if w.persist {
+		w.buf = append(w.buf, p...)
+	}
 	return len(p), nil
 }
 

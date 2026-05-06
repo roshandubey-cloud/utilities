@@ -10,6 +10,28 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.19.9] — 2026-05-05
+### Added — `mockftpserver` now mirrors mocksftp's persist + evict-after-read
+Closes the FTPS hash-verify gap: pre-v0.19.9 `mockftpserver` discarded
+upload bytes (RETR returned synthesised zeros), so the runner's hash
+verifier always saw a mismatch on FTPS targets. Same memory-bounding
+pattern from v0.19.8 ported here so an 8 h FTPS run with hash verify
+ON doesn't hit the Docker memory ceiling.
+
+- `mockftp.fileState.content []byte` — populated when persist is on.
+- `writeHandle` buffers bytes during STOR when persist; promote shares
+  the slice across inbox/outbox/sent (one byte slice per upload, three
+  pointers) just like mocksftp.
+- `mockftp.read` returns the captured bytes when persist is on (RETR
+  is now byte-faithful for FTPS); falls back to zero-filled when off.
+- `mockftp.Options.PersistContent` and `EvictAfterRead` library opts.
+- `cmd/mockftpserver/main.go` exposes `-persist-content` and
+  `-evict-after-read` CLI flags (off by default to preserve every
+  existing test's expectations).
+
+### Verified
+- `go test -race ./...` clean across all 14 packages.
+
 ## [v0.19.8] — 2026-05-05
 ### Added — `mockserver -evict-after-read` for unbounded-duration runs
 The mock SFTP server retained every uploaded byte slice in memory under
