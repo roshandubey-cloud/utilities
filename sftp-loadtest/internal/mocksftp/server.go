@@ -50,6 +50,16 @@ type Options struct {
 	// load runs cheap. Turn ON when validating round-trip byte fidelity
 	// (e.g. local-files / local-disk source-and-sink testing).
 	PersistContent bool
+
+	// EvictAfterRead drops a file's entries (outbox, source-side inbox,
+	// source-side sent) from the in-memory map the moment its outbox copy
+	// is opened for read. The bytes.NewReader returned to pkg/sftp keeps
+	// a reference to the content slice for the duration of the read; once
+	// the reader is GC'd, the bytes are reclaimed. With this flag on, mem
+	// is bounded by in-flight files only — the operator can run hours of
+	// hash-verify load without the persist=on memory ceiling blowing up.
+	// v0.19.8.
+	EvictAfterRead bool
 }
 
 // Server is a running mock SFTP listener.
@@ -58,6 +68,7 @@ type Server struct {
 	logger   *log.Logger
 	wg       sync.WaitGroup
 	stopped  chan struct{}
+	fs       *mockFS // exposed via test-only accessors in evict_test.go
 }
 
 // Addr returns the bound address (resolves the OS-picked port when
@@ -115,6 +126,7 @@ func Start(opts Options) (*Server, error) {
 	cfg.AddHostKey(hostKey)
 
 	fs := newMockFS(opts.Delay, opts.Pairs)
+	fs.evictAfterRead = opts.EvictAfterRead
 	if opts.FailUsers != nil {
 		fs.failUsers = opts.FailUsers
 	}
@@ -126,7 +138,7 @@ func Start(opts Options) (*Server, error) {
 	}
 	logger.Printf("mock sftp listening on %s  delay=%s  pairs=%v", l.Addr(), opts.Delay, fs.routes)
 
-	s := &Server{listener: l, logger: logger, stopped: make(chan struct{})}
+	s := &Server{listener: l, logger: logger, stopped: make(chan struct{}), fs: fs}
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
@@ -247,12 +259,13 @@ type fileState struct {
 }
 
 type mockFS struct {
-	mu        sync.Mutex
-	files     map[string]*fileState // key = "<user>/<folder>/<basename>"
-	delay     time.Duration
-	routes    map[string]string // up-user → dl-user (unpaired self-loops)
-	failUsers map[string]bool   // test-harness: writes from these users fail
-	persist   bool              // store + replay upload bytes; off → zero-filled downloads
+	mu             sync.Mutex
+	files          map[string]*fileState // key = "<user>/<folder>/<basename>"
+	delay          time.Duration
+	routes         map[string]string // up-user → dl-user (unpaired self-loops)
+	failUsers      map[string]bool   // test-harness: writes from these users fail
+	persist        bool              // store + replay upload bytes; off → zero-filled downloads
+	evictAfterRead bool              // delete a file's outbox+inbox+sent entries on first read; bounds memory to in-flight files
 }
 
 func newMockFS(delay time.Duration, routes map[string]string) *mockFS {
@@ -294,16 +307,34 @@ func (v *userView) dirKey(p string) (folder, prefix string) {
 // -------- sftp request handlers --------
 
 func (v *userView) Fileread(r *sftp.Request) (io.ReaderAt, error) {
-	_, _, key := v.resolve(r.Filepath)
+	folder, name, key := v.resolve(r.Filepath)
 	v.fs.mu.Lock()
 	st := v.fs.files[key]
-	v.fs.mu.Unlock()
 	if st == nil {
+		v.fs.mu.Unlock()
 		// Honest "does not exist" so the loadtest reports an error instead of
 		// silently completing a 0-byte download. This is what a real SFTP
 		// server does when a user reads a path outside their own outbox.
 		return nil, os.ErrNotExist
 	}
+	// v0.19.8 — evict-after-read. Drop the outbox entry plus the
+	// matching source-side inbox + sent copies so memory is bounded by
+	// in-flight files only. The bytes.NewReader returned below retains
+	// a reference to st.content for the duration of the read; once
+	// pkg/sftp is done streaming and the reader is GC'd, the bytes are
+	// reclaimed. Triggers only on outbox reads — leaves the source's
+	// own listing of inbox/sent untouched if the operator pokes them
+	// out of band.
+	if folder == "outbox" && v.fs.evictAfterRead {
+		delete(v.fs.files, key)
+		for src, dst := range v.fs.routes {
+			if dst == v.user {
+				delete(v.fs.files, src+"/inbox/"+name)
+				delete(v.fs.files, src+"/sent/"+name)
+			}
+		}
+	}
+	v.fs.mu.Unlock()
 	if v.fs.persist && st.content != nil {
 		// Byte-faithful replay: download stream is exactly what was uploaded.
 		return bytes.NewReader(st.content), nil

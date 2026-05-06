@@ -10,6 +10,40 @@ linux-amd64, linux-arm64 (webui only for now), and windows-amd64. Asset URLs
 follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
+## [v0.19.8] — 2026-05-05
+### Added — `mockserver -evict-after-read` for unbounded-duration runs
+The mock SFTP server retained every uploaded byte slice in memory under
+`-persist-content` (needed for hash-verify byte-fidelity replays). At
+2 MB files × multi-hour runs that pinned the test duration to whatever
+fit in Docker's memory ceiling. New flag: when an outbox copy is opened
+for read, the mock evicts that file's three in-memory entries (the
+outbox copy + the source-side `inbox/<base>#<tid>` + `sent/<base>#<tid>`
+copies, which all point at the same byte slice). The reader returned
+to `pkg/sftp` keeps a reference for the duration of the actual read;
+once the streaming copy is done and the reader is GC'd, the bytes are
+reclaimed. Memory is now bounded by **in-flight files**, not run
+duration.
+
+- `mocksftp.Options.EvictAfterRead bool` added to the library API.
+- `cmd/mockserver/main.go` exposes the new `-evict-after-read` CLI
+  flag (off by default to preserve every existing test's expectations).
+- `Server.fs` exposed inside the package for test introspection;
+  test-only `(*Server).fileExists(key)` accessor takes the same mutex
+  the read path uses, so the eviction contract can be asserted under
+  `-race`.
+
+### Pinned
+- `TestEvictAfterRead_DropsAllThreeCopies` — uploads 1 KB through pkg/sftp,
+  waits for the mock's promote, asserts all three entries (outbox,
+  inbox, sent) exist, opens the outbox file for read, asserts byte
+  fidelity end-to-end, then asserts all three entries are gone from the
+  files map.
+- `TestEvictAfterRead_OffByDefault` — flag-gating: without
+  `EvictAfterRead`, the outbox entry remains after read.
+
+### Verified
+- `go test -race ./...` clean across all 14 packages.
+
 ## [v0.19.7] — 2026-05-05
 ### Fixed — FTPS first-trust flow now works through the UI
 The README's known limitation ("FTPS cert TOFU is fingerprint-captured

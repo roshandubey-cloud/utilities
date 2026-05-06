@@ -20,6 +20,7 @@ func main() {
 	pairs := flag.String("pairs", "", `routing pairs, e.g. "up1=dl1,up2=dl2"; unpaired users self-loop`)
 	failUsers := flag.String("fail-users", "", "comma-separated usernames whose uploads always fail (test harness)")
 	persist := flag.Bool("persist-content", false, "store uploaded bytes and replay them on download (byte-faithful round trip; off → zero-filled downloads, lower memory)")
+	evictAfterRead := flag.Bool("evict-after-read", false, "drop a file's outbox + source-side inbox + sent entries from memory the moment its outbox copy is opened for read; pairs with -persist-content for hours-long hash-verify load runs without unbounded memory growth")
 	flag.Parse()
 
 	srv, err := mocksftp.Start(mocksftp.Options{
@@ -28,6 +29,7 @@ func main() {
 		Pairs:          mocksftp.ParsePairs(*pairs),
 		FailUsers:      mocksftp.ParseFailUsers(*failUsers),
 		PersistContent: *persist,
+		EvictAfterRead: *evictAfterRead,
 	})
 	if err != nil {
 		log.Fatalf("mocksftp start: %v", err)
