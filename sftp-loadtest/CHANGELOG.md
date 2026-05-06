@@ -11,6 +11,29 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.15] — 2026-05-06
+### Fixed — download users no longer require a fake filename pattern
+`ParseUsersCSV` was shared between upload and download roles and
+demanded `username,password,pattern*` for every row. Download patterns
+are never consumed (the poller pulls whatever the SERVER places in the
+configured folder), so operators were typing a meaningless `*` per row
+just to satisfy the validator.
+
+v0.19.15 splits the parser:
+
+- `ParseUsersCSV` (upload) still requires ≥1 pattern.
+- New `ParseDownloadUsersCSV` requires only `username,password`.
+  Legacy `dl1,pp,*` rows still parse for back-compat with saved
+  configs.
+- `/api/start` routes `download_users_csv` through the new parser.
+- Form: download textarea placeholder/label drop the `*` and the
+  client-side validator allows 2-column rows for the download role.
+
+Pins: `TestParseUsersCSV_RequiresPattern`,
+`TestParseDownloadUsersCSV_NoPatternRequired`,
+`TestParseDownloadUsersCSV_LegacyPatternRowsStillParse`,
+`TestParseDownloadUsersCSV_RejectsEmptyUsername`.
+
 ## [v0.19.14] — 2026-05-06
 ### Fixed — `hash_verified` / `hash_mismatch` were null on every long run
 The seal-time walker scanned `r.Report.Snapshot()`, which returns only

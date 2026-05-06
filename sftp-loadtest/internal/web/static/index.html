@@ -1171,8 +1171,8 @@
             <input type="checkbox" id="verify_hashes">
             Verify upload/download SHA-256 <span class="badge-mini">v0.18</span>
           </label>
-          <label for="download_users" style="margin-top:10px">Download users (CSV)</label>
-          <textarea class="csv-users" id="download_users" placeholder="dl1,pwd1,*&#10;dl2,pwd2,*"></textarea>
+          <label for="download_users" style="margin-top:10px" title="Download users don't take filename patterns — the poller pulls whatever the server places in the configured download folder. Format: username,password (one per line). Legacy three-column rows like 'dl1,pwd,*' still parse for back-compat.">Download users (CSV) <span class="muted">— username,password</span></label>
+          <textarea class="csv-users" id="download_users" placeholder="dl1,pwd1&#10;dl2,pwd2"></textarea>
 
           <!-- v0.14 sink picker — opt-in. Default kind=discard preserves
                the v0.13 throughput-only behaviour. local-disk persists

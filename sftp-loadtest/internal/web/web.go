@@ -1471,7 +1471,7 @@ func buildRunConfig(req startReq) (*config.RunConfig, error) {
 			MatchMode:       req.DownloadMatchMode,
 			Sink:            req.DownloadSink,
 		}
-		users, err := config.ParseUsersCSV(strings.NewReader(req.DownloadUsersCSV))
+		users, err := config.ParseDownloadUsersCSV(strings.NewReader(req.DownloadUsersCSV))
 		if err != nil {
 			return nil, fmt.Errorf("download users csv: %w", err)
 		}

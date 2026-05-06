@@ -410,9 +410,29 @@ func (u UserCreds) String() string {
 func (u UserCreds) GoString() string { return u.String() }
 
 func ParseUsersCSV(r io.Reader) ([]UserCreds, error) {
+	return parseUsersCSV(r, true)
+}
+
+// ParseDownloadUsersCSV is the download-side variant: it only requires
+// `username,password`, because download users have no filename
+// patterns — the poller scans whichever folder the run is configured
+// for and pulls whatever the SERVER has placed there. Extra columns are
+// tolerated and ignored so legacy `dl1,pp,*` rows still parse. v0.19.15.
+func ParseDownloadUsersCSV(r io.Reader) ([]UserCreds, error) {
+	return parseUsersCSV(r, false)
+}
+
+func parseUsersCSV(r io.Reader, requirePattern bool) ([]UserCreds, error) {
 	reader := csv.NewReader(r)
 	reader.FieldsPerRecord = -1
 	reader.TrimLeadingSpace = true
+
+	minCols := 3
+	missingMsg := "need at least username,password,pattern*"
+	if !requirePattern {
+		minCols = 2
+		missingMsg = "need at least username,password"
+	}
 
 	var users []UserCreds
 	lineNo := 0
@@ -425,21 +445,26 @@ func ParseUsersCSV(r io.Reader) ([]UserCreds, error) {
 		if err != nil {
 			return nil, fmt.Errorf("line %d: %w", lineNo, err)
 		}
-		if len(rec) < 3 {
-			return nil, fmt.Errorf("line %d: need at least username,password,pattern*", lineNo)
+		if len(rec) < minCols {
+			return nil, fmt.Errorf("line %d: %s", lineNo, missingMsg)
 		}
 		u := UserCreds{
 			Username: strings.TrimSpace(rec[0]),
 			Password: rec[1],
 		}
-		for _, p := range rec[2:] {
-			p = strings.TrimSpace(p)
-			if p != "" {
-				u.Patterns = append(u.Patterns, p)
+		if len(rec) >= 3 {
+			for _, p := range rec[2:] {
+				p = strings.TrimSpace(p)
+				if p != "" {
+					u.Patterns = append(u.Patterns, p)
+				}
 			}
 		}
-		if u.Username == "" || len(u.Patterns) == 0 {
-			return nil, fmt.Errorf("line %d: username and at least one pattern required", lineNo)
+		if u.Username == "" {
+			return nil, fmt.Errorf("line %d: username required", lineNo)
+		}
+		if requirePattern && len(u.Patterns) == 0 {
+			return nil, fmt.Errorf("line %d: at least one pattern required", lineNo)
 		}
 		users = append(users, u)
 	}

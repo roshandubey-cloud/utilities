@@ -636,17 +636,20 @@ function startRunGuidance() {
 
   // Each enabled workload needs users. Empty users CSV → backend 400
   // with a cryptic "no rows" error far from the textarea.
+  // v0.19.15 — uploads need a filename pattern; downloads don't (the
+  // poller pulls whatever the SERVER places in the configured folder),
+  // so the validator and the hint text both have to be role-aware.
   const checks = [
-    { on: normalOn,   id: 'normal_users',   label: 'Normal users CSV' },
-    { on: largeOn,    id: 'large_users',    label: 'Large users CSV' },
-    { on: downloadOn, id: 'download_users', label: 'Download users CSV' },
+    { on: normalOn,   id: 'normal_users',   label: 'Normal users CSV',   minCols: 3, hint: 'username,password,pattern' },
+    { on: largeOn,    id: 'large_users',    label: 'Large users CSV',    minCols: 3, hint: 'username,password,pattern' },
+    { on: downloadOn, id: 'download_users', label: 'Download users CSV', minCols: 2, hint: 'username,password' },
   ];
   for (const c of checks) {
     if (!c.on) continue;
     const raw = (typeof getCsvRaw === 'function') ? getCsvRaw(c.id) : ($(c.id)?.value || '');
-    const hasRow = raw.split('\n').map((s) => s.trim()).filter(Boolean).some((line) => line.split(',').length >= 3);
+    const hasRow = raw.split('\n').map((s) => s.trim()).filter(Boolean).some((line) => line.split(',').length >= c.minCols);
     if (!hasRow) {
-      g.guideCondition(false, `Add at least one user (username,password,pattern) to ${c.label} to start the run.`, {
+      g.guideCondition(false, `Add at least one user (${c.hint}) to ${c.label} to start the run.`, {
         focusEl: $(c.id),
       });
       return false;
