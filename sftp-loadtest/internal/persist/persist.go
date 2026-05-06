@@ -63,6 +63,21 @@ type RunMeta struct {
 	// routing didn't deliver the file to any download user's outbox.
 	DownloadStalled int64 `json:"download_stalled,omitempty"`
 
+	// DownloadCompleted / DownloadOrphans / DownloadDropped (v0.19.12)
+	// persist the live counters surfaced via /api/status so historical
+	// reports can answer "how many round-trips closed?" without scanning
+	// the CSV. Completed counts files that attached to an upload row;
+	// orphans are files seen in an outbox that this run didn't upload.
+	DownloadCompleted int64 `json:"download_completed,omitempty"`
+	DownloadOrphans   int64 `json:"download_orphans,omitempty"`
+	DownloadDropped   int64 `json:"download_dropped,omitempty"`
+
+	// ErrorsByCode (v0.19.12) is the per-error-code tally of failures
+	// during the run. Persisted alongside FailedFiles so the operator
+	// can see WHY uploads/downloads failed (DOWNLOAD vs WRITE vs
+	// HASH_MISMATCH vs TRACKID_TIMEOUT) without re-aggregating the CSV.
+	ErrorsByCode map[string]int64 `json:"errors_by_code,omitempty"`
+
 	// Local-host capacity peaks captured during the run by a 2-second
 	// sampler. Persisted so the analysis trailer in the CSV and the
 	// Previous-runs UI can tell the operator whether the bottleneck was
@@ -140,6 +155,12 @@ type LatencyReport struct {
 	Upload    *LatencyStage `json:"upload,omitempty"`
 	UploadCOR *LatencyStage `json:"upload_cor,omitempty"`
 	Dial      *LatencyStage `json:"dial,omitempty"`
+	// Download is the per-RETR transfer-time histogram (end-time minus
+	// dispatch start of the matched download). v0.19.12 — until then
+	// downloads only surfaced as a count; the histogram closes the
+	// observability gap so SLA reports can compare upload vs download
+	// tails.
+	Download *LatencyStage `json:"download,omitempty"`
 }
 
 // LatencyStage is one histogram's percentile points. Count is the

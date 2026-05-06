@@ -571,6 +571,16 @@ func sealAllAndWriteMeta(r *Run, reportsDir string) error {
 		Upload:    snapshotToStage(r.UploadLatency.Snapshot()),
 		UploadCOR: snapshotToStage(r.UploadLatencyCOR.Snapshot()),
 		Dial:      snapshotToStage(r.DialLatency.Snapshot()),
+		Download:  snapshotToStage(r.DownloadLatency.Snapshot()),
+	}
+	// v0.19.12 — persist live download counters + per-code error tally
+	// so historical reports answer "how many round-trips closed?" /
+	// "what error caused the failures?" without re-scanning the CSV.
+	meta.DownloadCompleted = r.DownloadCompleted.Load()
+	meta.DownloadOrphans = r.DownloadOrphans.Load()
+	meta.DownloadDropped = r.DownloadDropped.Load()
+	if errs := r.errCounts.snapshot(); len(errs) > 0 {
+		meta.ErrorsByCode = errs
 	}
 	// Run the analyzer against the now-fully-populated meta. The result is
 	// what the CSV trailer and the Previous-runs UI both render — keeping
@@ -743,6 +753,12 @@ type Run struct {
 	UploadLatency    latency.Histogram
 	UploadLatencyCOR latency.Histogram
 	DialLatency      latency.Histogram
+	// DownloadLatency: time from RETR dispatch to byte-stream complete
+	// (success path only). Mirrors UploadLatency semantics so an
+	// operator comparing tails sees apples-to-apples histograms.
+	// Populated only when a download succeeds; failures land in
+	// errCounts under "DOWNLOAD" instead. v0.19.12.
+	DownloadLatency latency.Histogram
 
 	// Host-stats peaks captured by sampleHostStats every 2s while the run
 	// is active. The seal path reads these to populate RunMeta and feed
@@ -1772,6 +1788,7 @@ func (r *Run) downloadWorker(ctx context.Context, u config.UserCreds) {
 						if dlHasher != nil {
 							result.SHA256 = hex.EncodeToString(dlHasher.Sum(nil))
 						}
+						r.DownloadLatency.Add(result.EndTime.Sub(start))
 						r.disable.onSuccess(u.Username, "download")
 					}
 				}

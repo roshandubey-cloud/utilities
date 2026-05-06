@@ -11,6 +11,25 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.12] — 2026-05-05
+### Added — `RunMeta` JSON now carries the download story end-to-end
+The sealed `<run-id>.json` only had upload latency + a flat `failed_files`
+total. Operators reading historical reports couldn't see how many
+round-trips closed, what download tail looked like, or which error code
+caused the failures. v0.19.12 closes the gap:
+
+- `latency.download` — per-RETR transfer-time histogram (count + p50 /
+  p95 / p99 / p999 / max / mean), mirroring the upload stage so SLA
+  comparisons are apples-to-apples.
+- `download_completed` / `download_orphans` / `download_dropped` —
+  promoted from live `/api/status` into the persisted meta.
+- `errors_by_code` — per-code failure tally (e.g. `{"DOWNLOAD": 17}`)
+  alongside `failed_files`.
+- `/api/runs` and `/api/status` now also include `latency.download` so
+  the live UI sees the new histogram immediately, not just after seal.
+- Pin: `TestRunMeta_DownloadFieldsPopulated` drives a real round-trip
+  against `mocksftp` and reads the sealed JSON to lock the schema.
+
 ## [v0.19.11] — 2026-05-05
 ### Fixed — `mockftpserver` LIST silently returned wrong folder
 `splitPath("outbox")` defaulted to `(folder=inbox, name=outbox)` because of

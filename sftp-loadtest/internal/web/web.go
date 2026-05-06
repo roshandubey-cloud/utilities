@@ -1971,6 +1971,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			"upload":     latencyStageJSON(run.UploadLatency.Snapshot()),
 			"upload_cor": latencyStageJSON(run.UploadLatencyCOR.Snapshot()),
 			"dial":       latencyStageJSON(run.DialLatency.Snapshot()),
+			"download":   latencyStageJSON(run.DownloadLatency.Snapshot()),
 		},
 	})
 }
@@ -2057,6 +2058,7 @@ func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request) {
 			"upload":     latencyStageJSON(run.UploadLatency.Snapshot()),
 			"upload_cor": latencyStageJSON(run.UploadLatencyCOR.Snapshot()),
 			"dial":       latencyStageJSON(run.DialLatency.Snapshot()),
+			"download":   latencyStageJSON(run.DownloadLatency.Snapshot()),
 		}
 		live = append(live, entry)
 	}
