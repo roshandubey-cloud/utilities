@@ -741,6 +741,20 @@ function wireSidebarSearch(shell, main) {
       openPalette(input.value || '');
     }
   });
+  // v0.19.24 — focusing or clicking the search box opens the palette
+  // immediately, the same way Spotlight / VS Code quick-open behave.
+  // Pre-fix the operator had to type a character before anything
+  // showed up; clicking the input made it look broken because the
+  // expected suggestion list never appeared. We use mousedown so the
+  // dispatch happens before focus moves to the palette's own input.
+  input.addEventListener('mousedown', (ev) => {
+    ev.preventDefault();
+    openPalette(input.value || '');
+  });
+  // Keyboard tab-into still wants the palette without an Enter press.
+  input.addEventListener('focus', () => {
+    if (!opening) openPalette(input.value || '');
+  });
 }
 
 function formatRam(mb) {

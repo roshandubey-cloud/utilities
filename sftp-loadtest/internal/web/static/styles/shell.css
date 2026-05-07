@@ -333,7 +333,10 @@ body.wails-mac:not(.wails-fullscreen) .shell-window-controls { display: none; }
   position: sticky;
   top: var(--shell-topbar-h);
   align-self: start;
-  height: calc(100vh - var(--shell-topbar-h) - var(--shell-statusbar-h));
+  /* v0.19.23 — statusbar is no longer in the grid (now a floating
+     pill), so the sidebar can use the full viewport height below the
+     topbar instead of reserving the statusbar row. */
+  height: calc(100vh - var(--shell-topbar-h));
   background: var(--sidebar-bg);
   border-right: var(--bw-1) solid var(--border-weak);
   /* Gloss: subtle inner-right highlight pulls the eye toward the panel

@@ -11,6 +11,32 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.24] — 2026-05-07
+### Fixed — search box opens palette on click; sidebar reclaims statusbar row height
+Two follow-ups after the v0.19.23 floating statusbar:
+
+- **Sidebar search now opens the palette on click / focus**, not just
+  on first keypress. Pre-fix, clicking the input drew a focus ring
+  but no suggestion list appeared until the operator typed — the
+  field looked broken because the natural "click to see options"
+  affordance never fired. `mousedown` (preventing focus race) +
+  `focus` (keyboard tab-into) now both dispatch
+  `sftpl:open-cmdk` immediately.
+- **Sidebar height** still reserved the statusbar row even though
+  v0.19.23 took the row out of the grid. Updated to
+  `calc(100vh - topbar)` so the sidebar reclaims that strip.
+
+If the v0.19.23 floating bar didn't appear in your build, the cause
+is WKWebView's persistent asset cache — the new binary is shipped
+with `Cache-Control: no-store` on every static asset, but a residual
+WebView cache from a previous launch can still serve stale CSS. Quit
+the app, then run:
+
+    rm -rf "$HOME/Library/Caches/com.roshandubey.sftp-loadtest-desktop"
+    rm -rf "$HOME/Library/WebKit/com.roshandubey.sftp-loadtest-desktop"
+
+before relaunching.
+
 ## [v0.19.23] — 2026-05-07
 ### Changed — status bar is now a floating, draggable pill
 Operator request: "this status bar should be draggable, movable
