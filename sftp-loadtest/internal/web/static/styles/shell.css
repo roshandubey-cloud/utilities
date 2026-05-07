@@ -694,11 +694,22 @@ button.shell-sidebar-section-header:hover { color: var(--sidebar-fg); }
   z-index: var(--z-sticky);
   top: calc(var(--shell-topbar-h) + 8px);
   right: 240px; /* default — sits left of Save preset / Import config */
+  /* v0.19.31 — HARD-LOCKED dimensions. Operator hard requirement:
+     pills must never grow / expand / shrink; they can only be
+     moved. Prior versions used `display: inline-flex` which sized to
+     content — content reflows, status text length, viewport zoom,
+     all could nudge the box. Now an explicit width + height + flex
+     children with flex: 0 0 auto + overflow: hidden lock the box at
+     a single, predictable size on every OS / browser / Wails app. */
+  width: 720px;
+  max-width: calc(100vw - 32px);
   height: var(--shell-statusbar-h);
-  display: inline-flex;
+  flex: 0 0 auto;
+  display: flex;
   align-items: center;
   gap: var(--sp-2);
   padding: 0 var(--sp-3);
+  overflow: hidden;
   background: var(--surface);
   border: var(--bw-1) solid var(--border-weak);
   border-radius: 999px;
@@ -712,6 +723,7 @@ button.shell-sidebar-section-header:hover { color: var(--sidebar-fg); }
      pill; child buttons (theme toggle, dock) keep their own
      pointer-events. */
 }
+.shell-statusbar > * { flex: 0 0 auto; white-space: nowrap; }
 .shell-statusbar:active { cursor: grabbing; }
 .shell-statusbar[data-dragging="true"] {
   cursor: grabbing;

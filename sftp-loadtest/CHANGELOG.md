@@ -11,6 +11,23 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.31] — 2026-05-07
+### Changed — pill dimensions are hard-locked
+**Hard requirement** from the operator: floating pills can NEVER grow
+or shrink — only move. Both `.shell-statusbar` (host pill) and
+`.cfg-summary-bar` (Configure summary pill) now have explicit
+`width` (720 px / 760 px), `height` (26 px / 40 px),
+`flex: 0 0 auto` plus `flex: 0 0 auto` on every direct child, plus
+`overflow: hidden`. Result: the pill box is byte-identical on every
+OS / browser / Wails build regardless of content length, viewport
+zoom, or the WebKit flex resolver's whims. Drag still moves the
+pill freely; the box itself is rock solid.
+
+The `max-width: calc(100vw - 32 px)` bound stays as a safety net so
+a sub-720-px viewport doesn't horizontally clip the pill off-screen
+— if the viewport is narrower than the locked width, the pill will
+shrink instead of disappearing. Otherwise the locked size wins.
+
 ## [v0.19.30] — 2026-05-07
 ### Changed — drag uses smooth deflection, not "refuse to move"
 v0.19.29's hard-stop approach left both pills feeling stuck — the

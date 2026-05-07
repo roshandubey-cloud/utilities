@@ -3034,16 +3034,20 @@ button.primary:hover:not(:disabled),
   bottom: var(--sp-3);
   left: 50%;
   transform: translateX(-50%);
-  /* Explicit content sizing — without this, an ancestor flex with
-     align-items: stretch (.configure-layout) was widening the bar to
-     ~1300 px in WebKit, which combined with border-radius: 999 px
-     produced a giant oval halo behind the chips (v0.19.26 bug). */
-  width: max-content;
+  /* v0.19.31 — HARD-LOCKED dimensions. Operator hard requirement:
+     pills must never grow / expand / shrink. Explicit width + height
+     + flex children locked at flex: 0 0 auto + overflow:hidden so
+     the box is byte-identical across every OS / browser / Wails
+     build regardless of content length. */
+  width: 760px;
   max-width: calc(100vw - var(--sp-4));
+  height: 40px;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: var(--sp-3);
   padding: 6px 10px 6px 6px;
+  overflow: hidden;
   background:
     var(--panel-glass-bg),
     var(--surface);
@@ -3060,6 +3064,7 @@ button.primary:hover:not(:disabled),
   cursor: grab;
   user-select: none;
 }
+.cfg-summary-bar > * { flex: 0 0 auto; white-space: nowrap; }
 .cfg-summary-bar[data-dragging="true"] { cursor: grabbing; }
 /* Once the operator has dragged (or the JS has explicitly applied an
    inline top/right), drop the centering transform so the inline
