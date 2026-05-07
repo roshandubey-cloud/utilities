@@ -25,10 +25,14 @@
   --surface:   #16181d;
   --surface-2: #1d2026;
 
-  /* Accent — collides; legacy uses red/rose, new uses orange. */
-  --accent:           #ff780a;
-  --accent-hover:     #ff8c33;
-  --accent-active:    #e66a00;
+  /* v0.19.37 — match tokens.css's darkened accent so white-on-orange
+     buttons (Run / Test connection / Start run / Import & Run /
+     Add worker / cfg-summary-go) hit AA contrast. Legacy components
+     pull through these overrides so this file MUST stay in sync
+     with tokens.css's `:root` block. */
+  --accent:           #e6620a;
+  --accent-hover:     #ff7a1a;
+  --accent-active:    #c14d00;
   --accent-fg:        #ffffff;
 
   /* Map legacy variable names → new tokens. Anything that was using these

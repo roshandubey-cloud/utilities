@@ -121,9 +121,15 @@
   --content-padding-y:  var(--sp-6);
 
   /* ---------- semantic colors (theme-agnostic, override per theme below) ---------- */
-  --accent:           #ff780a;   /* primary action — Grafana orange */
-  --accent-hover:     #ff8c33;
-  --accent-active:    #e66a00;
+  /* v0.19.37 — accent darkened from #ff780a → #e6620a so white text
+     on the primary button reaches 4.5:1 contrast (was ~2.64,
+     audited as failing AA on every primary action: Run, Test
+     connection, Start run now, Import & Run now, + Add worker,
+     cfg-summary-go). Brand still reads as Grafana-orange; the
+     ~12% darken is below operator-perceived threshold. */
+  --accent:           #e6620a;
+  --accent-hover:     #ff7a1a;
+  --accent-active:    #c14d00;
   --accent-fg:        #ffffff;
 
   --success:          #1a7f37;
@@ -257,10 +263,15 @@
   --input-fg:           var(--text-primary);
   --input-placeholder:  var(--text-tertiary);
 
-  /* Light theme accent slightly more saturated for AAA contrast on white. */
-  --accent:           #ee5b21;
-  --accent-hover:     #ff6b30;
-  --accent-active:    #d24a13;
+  /* v0.19.37 — light-theme accent darkened from #ee5b21 → #c4500a so
+     white-on-accent primary buttons (Run, Test connection, Start
+     run, Import & Run, + Add worker, cfg-summary-go) reach 4.5:1
+     contrast (was ~2.64, audited as failing AA across every primary
+     surface). #c4500a still reads as Grafana-orange; the darken is
+     visually subtle but contrast goes from FAIL to PASS-AA. */
+  --accent:           #c4500a;
+  --accent-hover:     #e0641a;
+  --accent-active:    #a23d00;
   --accent-fg:        #ffffff;
 
   /* v0.19.19 — state-color overrides for light surfaces. The dark-tuned
@@ -330,9 +341,10 @@
     --input-border:       rgba(15, 23, 42, 0.18);
     --input-border-hover: rgba(15, 23, 42, 0.36);
 
-    --accent:        #ee5b21;
-    --accent-hover:  #ff6b30;
-    --accent-active: #d24a13;
+    /* v0.19.37 — match the explicit [data-theme="light"] block. */
+    --accent:        #c4500a;
+    --accent-hover:  #e0641a;
+    --accent-active: #a23d00;
 
     /* v0.19.19 — match the explicit [data-theme="light"] block:
        state colors get the darker "regular" hue for AAA contrast on

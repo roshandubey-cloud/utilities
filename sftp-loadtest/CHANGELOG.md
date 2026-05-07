@@ -11,6 +11,45 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.37] — 2026-05-07
+### Fixed — visibility audit (Playwright + Chromium): contrast tokens fail AA
+Drove a Playwright + Chromium audit across all 6 views × 2 themes,
+walked every visible interactive element, computed
+foreground-vs-background contrast ratios, and flagged anything
+under WCAG AA-large (3.0).
+
+Real failures (and the fixes):
+
+- **Primary buttons** (`Run`, `Test connection`, `Start run now`,
+  `Import & Run now`, `+ Add worker`, `cfg-summary-go`) — white-on-
+  `--accent` (#ff780a / #ee5b21) audited at 2.64. Darkened the
+  accent to #e6620a (dark theme) / #c4500a (light theme) so
+  white-on-orange clears 3.4-4.5 contrast on every theme. Same
+  override applied to `legacy-overrides.css` so legacy components
+  pull through.
+- **Selected sidebar nav row** (Workbench / Configure / Schedule /
+  Runs / Cluster / Trust) and **selected segmented buttons** (SFTP
+  / FTP / FTPS, Auto / Light / Dark) shared the same
+  `--sidebar-active-fg` token. Was a light orange against the
+  alpha-blended bg → 1.30 contrast (operators reported "selected
+  nav text is invisible"). Dark theme: pinned to `#ffffff`. Light
+  theme: pinned to `#5a1a00` (dark burnt-orange) for AAA contrast
+  on the tinted near-white bg.
+
+False positives (audit limitation, not real visibility issues):
+the audit treats `rgba(R,G,B,0.18)` as a vivid solid colour
+because it doesn't alpha-blend the bg against its parent. The
+sidebar selected rows in dark theme look like 2.64 to the audit
+but render as ~17:1 in real life. Acknowledged but no fix needed.
+
+Audit script: `/tmp/slt-ui-audit.mjs`. Re-run after every CSS
+change to catch new gaps; report at `/tmp/slt-ui-auditN.json`.
+
+The "every-click-feedback" requirement (toast / loading state on
+every button) is a wider design pass and queued separately — most
+flagged "dead-click" buttons turned out to have addEventListener
+wiring the static heuristic couldn't see.
+
 ## [v0.19.36] — 2026-05-07
 ### Changed — host info embedded into the topbar; floating host pill retired
 The floating draggable host pill kept overlapping the Configure

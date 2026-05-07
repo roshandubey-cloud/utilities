@@ -31,8 +31,13 @@
   --sidebar-fg:    rgba(232, 234, 237, 1);
   --sidebar-mute:  rgba(204, 204, 220, 0.55);
   --sidebar-hint:  rgba(204, 204, 220, 0.40);
-  --sidebar-active-bg: rgba(255, 120, 10, 0.14);
-  --sidebar-active-fg: rgba(255, 159, 73, 1);
+  --sidebar-active-bg: rgba(255, 120, 10, 0.18);
+  /* v0.19.37 — was rgba(255,159,73,1) which gave 1.30 contrast
+     against the alpha-blended bg (~rgb(44,26,15)) — operators
+     reported "selected nav row text invisible". White is ~17:1
+     against the same blended bg and reads cleanly without losing
+     the orange "selected" tint as the row fill. */
+  --sidebar-active-fg: #ffffff;
   --sidebar-hover-bg:  rgba(204, 204, 220, 0.06);
   --sidebar-divider:   rgba(204, 204, 220, 0.06);
 }
@@ -41,8 +46,12 @@
   --sidebar-fg:        #0f172a;
   --sidebar-mute:      #475569;
   --sidebar-hint:      #94a3b8;
-  --sidebar-active-bg: rgba(238, 91, 33, 0.10);
-  --sidebar-active-fg: #c43c0a;
+  --sidebar-active-bg: rgba(238, 91, 33, 0.14);
+  /* v0.19.37 — was #c43c0a on the alpha-blended near-white bg (~ #f5e7e3)
+     which gave only ~3.4 contrast and audited at 1.30 in some cells.
+     #5a1a00 is the same brand orange family but dark enough to hit
+     8:1 contrast on the tinted bg, AAA-clean. */
+  --sidebar-active-fg: #5a1a00;
   --sidebar-hover-bg:  rgba(15, 23, 42, 0.05);
   --sidebar-divider:   rgba(15, 23, 42, 0.06);
 }
