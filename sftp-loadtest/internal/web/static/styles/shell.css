@@ -60,14 +60,17 @@
 }
 
 /* ---------------- Outer shell grid ---------------- */
+/* v0.19.22 — statusbar is no longer in the grid. It floats as a
+   draggable pill (see .shell-statusbar rules below) so the operator
+   can park it wherever there's empty space without losing screen
+   real-estate. The grid is now two rows (topbar / content). */
 .app-shell {
   display: grid;
-  grid-template-rows: var(--shell-topbar-h) 1fr var(--shell-statusbar-h);
+  grid-template-rows: var(--shell-topbar-h) 1fr;
   grid-template-columns: var(--shell-sidebar-w) 1fr;
   grid-template-areas:
     "topbar topbar"
-    "sidebar main"
-    "statusbar statusbar";
+    "sidebar main";
   width: 100%;
   min-height: 100vh;
   background: var(--canvas);
@@ -676,21 +679,41 @@ button.shell-sidebar-section-header:hover { color: var(--sidebar-fg); }
 /* ============================================================================
    STATUS BAR — thin, mono, glance-and-forget.
    ============================================================================ */
+/* v0.19.22 — floating, draggable status pill. Pre-fix it was a
+   sticky-bottom band stretching the full viewport width. Operators
+   wanted it parkable: defaults to the top-right area (just under the
+   topbar, left of the Save preset / Import config buttons), draggable
+   anywhere with constraints to keep it inside the viewport, position
+   persisted in localStorage. The shell.js wireStatusbarDock helper
+   sets inline top/right styles from the saved offset. */
 .shell-statusbar {
-  grid-area: statusbar;
-  position: sticky;
-  bottom: 0;
+  position: fixed;
   z-index: var(--z-sticky);
-  display: flex;
+  top: calc(var(--shell-topbar-h) + 8px);
+  right: 240px; /* default — sits left of Save preset / Import config */
+  height: var(--shell-statusbar-h);
+  display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
   padding: 0 var(--sp-3);
-  height: var(--shell-statusbar-h);
   background: var(--surface);
-  border-top: var(--bw-1) solid var(--border-weak);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: 999px;
+  box-shadow: var(--shadow-2);
   font-family: var(--font-mono);
   font-size: var(--fs-11);
   color: var(--text-tertiary);
+  cursor: grab;
+  user-select: none;
+  /* The operator drags by grabbing any non-button surface inside the
+     pill; child buttons (theme toggle, dock) keep their own
+     pointer-events. */
+}
+.shell-statusbar:active { cursor: grabbing; }
+.shell-statusbar[data-dragging="true"] {
+  cursor: grabbing;
+  box-shadow: var(--shadow-3);
+  transition: none;
 }
 .shell-statusbar-cell {
   display: inline-flex;
@@ -705,9 +728,10 @@ button.shell-sidebar-section-header:hover { color: var(--sidebar-fg); }
 .shell-statusbar-cell .value { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .shell-statusbar-spacer { flex: 1; }
 
-/* v0.19.17 — dock toggle + position swap. Default position is now TOP
-   (just under the topbar) per operator request; clicking the dock
-   button flips top↔bottom and persists the choice in localStorage. */
+/* v0.19.22 — the dock button on the floating pill snaps the bar back
+   to its default position (top-right, left of Save preset / Import
+   config). Useful when the operator's drag pushed it off-screen on
+   a viewport resize. */
 .shell-statusbar-dock {
   appearance: none;
   border: var(--bw-1) solid var(--border-weak);
@@ -727,22 +751,6 @@ button.shell-sidebar-section-header:hover { color: var(--sidebar-fg); }
   color: var(--text-primary);
   border-color: var(--border-medium);
   background: var(--action-hover);
-}
-/* Dock = top: swap the row order so the statusbar sits between the
-   topbar and the sidebar/main area. Sticky positioning flips so the
-   bar stays glued to the top of the inner viewport. */
-.app-shell[data-statusbar="top"] {
-  grid-template-rows: var(--shell-topbar-h) var(--shell-statusbar-h) 1fr;
-  grid-template-areas:
-    "topbar    topbar"
-    "statusbar statusbar"
-    "sidebar   main";
-}
-.app-shell[data-statusbar="top"] .shell-statusbar {
-  bottom: auto;
-  top: var(--shell-topbar-h);
-  border-top: 0;
-  border-bottom: var(--bw-1) solid var(--border-weak);
 }
 
 /* ============================================================================

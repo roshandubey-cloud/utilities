@@ -336,21 +336,117 @@ function wireWindowControls(shell) {
   close?.addEventListener('click', () => { try { r.Quit?.(); } catch {} });
 }
 
-// Statusbar dock — operators wanted the bar pinned at the TOP, next
-// to the topbar, rather than at the bottom. Default = top; one-click
-// flip; persisted. The grid swap is driven by the data attribute on
-// .app-shell so the layout reorders without re-mounting children.
-const STATUSBAR_KEY = 'sftp-loadtest-statusbar-dock-v1';
+// Statusbar drag — v0.19.22 promoted from a top/bottom dock toggle to
+// a fully draggable floating pill. Defaults to the top-right corner
+// (just below the topbar, left of the Configure view's Save preset /
+// Import config buttons). Operators can grab + drop anywhere inside
+// the viewport; the position persists per-localStorage as percentage
+// offsets so resizes don't push it off-screen. The snap button on the
+// pill resets to the default origin.
+const STATUSBAR_KEY = 'sftp-loadtest-statusbar-pos-v2';
+const STATUSBAR_DEFAULT = { topPx: null, rightPx: 240 }; // topPx null => use CSS default (topbar + 8)
+
 function wireStatusbarDock(shell) {
-  const stored = (() => { try { return localStorage.getItem(STATUSBAR_KEY); } catch { return null; } })();
-  const initial = stored === 'bottom' ? 'bottom' : 'top'; // default = top
-  shell.dataset.statusbar = initial;
-  const btn = shell.querySelector('[data-role="statusbar-dock"]');
-  btn?.addEventListener('click', () => {
-    const next = shell.dataset.statusbar === 'top' ? 'bottom' : 'top';
-    shell.dataset.statusbar = next;
-    try { localStorage.setItem(STATUSBAR_KEY, next); } catch {}
+  const bar = shell.querySelector('.shell-statusbar');
+  if (!bar) return;
+  const dock = bar.querySelector('[data-role="statusbar-dock"]');
+
+  applyPosition(bar, readPosition());
+
+  // Drag — pointer events for unified mouse/touch/pen handling.
+  // Capture phase on the bar so child element clicks (theme buttons,
+  // dock snap) still get their click handlers; we only steal the drag
+  // when pointerdown is on the bar surface itself, NOT a button or
+  // input child.
+  bar.addEventListener('pointerdown', (ev) => {
+    // Skip when the press is on an interactive child — those have
+    // their own click handlers and we shouldn't trap them in a drag.
+    if (ev.target.closest('button, input, a, [role="button"]')) return;
+    ev.preventDefault();
+    bar.setPointerCapture(ev.pointerId);
+    bar.dataset.dragging = 'true';
+    const startX = ev.clientX;
+    const startY = ev.clientY;
+    const startRect = bar.getBoundingClientRect();
+    const startTop = startRect.top;
+    const startRight = window.innerWidth - startRect.right;
+
+    const onMove = (mv) => {
+      const dx = mv.clientX - startX;
+      const dy = mv.clientY - startY;
+      // Right anchor moves opposite to dx (drag right = decrease right
+      // offset). Clamp so the bar can't be parked off-screen — the
+      // operator always sees it.
+      const minTop = 8; // Allow dragging above topbar if they want — bar floats over.
+      const maxTop = Math.max(minTop, window.innerHeight - startRect.height - 8);
+      const minRight = 8;
+      const maxRight = Math.max(minRight, window.innerWidth - startRect.width - 8);
+      const newTop = clamp(startTop + dy, minTop, maxTop);
+      const newRight = clamp(startRight - dx, minRight, maxRight);
+      applyPosition(bar, { topPx: newTop, rightPx: newRight });
+    };
+    const onUp = () => {
+      bar.dataset.dragging = 'false';
+      bar.releasePointerCapture(ev.pointerId);
+      bar.removeEventListener('pointermove', onMove);
+      bar.removeEventListener('pointerup', onUp);
+      // Persist final position so reloads land where the operator left it.
+      const r = bar.getBoundingClientRect();
+      writePosition({ topPx: r.top, rightPx: window.innerWidth - r.right });
+    };
+    bar.addEventListener('pointermove', onMove);
+    bar.addEventListener('pointerup', onUp);
   });
+
+  dock?.addEventListener('click', () => {
+    // Snap back to the default origin and clear the saved offset so
+    // the CSS default takes over again.
+    bar.style.top = '';
+    bar.style.right = '';
+    try { localStorage.removeItem(STATUSBAR_KEY); } catch {}
+  });
+
+  // Re-clamp on viewport resize so a window shrink doesn't strand the
+  // pill outside the visible area.
+  window.addEventListener('resize', () => {
+    const pos = readPosition();
+    if (pos.topPx === null && pos.rightPx === STATUSBAR_DEFAULT.rightPx) return;
+    const rect = bar.getBoundingClientRect();
+    const clamped = {
+      topPx: pos.topPx !== null ? clamp(pos.topPx, 8, Math.max(8, window.innerHeight - rect.height - 8)) : null,
+      rightPx: clamp(pos.rightPx, 8, Math.max(8, window.innerWidth - rect.width - 8)),
+    };
+    applyPosition(bar, clamped);
+  });
+}
+
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+function readPosition() {
+  try {
+    const raw = localStorage.getItem(STATUSBAR_KEY);
+    if (!raw) return { topPx: STATUSBAR_DEFAULT.topPx, rightPx: STATUSBAR_DEFAULT.rightPx };
+    const parsed = JSON.parse(raw);
+    return {
+      topPx: typeof parsed.topPx === 'number' ? parsed.topPx : STATUSBAR_DEFAULT.topPx,
+      rightPx: typeof parsed.rightPx === 'number' ? parsed.rightPx : STATUSBAR_DEFAULT.rightPx,
+    };
+  } catch {
+    return { topPx: STATUSBAR_DEFAULT.topPx, rightPx: STATUSBAR_DEFAULT.rightPx };
+  }
+}
+
+function writePosition(pos) {
+  try { localStorage.setItem(STATUSBAR_KEY, JSON.stringify(pos)); } catch {}
+}
+
+function applyPosition(bar, pos) {
+  if (pos.topPx === null) {
+    bar.style.top = ''; // fall back to CSS default
+  } else {
+    bar.style.top = pos.topPx + 'px';
+  }
+  bar.style.right = pos.rightPx + 'px';
 }
 
 // buildViews creates [data-view="<id>"] containers in the main pane and

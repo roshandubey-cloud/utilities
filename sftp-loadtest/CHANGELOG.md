@@ -11,6 +11,37 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.23] — 2026-05-07
+### Changed — status bar is now a floating, draggable pill
+Operator request: "this status bar should be draggable, movable
+anywhere on the right side of the screen as long as it does not
+block any field or text on the screen and by default it's always
+at the top at the empty space on the left of save preset."
+
+v0.19.17 had introduced a top/bottom dock toggle but kept the bar as
+a full-width band in the grid. v0.19.23 removes it from the grid
+entirely:
+
+- Pulled the `statusbar` row out of `.app-shell`'s grid template; the
+  layout is now just `topbar / (sidebar | main)`.
+- `.shell-statusbar` becomes a `position: fixed` rounded pill,
+  `box-shadow`-lifted, defaulting to `top: var(--shell-topbar-h) +
+  8px; right: 240px` — that's just below the topbar in the empty
+  space to the left of Save preset / Import config.
+- `pointerdown` on the pill (anywhere except an interactive child)
+  starts a drag; `pointermove` updates `top` / `right` inline
+  styles, clamped so the pill can't be parked off-screen;
+  `pointerup` persists the final offset under
+  `sftp-loadtest-statusbar-pos-v2`.
+- The dock button on the pill snaps it back to default and clears
+  the persisted offset.
+- A `resize` listener re-clamps the position so a viewport shrink
+  doesn't strand the pill in the gutter.
+
+The previous v0.19.17 dock-toggle key (`-statusbar-dock-v1`) is
+abandoned; new key carries the {topPx, rightPx} pair so future
+position dimensions add cleanly.
+
 ## [v0.19.22] — 2026-05-07
 ### Added — single unified report per cluster run with worker provenance per row
 Operator question: "each loadtest run should show one report and within
