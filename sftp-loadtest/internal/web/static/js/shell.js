@@ -346,12 +346,50 @@ function wireWindowControls(shell) {
 const STATUSBAR_KEY = 'sftp-loadtest-statusbar-pos-v2';
 const STATUSBAR_DEFAULT = { topPx: null, rightPx: 240 }; // topPx null => use CSS default (topbar + 8)
 
+// computeDefaultRight measures where the Configure prelude's Save
+// preset… button sits and returns the `right` offset that would put
+// the pill 8px to its left, so first-paint never overlaps. Falls back
+// to STATUSBAR_DEFAULT.rightPx when the button isn't in the DOM yet
+// (e.g. the operator landed on a different view) or when the bar
+// itself is wider than the available gap.
+function computeDefaultRight(barWidth) {
+  const anchor =
+    document.querySelector('[data-role="save-preset"]') ||
+    document.querySelector('[data-slot="prelude"]') ||
+    document.querySelector('#exportBtn, #importBtn');
+  if (!anchor) return STATUSBAR_DEFAULT.rightPx;
+  const rect = anchor.getBoundingClientRect();
+  if (!rect.width) return STATUSBAR_DEFAULT.rightPx;
+  // window.innerWidth - rect.left = distance from anchor's left edge
+  // to viewport's right. Add 8px so the pill clears the anchor.
+  const right = Math.round(window.innerWidth - rect.left + 8);
+  // Make sure the resulting right offset still leaves room for the
+  // pill itself on the screen (i.e. left edge >= 8). If not, fall
+  // back to the static default.
+  if (right + barWidth > window.innerWidth - 8) return STATUSBAR_DEFAULT.rightPx;
+  return right;
+}
+
 function wireStatusbarDock(shell) {
   const bar = shell.querySelector('.shell-statusbar');
   if (!bar) return;
   const dock = bar.querySelector('[data-role="statusbar-dock"]');
 
-  applyPosition(bar, readPosition());
+  // First paint: prefer the persisted position, otherwise dynamically
+  // anchor 8px left of the Configure prelude's Save preset button.
+  // The configure-redesign mount runs in the same setTimeout(0) batch
+  // as the sidebar; we run AFTER it (mountSidebar is the last call in
+  // app.js) so the Save preset button is already in the DOM by now.
+  const stored = readPosition();
+  if (stored.topPx === null && stored.rightPx === STATUSBAR_DEFAULT.rightPx) {
+    // No saved offset → measure once we have a width to consult.
+    requestAnimationFrame(() => {
+      const w = bar.getBoundingClientRect().width;
+      applyPosition(bar, { topPx: null, rightPx: computeDefaultRight(w) });
+    });
+  } else {
+    applyPosition(bar, stored);
+  }
 
   // Drag — pointer events for unified mouse/touch/pen handling.
   // Capture phase on the bar so child element clicks (theme buttons,
@@ -399,11 +437,14 @@ function wireStatusbarDock(shell) {
   });
 
   dock?.addEventListener('click', () => {
-    // Snap back to the default origin and clear the saved offset so
-    // the CSS default takes over again.
-    bar.style.top = '';
-    bar.style.right = '';
+    // Snap back to the dynamic default (8px left of Save preset),
+    // clearing the saved offset so future loads also re-measure.
     try { localStorage.removeItem(STATUSBAR_KEY); } catch {}
+    bar.style.top = '';
+    requestAnimationFrame(() => {
+      const w = bar.getBoundingClientRect().width;
+      applyPosition(bar, { topPx: null, rightPx: computeDefaultRight(w) });
+    });
   });
 
   // Re-clamp on viewport resize so a window shrink doesn't strand the

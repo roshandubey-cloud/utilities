@@ -11,6 +11,22 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.25] — 2026-05-07
+### Fixed — status pill default position no longer overlaps Save preset
+The v0.19.23 default `right: 240px` was a fixed guess that didn't
+account for the Configure prelude's actual width — Save preset +
+Import config + the third action button add up to ~360px on macOS,
+so the pill's right edge sat behind Save preset.
+
+`computeDefaultRight()` now measures the live position of
+`[data-role="save-preset"]` (with fallbacks to `[data-slot="prelude"]`
+and the legacy export/import buttons) at first paint and snaps the
+pill 8px to its left. The Dock button on the pill re-runs the same
+measurement so a Reset always lands clean. If the pill width plus
+the measured offset wouldn't fit on screen, falls back to the static
+240px default. User drag still wins — the saved offset takes
+precedence over the dynamic default on subsequent loads.
+
 ## [v0.19.24] — 2026-05-07
 ### Fixed — search box opens palette on click; sidebar reclaims statusbar row height
 Two follow-ups after the v0.19.23 floating statusbar:
