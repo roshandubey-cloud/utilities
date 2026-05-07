@@ -11,6 +11,23 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.27] — 2026-05-07
+### Fixed — Configure summary pill rendered as a giant oval (v0.19.26 regression)
+v0.19.26 promoted the bar from sticky to position:fixed but kept
+`display: inline-flex` and lost the explicit content-width
+constraint. WebKit's flex resolution for an absolutely-positioned
+child of a `display: flex; align-items: stretch` parent took the
+parent's full width as the bar's width — combined with
+`border-radius: 999px` that rendered as the giant oval the operator
+saw behind the chips. The bar itself is fine; only its computed box
+was huge, halo'ing everything underneath.
+
+Fixed with `width: max-content` + `display: flex` (not inline-flex)
++ `max-width: calc(100vw - var(--sp-4))`. The bar now sizes to its
+content regardless of ancestor flex/grid layout. Drag still works:
+the existing `.cfg-summary-bar[style*="top:"]` rule disengages the
+centering transform once the helper sets inline coords.
+
 ## [v0.19.26] — 2026-05-07
 ### Changed — Configure summary pill is now draggable too; drag logic factored
 Operator request: "i want this summary bar similar draggable movable

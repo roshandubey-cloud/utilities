@@ -3021,16 +3021,28 @@ button.primary:hover:not(:disabled),
    draggable surfaces; default origin is center-bottom so the visual
    feel matches the previous sticky placement. The drag wiring lives
    in draggable.js; .cfg-summary-bar must keep position:fixed so the
-   inline top/right styles the helper sets actually take effect. */
+   inline top/right styles the helper sets actually take effect.
+
+   v0.19.27 — fixed v0.19.26's "giant oval" bug. inline-flex inside a
+   parent flexbox with align-items: stretch was causing the bar to
+   inherit the parent's full width (≈1300 px) when position:fixed
+   wasn't enough to short-circuit the stretch on every WebKit layout
+   path. Using width: max-content + auto margins for centering keeps
+   the bar exactly content-sized regardless of parent layout. */
 .cfg-summary-bar {
   position: fixed;
   bottom: var(--sp-3);
   left: 50%;
-  transform: translateX(-50%); /* center on first paint until dragged */
-  display: inline-flex;
+  transform: translateX(-50%);
+  /* Explicit content sizing — without this, an ancestor flex with
+     align-items: stretch (.configure-layout) was widening the bar to
+     ~1300 px in WebKit, which combined with border-radius: 999 px
+     produced a giant oval halo behind the chips (v0.19.26 bug). */
+  width: max-content;
+  max-width: calc(100vw - var(--sp-4));
+  display: flex;
   align-items: center;
   gap: var(--sp-3);
-  max-width: calc(100% - var(--sp-4));
   padding: 6px 10px 6px 6px;
   background:
     var(--panel-glass-bg),
@@ -3050,9 +3062,8 @@ button.primary:hover:not(:disabled),
 }
 .cfg-summary-bar[data-dragging="true"] { cursor: grabbing; }
 /* Once the operator has dragged (or the JS has explicitly applied an
-   inline `top` or `right`), drop the centering transform. The helper
-   sets bar.style.left = '' on apply, but the transform stays unless
-   we override it here. */
+   inline top/right), drop the centering transform so the inline
+   coords land where the helper expects them. */
 .cfg-summary-bar[style*="top:"], .cfg-summary-bar[style*="right:"] {
   transform: none;
   left: auto;
