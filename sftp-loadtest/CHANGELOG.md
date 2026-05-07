@@ -11,6 +11,28 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.34] — 2026-05-07
+### Fixed — pill overlapping Save preset on first paint (race fix)
+The collision resolver was correct; the timing wasn't. shell.js's
+`wireStatusbarDock` ran during `mountShell()` (before
+DOMContentLoaded → setTimeout(0) → mountConfigureRedesign), and
+mountConfigureRedesign is what inserts the Save preset button. So
+when the resolver scanned the DOM for "avoid" rects, Save preset
+wasn't there yet — no collision detected, pill landed at the
+default 240 px right offset. By the time Save preset appeared
+~10 ms later it was right next to / under the pill.
+
+`applySavedOrDefault` now re-runs:
+1. on initial RAF (so the pill picks up its CSS default fast),
+2. on a 120 ms timeout (after every chained `setTimeout(0)` mount
+   has completed — Save preset / sidebar / cluster sidebar all in
+   the DOM by now), and
+3. on every `sftpl:view-changed` event so view switches re-resolve
+   against the new content layout.
+
+The resolver itself is unchanged — it's the population of the
+avoid set that's now reliable.
+
 ## [v0.19.33] — 2026-05-07
 ### Fixed — host pill cells stuck at "—" (v0.19.32 regression)
 v0.19.32 reparented the host pill to `<body>` so its width could

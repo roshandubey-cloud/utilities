@@ -264,10 +264,25 @@ export function makeDraggable(el, opts) {
   // ---------------- helpers ----------------
 
   function applySavedOrDefault() {
-    // Defer one frame so DOM is settled before we measure other
-    // elements (the avoid set + anchors). Gives mountSidebar /
-    // mountConfigureRedesign time to finish their inserts.
-    requestAnimationFrame(() => {
+    // Run the anchor measurement + collision resolver multiple times:
+    //
+    //   1. Initial RAF — gives the shell a chance to paint, and the
+    //      pill at least picks up its CSS default origin so the user
+    //      doesn't see a flash at (0,0) while we wait for mounts.
+    //   2. setTimeout(120ms) — by now the chained setTimeout(0) in
+    //      app.js has completed mountConfigureRedesign (which inserts
+    //      Save preset), mountSidebar, etc. We re-measure now that
+    //      the avoid set is fully populated. This is what actually
+    //      catches the "Save preset wasn't yet in DOM" race.
+    //   3. sftpl:view-changed listener — re-resolves whenever the
+    //      operator switches view (different cards, different anchor
+    //      positions).
+    //
+    // Operator pre-fix complaint: pill landed flush against / over
+    // Save preset on first paint because the avoid set was empty
+    // when the pill was positioned. Multi-tick re-resolve closes
+    // that race for good.
+    const place = () => {
       const saved = readPos();
       let pos;
       if (saved !== null) {
@@ -278,9 +293,6 @@ export function makeDraggable(el, opts) {
         if (defaultTop === null && rightPx === null) return; // CSS default wins
         pos = { topPx: defaultTop, rightPx };
       }
-      // Resolve collision against the current DOM in case content
-      // shifted since the position was saved (or the default lands
-      // close enough to a tracked element to warrant nudging).
       apply(pos);
       const rect = el.getBoundingClientRect();
       const avoid = gatherAvoidRects(el);
@@ -291,7 +303,10 @@ export function makeDraggable(el, opts) {
         { w: window.innerWidth, h: window.innerHeight },
       );
       apply({ topPx: resolved.top, rightPx: resolved.right });
-    });
+    };
+    requestAnimationFrame(place);
+    setTimeout(place, 120);
+    document.addEventListener('sftpl:view-changed', place);
   }
 
   function computeAnchorRight() {
