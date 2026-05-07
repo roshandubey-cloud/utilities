@@ -11,6 +11,22 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.18] — 2026-05-06
+### Fixed — Sidebar "Recent runs" was empty on cluster masters
+The sidebar's `renderRuns` only fetched `/api/runs` (solo). On a master
+that fans out via `/api/cluster/start`, every run got archived to
+`/api/cluster/runs` and the master's sidebar Recent runs section
+stayed empty forever. The runs-history main panel already merged both
+sources; the sidebar previewer didn't.
+
+`renderRuns` now fetches both endpoints in parallel and merges them
+(newest-first by `started_at`) — matches the runs-history view. Click
+on a cluster row opens the detail pane via the existing
+`data-view-detail` proxy; `openDetail` falls back to
+`/api/cluster/runs?id=` when the run isn't in `/api/runs`. Cluster-
+projected entries pass through the same row renderer with
+`status=ok|warn` derived from `failed_files` exactly like solo runs.
+
 ## [v0.19.17] — 2026-05-06
 ### Changed — UI shell: window controls always reachable, sidebar quieter, status row at top, password prompts at point of action
 Operator feedback after the v0.19.16 cluster validation:

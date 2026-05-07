@@ -220,13 +220,38 @@ async function renderRuns(slot) {
   let runs = [];
   let total = 0;
   try {
-    const r = await apiFetch('/api/runs');
-    if (r.ok) {
-      const j = await r.json();
-      const all = (j.runs || []).filter((x) => Number(x.total_files) > 0);
-      total = all.length;
-      runs = all.slice(0, SIDEBAR_PREVIEW_N);
-    }
+    // v0.19.18 — merge solo runs (/api/runs) AND archived cluster runs
+    // (/api/cluster/runs). Pre-fix the sidebar only fetched /api/runs,
+    // so on a cluster master the Recent runs section stayed empty
+    // forever — every run was archived to /api/cluster/runs and never
+    // surfaced. The runs-history component already merges both;
+    // sidebar previewers should see the same timeline.
+    const [soloRes, clusterRes] = await Promise.all([
+      apiFetch('/api/runs').catch(() => null),
+      apiFetch('/api/cluster/runs').catch(() => null),
+    ]);
+    const solo = (soloRes && soloRes.ok)
+      ? ((await soloRes.json()).runs || []).filter((x) => Number(x.total_files) > 0)
+      : [];
+    const cluster = (clusterRes && clusterRes.ok)
+      ? ((await clusterRes.json()).runs || []).map((c) => ({
+          // Project a cluster meta into the same shape the row renderer
+          // expects, so we can reuse one map(rowHTML) below.
+          id: c.id || c.cluster_id || '',
+          started_at: c.started_at,
+          total_files: Number(c.total_files || 0),
+          failed_files: Number(c.failed_files || 0),
+          interrupted: !!c.interrupted,
+          _cluster: true,
+        }))
+      : [];
+    const all = [...solo, ...cluster].sort((a, b) => {
+      const ta = new Date(a.started_at || 0).getTime();
+      const tb = new Date(b.started_at || 0).getTime();
+      return tb - ta;
+    });
+    total = all.length;
+    runs = all.slice(0, SIDEBAR_PREVIEW_N);
   } catch { /* leave empty */ }
   if (runs.length === 0) {
     slot.innerHTML = '<div class="shell-sidebar-empty">Finished runs will appear here.</div>';

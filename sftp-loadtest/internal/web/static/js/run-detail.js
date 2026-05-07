@@ -101,6 +101,18 @@ export async function openDetail(runID) {
     return;
   }
   if (!meta) {
+    // v0.19.18 — fall back to /api/cluster/runs. The sidebar Recent runs
+    // list now mixes solo runs with archived cluster runs (matches the
+    // runs-history view); clicking a cluster row used to land on
+    // "Run not found" because /api/runs is solo-only.
+    try {
+      const r2 = await apiFetch(`/api/cluster/runs?id=${encodeURIComponent(runID)}`);
+      if (r2.ok) {
+        meta = await r2.json();
+      }
+    } catch { /* fall through to not-found */ }
+  }
+  if (!meta) {
     viewEl.innerHTML = `<div class="run-detail-error">Run <span class="mono">${escapeHTML(runID)}</span> not found.</div>`;
     return;
   }
