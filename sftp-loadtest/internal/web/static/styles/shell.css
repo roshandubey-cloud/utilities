@@ -694,14 +694,13 @@ button.shell-sidebar-section-header:hover { color: var(--sidebar-fg); }
   z-index: var(--z-sticky);
   top: calc(var(--shell-topbar-h) + 8px);
   right: 240px; /* default — sits left of Save preset / Import config */
-  /* v0.19.31 — HARD-LOCKED dimensions. Operator hard requirement:
-     pills must never grow / expand / shrink; they can only be
-     moved. Prior versions used `display: inline-flex` which sized to
-     content — content reflows, status text length, viewport zoom,
-     all could nudge the box. Now an explicit width + height + flex
-     children with flex: 0 0 auto + overflow: hidden lock the box at
-     a single, predictable size on every OS / browser / Wails app. */
-  width: 720px;
+  /* v0.19.32 — content-driven width. v0.19.31's hard 720 px was a
+     workaround for an ancestor grid/flex stretching the box; now
+     the pill lives directly under <body> (shell.js reparents it on
+     mount), so width: max-content sizes tightly to its chips —
+     no empty space, no grow / shrink during drag. height stays
+     locked so the pill is always the canonical thin strip. */
+  width: max-content;
   max-width: calc(100vw - 32px);
   height: var(--shell-statusbar-h);
   flex: 0 0 auto;

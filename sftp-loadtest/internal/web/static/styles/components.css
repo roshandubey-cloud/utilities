@@ -3034,12 +3034,13 @@ button.primary:hover:not(:disabled),
   bottom: var(--sp-3);
   left: 50%;
   transform: translateX(-50%);
-  /* v0.19.31 — HARD-LOCKED dimensions. Operator hard requirement:
-     pills must never grow / expand / shrink. Explicit width + height
-     + flex children locked at flex: 0 0 auto + overflow:hidden so
-     the box is byte-identical across every OS / browser / Wails
-     build regardless of content length. */
-  width: 760px;
+  /* v0.19.32 — content-driven width (was hard-locked 760 px). The
+     bar now lives directly under <body> (configure-redesign.js
+     reparents it on mount) so no ancestor flex/grid resolves its
+     box. width: max-content sizes tightly to the chips, no empty
+     trailing space, no grow / shrink during drag. height stays
+     locked at 40 px so the pill is a canonical strip. */
+  width: max-content;
   max-width: calc(100vw - var(--sp-4));
   height: 40px;
   flex: 0 0 auto;

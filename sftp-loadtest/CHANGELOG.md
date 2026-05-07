@@ -11,6 +11,18 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.32] — 2026-05-07
+### Fixed — pills had wasted empty trailing space (v0.19.31 regression)
+v0.19.31's hard-locked 720 / 760 px widths fixed the "expanding
+oval" but left ~200 px of empty space inside each pill once content
+fit. The right fix is to size to content WITHOUT inheriting from a
+flex/grid parent that stretches: shell.js now reparents the host
+pill to `<body>` at mount (matching v0.19.28 for the summary pill),
+and both pills use `width: max-content` again — they're tight to
+their chips, no empty padding, but the box still doesn't grow /
+shrink during drag because no ancestor layout influences it.
+height stays locked so the strip is always the canonical thin pill.
+
 ## [v0.19.31] — 2026-05-07
 ### Changed — pill dimensions are hard-locked
 **Hard requirement** from the operator: floating pills can NEVER grow

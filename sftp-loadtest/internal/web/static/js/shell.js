@@ -252,6 +252,15 @@ export function mountShell() {
   body.appendChild(shell);
   body.classList.add('shell-mounted');
 
+  // v0.19.32 — detach the host status pill from the .app-shell grid
+  // and reparent to <body>. As long as the pill lived inside the
+  // grid container its width was being resolved by grid auto-flow
+  // (or by the row that originally hosted it), forcing the operator
+  // to lock dimensions. With <body> as parent there's no ancestor
+  // flex/grid to influence sizing — content-driven width works.
+  const hostPill = shell.querySelector('.shell-statusbar');
+  if (hostPill) document.body.appendChild(hostPill);
+
   // Build the view containers and migrate components into them.
   buildViews(main);
 
