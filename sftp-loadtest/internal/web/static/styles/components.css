@@ -3068,6 +3068,12 @@ button.primary:hover:not(:disabled),
   transform: none;
   left: auto;
 }
+/* v0.19.28 — bar is body-scoped so it floats free of any view's
+   layout. Hide it on every view except Configure where it's
+   meaningful. */
+body:not([data-active-view="configure"]) .cfg-summary-bar {
+  display: none !important;
+}
 [data-theme="light"] .cfg-summary-bar,
 :root:not([data-theme]) .cfg-summary-bar {
   box-shadow:

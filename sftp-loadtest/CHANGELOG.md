@@ -11,6 +11,22 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.28] — 2026-05-07
+### Fixed — Configure summary pill rendered as a giant oval (round 2)
+v0.19.27's `width: max-content` + `display: flex` was the right CSS
+in isolation, but the bar was still inside `.configure-layout` —
+a `display: flex; align-items: stretch` parent — and WebKit's flex
+resolution kept resolving the bar's box to the parent's full width
+even with `position: fixed`. Border-radius 999px on a 1100×700 box
+= the giant oval halo.
+
+Real fix: physically detach the bar from `.configure-layout` and
+append it to `<body>`. With `<body>` as parent there is no ancestor
+flex/grid to influence sizing; the bar sizes strictly to its
+content. Setview now stamps `body[data-active-view]` so a CSS rule
+hides the bar on every view except Configure (where it's
+meaningful).
+
 ## [v0.19.27] — 2026-05-07
 ### Fixed — Configure summary pill rendered as a giant oval (v0.19.26 regression)
 v0.19.26 promoted the bar from sticky to position:fixed but kept

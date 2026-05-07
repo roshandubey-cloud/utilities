@@ -421,7 +421,17 @@ export function mountConfigureRedesign() {
   // can park them wherever there's space (effectively letting them
   // "trade places"). No anchor — defaults to the CSS bottom-center
   // origin until the operator drags or saves a position.
+  //
+  // v0.19.28 — physically detach the pill from the .configure-layout
+  // flex parent and append to <body>. Even with position:fixed, the
+  // bar was inheriting an ~1100×700 px box from WebKit's flex
+  // resolution under `align-items: stretch`, rendering as a giant
+  // oval halo (the v0.19.26+v0.19.27 issue). With <body> as parent
+  // there is no ancestor flex/grid to influence sizing.
   if (summaryBar) {
+    if (summaryBar.parentNode !== document.body) {
+      document.body.appendChild(summaryBar);
+    }
     import('./draggable.js').then(({ makeDraggable }) => {
       makeDraggable(summaryBar, {
         storageKey: 'sftp-loadtest-summary-pos-v1',

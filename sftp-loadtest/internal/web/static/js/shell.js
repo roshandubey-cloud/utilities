@@ -601,6 +601,11 @@ function setView(id, shell, main) {
   main.querySelectorAll('[data-view]').forEach((c) => {
     c.dataset.viewActive = String(c.dataset.view === id);
   });
+  // v0.19.28 — surface the active view as a body data attribute so
+  // CSS rules outside the .shell-main subtree (e.g. body-level fixed
+  // pills like .cfg-summary-bar) can scope themselves to the right
+  // view without listening to the JS event.
+  document.body.dataset.activeView = id;
   try { localStorage.setItem(VIEW_KEY, id); } catch {}
   document.dispatchEvent(new CustomEvent('sftpl:view-changed', { detail: { view: id } }));
 }
