@@ -1241,6 +1241,58 @@ button.shell-sidebar-section-header:hover { color: var(--sidebar-fg); }
 
 /* Wider variant — used by host-key consent so long fingerprints fit. */
 .modal-panel-wide { width: 600px; }
+
+/* v0.19.19 — stop-progress dialog. Polls /api/status while the runner
+   drains pending track-IDs / downloads / CSV flush / meta seal so the
+   operator sees what's blocking instead of staring at a frozen
+   button. Force-close button drops the dialog without aborting the
+   seal (the runner keeps draining server-side). */
+.stop-progress-panel { width: 520px; max-width: 92vw; }
+.stop-progress-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 var(--sp-3);
+}
+.stop-progress-stage {
+  display: grid;
+  grid-template-columns: 14px max-content 1fr;
+  gap: var(--sp-2);
+  align-items: center;
+  font-size: var(--fs-13);
+  color: var(--text-secondary);
+}
+.stop-progress-stage-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--text-tertiary); opacity: 0.4;
+}
+.stop-progress-stage[data-status="busy"] .stop-progress-stage-dot {
+  background: var(--accent); opacity: 1;
+  animation: stopProgressPulse 1s ease-in-out infinite;
+}
+.stop-progress-stage[data-status="ok"] .stop-progress-stage-dot {
+  background: var(--success-fg-soft); opacity: 1;
+}
+.stop-progress-stage[data-status="pending"] { color: var(--text-tertiary); }
+.stop-progress-stage[data-status="ok"] { color: var(--text-primary); }
+.stop-progress-stage-label { font-weight: var(--fw-medium); }
+.stop-progress-stage-detail {
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  justify-self: end;
+}
+.stop-progress-meta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  margin: 0;
+  word-break: break-all;
+}
+@keyframes stopProgressPulse {
+  0%, 100% { transform: scale(1);   opacity: 1;   }
+  50%      { transform: scale(1.4); opacity: 0.5; }
+}
 .modal-head-danger { color: var(--danger-fg-soft); }
 .modal-fp-grid { display: flex; flex-direction: column; gap: var(--sp-3); }
 .modal-fp-row { display: flex; flex-direction: column; gap: 4px; }

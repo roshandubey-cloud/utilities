@@ -346,17 +346,68 @@ export function mountConnectionCard(rootSelector) {
       const label = reply.tls_fingerprint ? 'TLS certificate fingerprint' : 'Captured new host key';
       fp = `<div class="probe-fingerprint" data-role="captured-fingerprint">${escapeHTML(label)} for <strong>${escapeHTML(reply.captured_for_host || host)}</strong> · <span class="mono">${escapeHTML(reply.captured_fingerprint)}</span></div>`;
     }
+    // v0.19.19 — operators asked for full probe response visibility.
+    // Render a "Details" disclosure with the entire reply payload —
+    // useful for diagnosing TLS modes, listed folders, server banners,
+    // bastion hop info that wouldn't otherwise reach the UI.
     resultEl.innerHTML = `
       <div class="probe-headline">${iconCheck()}<span>Connection OK${reply.note ? ' — ' + escapeHTML(reply.note) : ''}</span></div>
       <div class="probe-stages">${stagesHTML}</div>
-      ${fp}`;
+      ${fp}
+      ${probeDetailsDisclosure(reply)}`;
+    wireProbeDetails(resultEl);
   }
   function setError(msg, stage) {
     resultEl.dataset.state = 'error';
     resultEl.innerHTML = `
       <div class="probe-headline">${iconAlert()}<span>${escapeHTML(stage ? 'Failed at ' + stage : 'Probe failed')}</span></div>
-      <div class="help" style="color:var(--danger-fg-soft);white-space:pre-wrap">${escapeHTML(msg || 'unknown error')}</div>`;
+      <div class="help" style="color:var(--danger-fg-soft);white-space:pre-wrap">${escapeHTML(msg || 'unknown error')}</div>
+      ${probeDetailsDisclosure({ error: msg, stage })}`;
+    wireProbeDetails(resultEl);
   }
+
+  // probeDetailsDisclosure renders a <details> block summarising every
+  // useful field the /api/probe reply carries: TLS mode, fingerprints,
+  // listed entries, bastion-hop counters, captured server banner, raw
+  // JSON. Surfaces only fields that are present so the panel stays
+  // tight when fields don't apply.
+  function probeDetailsDisclosure(reply) {
+    if (!reply || typeof reply !== 'object') return '';
+    const rows = [];
+    const add = (k, v) => {
+      if (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)) return;
+      const display = typeof v === 'object' ? JSON.stringify(v) : String(v);
+      rows.push(`<div class="probe-detail-row"><span class="probe-detail-key">${escapeHTML(k)}</span><span class="probe-detail-val mono">${escapeHTML(display)}</span></div>`);
+    };
+    add('Stage',                 reply.stage);
+    add('TCP (ms)',              reply.tcp_ms);
+    add('SSH/SFTP (ms)',         reply.ssh_sftp_ms);
+    add('TLS handshake (ms)',    reply.tls_handshake_ms);
+    add('LIST (ms)',             reply.list_ms);
+    add('Server banner',         reply.banner);
+    add('Server version',        reply.server_version);
+    add('Auth method used',      reply.auth_method);
+    add('TLS mode',              reply.tls_mode);
+    add('TLS server name',       reply.tls_server_name);
+    add('TLS protocol',          reply.tls_protocol);
+    add('TLS cipher',            reply.tls_cipher);
+    add('Captured fingerprint',  reply.captured_fingerprint);
+    add('Folder listed',         reply.listed_folder);
+    add('Folder entries',        reply.listed_count);
+    add('Bastion hop',           reply.bastion_hop);
+    add('Bastion ms',            reply.bastion_ms);
+    add('Pasv address',          reply.pasv_addr);
+    add('Note',                  reply.note);
+    add('Error',                 reply.error);
+    const fallback = `<pre class="probe-detail-raw mono">${escapeHTML(JSON.stringify(reply, null, 2))}</pre>`;
+    return `
+      <details class="probe-details" data-role="probe-details">
+        <summary>Details</summary>
+        <div class="probe-detail-grid">${rows.join('') || ''}</div>
+        ${rows.length === 0 ? fallback : `<details class="probe-detail-raw-wrap"><summary>Raw response</summary>${fallback}</details>`}
+      </details>`;
+  }
+  function wireProbeDetails(_root) { /* no-op for now; placeholder for future wiring */ }
 
   // ---------- inline validation ----------
   function validateField(el) {

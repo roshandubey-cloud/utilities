@@ -263,6 +263,18 @@
   --accent-active:    #d24a13;
   --accent-fg:        #ffffff;
 
+  /* v0.19.19 — state-color overrides for light surfaces. The dark-tuned
+     `*-fg-soft` defaults at :root (#5ed085 / #ff7088 / #f5b25b /
+     #6aa2d8) are pale variants designed to read on a dark canvas;
+     against white panels they wash out into near-invisibility, which
+     is what made success/error chips, danger borders, and warning
+     dots disappear in light mode. Re-pin them to the darker
+     "regular" hue that already meets AAA contrast on white. */
+  --success-fg-soft:  #1a7f37;
+  --warning-fg-soft:  #b35900;
+  --danger-fg-soft:   #b91c1c;
+  --info-fg-soft:     #1f5fa3;
+
   /* Layered shadow with hairline outline — does the work the dark surface stack does. */
   --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06), 0 0 0 1px rgba(15, 23, 42, 0.04);
   --shadow-2: 0 4px 12px rgba(15, 23, 42, 0.10), 0 0 0 1px rgba(15, 23, 42, 0.04);
@@ -321,6 +333,14 @@
     --accent:        #ee5b21;
     --accent-hover:  #ff6b30;
     --accent-active: #d24a13;
+
+    /* v0.19.19 — match the explicit [data-theme="light"] block:
+       state colors get the darker "regular" hue for AAA contrast on
+       white, instead of the dark-canvas-tuned soft pales. */
+    --success-fg-soft:  #1a7f37;
+    --warning-fg-soft:  #b35900;
+    --danger-fg-soft:   #b91c1c;
+    --info-fg-soft:     #1f5fa3;
 
     --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06), 0 0 0 1px rgba(15, 23, 42, 0.04);
     --shadow-2: 0 4px 12px rgba(15, 23, 42, 0.10), 0 0 0 1px rgba(15, 23, 42, 0.04);

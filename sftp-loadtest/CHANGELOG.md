@@ -11,6 +11,41 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.19] — 2026-05-07
+### Changed — operator-feedback follow-ups: file uploads, probe details, stop progress, light-mode contrast
+Continuing the post-v0.19.16 UI sweep:
+
+- **Light-mode visibility fix.** The state colours `*-fg-soft`
+  (`success` / `warning` / `danger` / `info`) were dark-canvas-tuned
+  pales (#5ed085, #f5b25b, #ff7088, #6aa2d8) and were never overridden
+  in the light-theme block — so success/error chips, warning dots and
+  danger borders washed out into near-invisibility on white panels.
+  Light-theme + `prefers-color-scheme: light` now re-pin them to the
+  AAA-friendly darker hues (#1a7f37 / #b35900 / #b91c1c / #1f5fa3).
+- **Upload from file.** New `attachFileUpload` helper adds a button
+  next to each user-list textarea (`normal_users` / `large_users` /
+  `download_users`) and the `conn-private-key` textarea, so operators
+  can pick a local CSV / .pem instead of copy-pasting. Reads via
+  `FileReader.text()`, populates the textarea, fires `input` +
+  `change` so existing validators re-run.
+- **Test-connection details disclosure.** The probe result panel now
+  carries a `<details>` block listing every populated field on the
+  `/api/probe` reply (TLS mode, fingerprint, server banner, listed
+  entries, bastion-hop counters, etc.) plus a raw-JSON disclosure for
+  the rest, so operators can diagnose without server logs.
+- **Stop progress dialog.** Clicking Stop now opens a modal that polls
+  `/api/status` and shows what the runner is still working on
+  (pending track-IDs, in-flight downloads, CSV flush, meta seal). A
+  "Force close dialog" affordance lets the operator dismiss without
+  aborting the seal — the runner keeps draining server-side. Wired
+  via capture-phase document delegation so legacy `#stopBtn`,
+  topbar Stop, and per-row stop affordances all share the dialog.
+
+Items still in flight: light/dark visibility audit on a per-component
+basis (need screenshots from operator to nail specific elements),
+right-bottom-corner button audit (same), and the v0.20.0 password
+storage architecture.
+
 ## [v0.19.18] — 2026-05-06
 ### Fixed — Sidebar "Recent runs" was empty on cluster masters
 The sidebar's `renderRuns` only fetched `/api/runs` (solo). On a master

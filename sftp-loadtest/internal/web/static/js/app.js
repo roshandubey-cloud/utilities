@@ -31,6 +31,8 @@ import { mountStartPreflight } from './start-preflight.js';
 import { mountCeilingBanner } from './ceiling-banner.js';
 import { mountWizard } from './wizard.js';
 import { mountSavedConnections } from './saved-connections.js';
+import { mountFileUploads } from './file-upload.js';
+import { mountStopProgress } from './stop-progress.js';
 
 initTheme();
 installExternalOpener();
@@ -63,6 +65,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // place, and we can relocate them into the new section structure.
     mountConfigureRedesign();
     mountSavedConnections();
+    // v0.19.19 — load-from-file affordances on user CSVs + private key
+    // textareas, so operators don't have to copy-paste from external
+    // files. Mounts after upload-restructure so the textareas are in
+    // their final positions when we anchor the upload button next door.
+    mountFileUploads();
+    // v0.19.19 — drain progress dialog when Stop is pressed. Polls
+    // /api/status until the runner seals; "Force close dialog" lets
+    // the operator dismiss without aborting the seal.
+    mountStopProgress();
     mountStartPreflight();
     mountWizard('[data-component="wizard"]');
     mountCeilingBanner();
