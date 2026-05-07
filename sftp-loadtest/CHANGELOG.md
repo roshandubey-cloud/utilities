@@ -11,6 +11,15 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.21] — 2026-05-07
+### Fixed — Schedule card hint mentioned Export when the Export button is hidden there
+The Schedule card's Export button is hidden on the shell-mounted view
+(it lives on the Configure action zone instead) but the hint text
+still described Export's behaviour, leaving operators reading copy
+about a button they couldn't find. Hint now describes only Import +
+Import & Run now (the visible affordances) with a one-line pointer
+that Export lives on the Configure view.
+
 ## [v0.19.20] — 2026-05-07
 ### Fixed — connection panel padding + orphan privacy controls on Schedule card
 Two issues caught in operator screenshots:

@@ -1330,9 +1330,9 @@
             <input type="file" id="importFile" accept="application/json,.json" style="display:none">
           </div>
           <div class="hint">
-            <b>Export</b> saves the form to a JSON file. Passwords are stripped by default; if any are present, the Export action prompts you to confirm before including them.
-            <b>Import</b> loads that JSON back into the form (you click Start run yourself).
+            <b>Import</b> loads a previously exported JSON back into the form (you click Start run yourself).
             <b>Import &amp; Run now</b> loads the JSON and immediately starts the run — ideal for CLI-style repeatable tests.
+            <span class="muted">Export lives on the Configure view's action zone (not duplicated here); when run, it prompts to confirm before including any plaintext passwords.</span>
           </div>
 
           <!-- v0.19.20 — operator feedback: this block ("Save passwords in
