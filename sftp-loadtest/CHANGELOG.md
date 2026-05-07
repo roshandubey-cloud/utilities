@@ -11,6 +11,33 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.26] — 2026-05-07
+### Changed — Configure summary pill is now draggable too; drag logic factored
+Operator request: "i want this summary bar similar draggable movable
+also … this bar is more important than the other one so they can
+trade places but both draggable etc." The Configure summary pill
+(PROTO / TARGET / FOLDER / USERS / FPM / DUR / FILES / AUTH + Start
+button) now shares the same drag wiring as the host status pill, so
+the operator can park each one wherever the workspace allows and
+"trade places" between them.
+
+- Extracted `internal/web/static/js/draggable.js` — a single helper
+  that owns pointer-event drag, viewport clamping, localStorage
+  persistence, optional anchor-snap default, optional dock-snap
+  button, and resize re-clamp. Each consumer just hands in a storage
+  key and (optionally) a default origin.
+- `.cfg-summary-bar` switched from `position: sticky` inside the
+  configure scroll container to `position: fixed` at the viewport
+  level, defaulting to bottom-center (preserves prior visual feel),
+  draggable anywhere. Position persisted under
+  `sftp-loadtest-summary-pos-v1`.
+- z-index 6 on the summary pill (host pill is 5) so the more
+  important Run-summary surface stays on top by default — drag
+  either to swap their occupied positions.
+- `.shell-statusbar` migrates to the new helper too, so the v0.19.25
+  anchor-measurement behaviour is now defined in one place; the
+  inline copy in shell.js is gone.
+
 ## [v0.19.25] — 2026-05-07
 ### Fixed — status pill default position no longer overlaps Save preset
 The v0.19.23 default `right: 240px` was a fixed guess that didn't

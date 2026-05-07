@@ -17,6 +17,7 @@
 
 import { apiFetch } from './api.js';
 import { getTheme, setTheme } from './theme.js';
+import { makeDraggable } from './draggable.js';
 
 // Read the server-rendered platform version from the meta tag. The Go
 // middleware substitutes __SFTPL_VERSION__ at serve time, so this is
@@ -336,158 +337,19 @@ function wireWindowControls(shell) {
   close?.addEventListener('click', () => { try { r.Quit?.(); } catch {} });
 }
 
-// Statusbar drag — v0.19.22 promoted from a top/bottom dock toggle to
-// a fully draggable floating pill. Defaults to the top-right corner
-// (just below the topbar, left of the Configure view's Save preset /
-// Import config buttons). Operators can grab + drop anywhere inside
-// the viewport; the position persists per-localStorage as percentage
-// offsets so resizes don't push it off-screen. The snap button on the
-// pill resets to the default origin.
-const STATUSBAR_KEY = 'sftp-loadtest-statusbar-pos-v2';
-const STATUSBAR_DEFAULT = { topPx: null, rightPx: 240 }; // topPx null => use CSS default (topbar + 8)
-
-// computeDefaultRight measures where the Configure prelude's Save
-// preset… button sits and returns the `right` offset that would put
-// the pill 8px to its left, so first-paint never overlaps. Falls back
-// to STATUSBAR_DEFAULT.rightPx when the button isn't in the DOM yet
-// (e.g. the operator landed on a different view) or when the bar
-// itself is wider than the available gap.
-function computeDefaultRight(barWidth) {
-  const anchor =
-    document.querySelector('[data-role="save-preset"]') ||
-    document.querySelector('[data-slot="prelude"]') ||
-    document.querySelector('#exportBtn, #importBtn');
-  if (!anchor) return STATUSBAR_DEFAULT.rightPx;
-  const rect = anchor.getBoundingClientRect();
-  if (!rect.width) return STATUSBAR_DEFAULT.rightPx;
-  // window.innerWidth - rect.left = distance from anchor's left edge
-  // to viewport's right. Add 8px so the pill clears the anchor.
-  const right = Math.round(window.innerWidth - rect.left + 8);
-  // Make sure the resulting right offset still leaves room for the
-  // pill itself on the screen (i.e. left edge >= 8). If not, fall
-  // back to the static default.
-  if (right + barWidth > window.innerWidth - 8) return STATUSBAR_DEFAULT.rightPx;
-  return right;
-}
-
+// Statusbar drag — v0.19.26 delegates to the shared draggable helper
+// so the Configure summary pill (cfg-summary-bar) gets the same
+// behaviour without duplicating the pointer + persistence code.
 function wireStatusbarDock(shell) {
   const bar = shell.querySelector('.shell-statusbar');
   if (!bar) return;
-  const dock = bar.querySelector('[data-role="statusbar-dock"]');
-
-  // First paint: prefer the persisted position, otherwise dynamically
-  // anchor 8px left of the Configure prelude's Save preset button.
-  // The configure-redesign mount runs in the same setTimeout(0) batch
-  // as the sidebar; we run AFTER it (mountSidebar is the last call in
-  // app.js) so the Save preset button is already in the DOM by now.
-  const stored = readPosition();
-  if (stored.topPx === null && stored.rightPx === STATUSBAR_DEFAULT.rightPx) {
-    // No saved offset → measure once we have a width to consult.
-    requestAnimationFrame(() => {
-      const w = bar.getBoundingClientRect().width;
-      applyPosition(bar, { topPx: null, rightPx: computeDefaultRight(w) });
-    });
-  } else {
-    applyPosition(bar, stored);
-  }
-
-  // Drag — pointer events for unified mouse/touch/pen handling.
-  // Capture phase on the bar so child element clicks (theme buttons,
-  // dock snap) still get their click handlers; we only steal the drag
-  // when pointerdown is on the bar surface itself, NOT a button or
-  // input child.
-  bar.addEventListener('pointerdown', (ev) => {
-    // Skip when the press is on an interactive child — those have
-    // their own click handlers and we shouldn't trap them in a drag.
-    if (ev.target.closest('button, input, a, [role="button"]')) return;
-    ev.preventDefault();
-    bar.setPointerCapture(ev.pointerId);
-    bar.dataset.dragging = 'true';
-    const startX = ev.clientX;
-    const startY = ev.clientY;
-    const startRect = bar.getBoundingClientRect();
-    const startTop = startRect.top;
-    const startRight = window.innerWidth - startRect.right;
-
-    const onMove = (mv) => {
-      const dx = mv.clientX - startX;
-      const dy = mv.clientY - startY;
-      // Right anchor moves opposite to dx (drag right = decrease right
-      // offset). Clamp so the bar can't be parked off-screen — the
-      // operator always sees it.
-      const minTop = 8; // Allow dragging above topbar if they want — bar floats over.
-      const maxTop = Math.max(minTop, window.innerHeight - startRect.height - 8);
-      const minRight = 8;
-      const maxRight = Math.max(minRight, window.innerWidth - startRect.width - 8);
-      const newTop = clamp(startTop + dy, minTop, maxTop);
-      const newRight = clamp(startRight - dx, minRight, maxRight);
-      applyPosition(bar, { topPx: newTop, rightPx: newRight });
-    };
-    const onUp = () => {
-      bar.dataset.dragging = 'false';
-      bar.releasePointerCapture(ev.pointerId);
-      bar.removeEventListener('pointermove', onMove);
-      bar.removeEventListener('pointerup', onUp);
-      // Persist final position so reloads land where the operator left it.
-      const r = bar.getBoundingClientRect();
-      writePosition({ topPx: r.top, rightPx: window.innerWidth - r.right });
-    };
-    bar.addEventListener('pointermove', onMove);
-    bar.addEventListener('pointerup', onUp);
+  makeDraggable(bar, {
+    storageKey: 'sftp-loadtest-statusbar-pos-v2',
+    defaultTop: null, // null → CSS default (topbar + 8 px)
+    defaultRight: 240,
+    anchorSelector: '[data-role="save-preset"]',
+    dockButton: bar.querySelector('[data-role="statusbar-dock"]'),
   });
-
-  dock?.addEventListener('click', () => {
-    // Snap back to the dynamic default (8px left of Save preset),
-    // clearing the saved offset so future loads also re-measure.
-    try { localStorage.removeItem(STATUSBAR_KEY); } catch {}
-    bar.style.top = '';
-    requestAnimationFrame(() => {
-      const w = bar.getBoundingClientRect().width;
-      applyPosition(bar, { topPx: null, rightPx: computeDefaultRight(w) });
-    });
-  });
-
-  // Re-clamp on viewport resize so a window shrink doesn't strand the
-  // pill outside the visible area.
-  window.addEventListener('resize', () => {
-    const pos = readPosition();
-    if (pos.topPx === null && pos.rightPx === STATUSBAR_DEFAULT.rightPx) return;
-    const rect = bar.getBoundingClientRect();
-    const clamped = {
-      topPx: pos.topPx !== null ? clamp(pos.topPx, 8, Math.max(8, window.innerHeight - rect.height - 8)) : null,
-      rightPx: clamp(pos.rightPx, 8, Math.max(8, window.innerWidth - rect.width - 8)),
-    };
-    applyPosition(bar, clamped);
-  });
-}
-
-function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
-
-function readPosition() {
-  try {
-    const raw = localStorage.getItem(STATUSBAR_KEY);
-    if (!raw) return { topPx: STATUSBAR_DEFAULT.topPx, rightPx: STATUSBAR_DEFAULT.rightPx };
-    const parsed = JSON.parse(raw);
-    return {
-      topPx: typeof parsed.topPx === 'number' ? parsed.topPx : STATUSBAR_DEFAULT.topPx,
-      rightPx: typeof parsed.rightPx === 'number' ? parsed.rightPx : STATUSBAR_DEFAULT.rightPx,
-    };
-  } catch {
-    return { topPx: STATUSBAR_DEFAULT.topPx, rightPx: STATUSBAR_DEFAULT.rightPx };
-  }
-}
-
-function writePosition(pos) {
-  try { localStorage.setItem(STATUSBAR_KEY, JSON.stringify(pos)); } catch {}
-}
-
-function applyPosition(bar, pos) {
-  if (pos.topPx === null) {
-    bar.style.top = ''; // fall back to CSS default
-  } else {
-    bar.style.top = pos.topPx + 'px';
-  }
-  bar.style.right = pos.rightPx + 'px';
 }
 
 // buildViews creates [data-view="<id>"] containers in the main pane and

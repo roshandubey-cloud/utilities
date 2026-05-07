@@ -3013,14 +3013,23 @@ button.primary:hover:not(:disabled),
 /* One-row pill that travels with the bottom of the Configure scroll
    container. Carries: [▶/■ go] · key/val chips · flow dots. Replaces
    the old full-height right rail so the form gets full width. */
+/* v0.19.26 — promoted from sticky-bottom inside the configure scroll
+   container to a position:fixed floating pill that the operator can
+   drag anywhere in the viewport (matching the host-info pill). The
+   user signalled this is the MORE important of the two bars (run
+   summary + Start affordance), so the design treats both as peer
+   draggable surfaces; default origin is center-bottom so the visual
+   feel matches the previous sticky placement. The drag wiring lives
+   in draggable.js; .cfg-summary-bar must keep position:fixed so the
+   inline top/right styles the helper sets actually take effect. */
 .cfg-summary-bar {
-  position: sticky;
+  position: fixed;
   bottom: var(--sp-3);
-  align-self: center;
+  left: 50%;
+  transform: translateX(-50%); /* center on first paint until dragged */
   display: inline-flex;
   align-items: center;
   gap: var(--sp-3);
-  margin: var(--sp-3) auto 0;
   max-width: calc(100% - var(--sp-4));
   padding: 6px 10px 6px 6px;
   background:
@@ -3034,7 +3043,19 @@ button.primary:hover:not(:disabled),
     0 8px 22px rgba(0, 0, 0, 0.32);
   backdrop-filter: var(--panel-blur);
   -webkit-backdrop-filter: var(--panel-blur);
-  z-index: 5;
+  z-index: 6; /* one above the host pill so it stays on top by default
+                 — the user said this bar is more important. */
+  cursor: grab;
+  user-select: none;
+}
+.cfg-summary-bar[data-dragging="true"] { cursor: grabbing; }
+/* Once the operator has dragged (or the JS has explicitly applied an
+   inline `top` or `right`), drop the centering transform. The helper
+   sets bar.style.left = '' on apply, but the transform stays unless
+   we override it here. */
+.cfg-summary-bar[style*="top:"], .cfg-summary-bar[style*="right:"] {
+  transform: none;
+  left: auto;
 }
 [data-theme="light"] .cfg-summary-bar,
 :root:not([data-theme]) .cfg-summary-bar {

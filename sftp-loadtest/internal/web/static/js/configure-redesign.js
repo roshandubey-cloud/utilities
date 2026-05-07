@@ -406,12 +406,30 @@ export function mountConfigureRedesign() {
   // --- SUMMARY bar wiring -----------------------------------------------
   // The slim bottom strip carries: [▶/■ go] · target · folder · users · fpm · duration · files · flow chips.
   // It mirrors the topbar Run/Stop so the operator never has to scroll
-  // back up to launch — the bar travels with the page (sticky bottom).
+  // back up to launch — the bar travels with the viewport (now floating
+  // since v0.19.26; was sticky-bottom inside the configure scroll).
+  const summaryBar = layout.querySelector('.cfg-summary-bar');
   const defs = layout.querySelector('[data-role="summary-defs"]');
   const flowsEl = layout.querySelector('[data-role="summary-foot"]');
   const goBtn = layout.querySelector('[data-role="summary-go"]');
   const iconPlay = goBtn?.querySelector('[data-role="summary-icon-play"]');
   const iconStop = goBtn?.querySelector('[data-role="summary-icon-stop"]');
+
+  // v0.19.26 — make the run-summary pill draggable, peer with the host
+  // status pill. The user flagged this as the more important of the
+  // two surfaces; both now share the same drag wiring so the operator
+  // can park them wherever there's space (effectively letting them
+  // "trade places"). No anchor — defaults to the CSS bottom-center
+  // origin until the operator drags or saves a position.
+  if (summaryBar) {
+    import('./draggable.js').then(({ makeDraggable }) => {
+      makeDraggable(summaryBar, {
+        storageKey: 'sftp-loadtest-summary-pos-v1',
+        defaultTop: null,
+        defaultRight: null,
+      });
+    });
+  }
 
   // Wire go button — delegate to the (now relocated) #startBtn / #stopBtn.
   // Read state from the topbar status pill so play/stop stays in sync
