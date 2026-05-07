@@ -11,6 +11,18 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.33] — 2026-05-07
+### Fixed — host pill cells stuck at "—" (v0.19.32 regression)
+v0.19.32 reparented the host pill to `<body>` so its width could
+be content-driven. That broke `fetchHost(shell)` and the run-id
+poller — both used `shell.querySelector(...)` which only walks the
+.app-shell subtree. With the pill outside that subtree every cell
+stayed at the "—" placeholder.
+
+Switched the lookups to `document.querySelector(...)` so the cells
+are found wherever the pill is parented. Same applies to
+`status-runid` in `pollStatus`.
+
 ## [v0.19.32] — 2026-05-07
 ### Fixed — pills had wasted empty trailing space (v0.19.31 regression)
 v0.19.31's hard-locked 720 / 760 px widths fixed the "expanding

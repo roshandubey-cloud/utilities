@@ -517,7 +517,10 @@ async function pollStatus(shell) {
   const tbStatusText = shell.querySelector('[data-role="status-text"]');
   const tbRun = shell.querySelector('[data-role="topbar-run"]');
   const tbStop = shell.querySelector('[data-role="topbar-stop"]');
-  const sbRunID = shell.querySelector('[data-role="status-runid"]');
+  // v0.19.33 — the run-id cell lives on the host pill, which since
+  // v0.19.32 is reparented to <body>. Search the document for these
+  // status-cell roles so they're found wherever the pill ends up.
+  const sbRunID = document.querySelector('[data-role="status-runid"]');
   async function tick() {
     try {
       const r = await apiFetch('/api/status');
@@ -546,16 +549,24 @@ async function pollStatus(shell) {
   tick();
 }
 
-async function fetchHost(shell) {
+async function fetchHost(_shell) {
   try {
     const r = await apiFetch('/api/host');
     if (!r.ok) return;
     const j = await r.json();
-    shell.querySelector('[data-role="status-host"]').textContent = j.hostname || '—';
-    shell.querySelector('[data-role="status-os"]').textContent = `${j.os || '?'}/${j.arch || '?'}`;
-    shell.querySelector('[data-role="status-cpu"]').textContent = `${j.num_cpu || '?'} cores`;
-    shell.querySelector('[data-role="status-ram"]').textContent = formatRam(j.ram_mb);
-    shell.querySelector('[data-role="status-fd"]').textContent = formatFD(j.fd_limit_soft, j.fd_limit_hard);
+    // v0.19.33 — the host pill is reparented to <body> at mount, so
+    // its cells are no longer inside the shell subtree. Query from
+    // document instead. Pre-fix every cell stayed at "—" because
+    // shell.querySelector returned null.
+    const set = (role, value) => {
+      const el = document.querySelector(`[data-role="${role}"]`);
+      if (el) el.textContent = value;
+    };
+    set('status-host', j.hostname || '—');
+    set('status-os', `${j.os || '?'}/${j.arch || '?'}`);
+    set('status-cpu', `${j.num_cpu || '?'} cores`);
+    set('status-ram', formatRam(j.ram_mb));
+    set('status-fd', formatFD(j.fd_limit_soft, j.fd_limit_hard));
   } catch { /* leave placeholders */ }
 }
 
