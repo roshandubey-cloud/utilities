@@ -2639,8 +2639,16 @@ button.primary:hover:not(:disabled),
   /* Quick-checks already provides title; suppress duplicate. */
   display: none;
 }
+/* v0.19.20 — pre-fix this rule forced padding:0 on the connection
+   panel-body inside the Configure section. With no padding the
+   PROTOCOL / HOST / PORT labels at the top of the form sat flush
+   against the header divider (top stroke of "P" looked clipped) and
+   the Test connection button at the bottom-right had its rounded
+   corner / focus halo clipped against the panel's right edge. Both
+   issues reported in operator screenshots. Restoring normal padding
+   gives the form breathing room without changing the section layout. */
 .cfg-section[data-section="target"] [data-component="connection"] .panel-body {
-  padding: 0;
+  padding: var(--sp-3) var(--sp-3) var(--sp-4);
   gap: var(--sp-3);
 }
 

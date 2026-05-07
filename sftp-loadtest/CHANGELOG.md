@@ -11,6 +11,28 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.20] — 2026-05-07
+### Fixed — connection panel padding + orphan privacy controls on Schedule card
+Two issues caught in operator screenshots:
+
+- **Connection panel had `padding: 0`** inside the Configure target
+  section ([components.css:2642](internal/web/static/styles/components.css#L2642)),
+  so the PROTOCOL / HOST / PORT labels at the top of the form sat
+  flush against the header divider line (top stroke of "P" looked
+  clipped) and the Test connection button at the bottom-right had
+  its rounded corner / focus halo clipped by the panel's right edge.
+  Restored normal padding `var(--sp-3) var(--sp-3) var(--sp-4)` so
+  the form has breathing room on all sides.
+- **"Save passwords in this browser" + "Clear stored credentials"
+  block was on the Schedule card** even though it has nothing to do
+  with scheduling — it controls form-state persistence across
+  reloads. Removed from the Schedule card; the per-action confirm
+  modals from v0.19.17 (save-connection, export-config) now own the
+  password decision. Legacy event wiring (legacy.js:1430-1431) is
+  already null-guarded so removing the inputs is a clean no-op.
+  Full retirement of the localStorage password toggle lands in
+  v0.20.0 with OS-keychain storage.
+
 ## [v0.19.19] — 2026-05-07
 ### Changed — operator-feedback follow-ups: file uploads, probe details, stop progress, light-mode contrast
 Continuing the post-v0.19.16 UI sweep:

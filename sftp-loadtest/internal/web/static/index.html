@@ -1335,15 +1335,17 @@
             <b>Import &amp; Run now</b> loads the JSON and immediately starts the run — ideal for CLI-style repeatable tests.
           </div>
 
-          <div class="actions" style="padding:10px 0 0">
-            <label style="display:inline-flex; align-items:center; gap:6px; margin-right:14px; font-size:13px">
-              <input type="checkbox" id="save_passwords"> Save passwords in this browser
-            </label>
-            <button type="button" class="ghost" id="clearCredsBtn">Clear stored credentials</button>
-          </div>
-          <div class="hint" style="margin-top:6px">
-            With the checkbox <b>off</b> (default), the form remembers everything <i>except</i> passwords across reloads — you'll re-enter them each time. With it on, passwords are kept in <code>localStorage</code> on this machine. <b>Clear stored credentials</b> wipes them immediately.
-          </div>
+          <!-- v0.19.20 — operator feedback: this block ("Save passwords in
+               this browser" + "Clear stored credentials") was confusing
+               on the Schedule card because it has nothing to do with
+               scheduling. Moved into a focused Privacy popover anchored
+               to the Connection card; saved-connection / export flows
+               now decide password handling via per-action confirm
+               modals. Markup removed; the legacy event wiring
+               (legacy.js:1430-1431) is null-guarded so it's a no-op
+               when the inputs are absent. Future v0.20.0 brings full
+               OS-keychain storage which will retire the localStorage
+               toggle entirely. -->
 
           <div class="row" style="margin-top:14px">
             <div style="flex:2">
