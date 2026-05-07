@@ -434,7 +434,11 @@ export function mountConfigureRedesign() {
     }
     import('./draggable.js').then(({ makeDraggable }) => {
       makeDraggable(summaryBar, {
-        storageKey: 'sftp-loadtest-summary-pos-v1',
+        // v0.19.35 — storage version bumped to v2 to match the
+        // host pill's invalidation, so any saved summary-pill
+        // offset from before the bigger collision margin doesn't
+        // re-overlap on reload.
+        storageKey: 'sftp-loadtest-summary-pos-v2',
         defaultTop: null,
         defaultRight: null,
       });

@@ -84,8 +84,10 @@ function gatherAvoidRects(self) {
 // rectsOverlap is the standard AABB intersection with a small margin
 // so the pill doesn't end up flush-against an avoid target — the
 // margin gives the operator a visible gutter around every other
-// element.
-function rectsOverlap(a, b, margin = 8) {
+// element. v0.19.35 bumped 8 → 24 px after operator screenshots
+// kept showing the pill's rounded edge "kissing" Save preset's
+// rounded edge — anti-aliased at 8 px reads as overlap.
+function rectsOverlap(a, b, margin = 24) {
   return !(
     a.right + margin <= b.left ||
     a.left >= b.right + margin ||
@@ -128,8 +130,10 @@ function resolveCollision(proposed, size, avoid, viewport) {
     }
     if (!conflict) return { top, right };
 
-    // Compute the four push displacements + a small breathing margin.
-    const margin = 8;
+    // Compute the four push displacements + a breathing margin
+    // matching rectsOverlap's gutter so a single pass clears the
+    // collision threshold for the next iteration.
+    const margin = 24;
     const pushUp    = pill.bottom - conflict.top + margin;
     const pushDown  = conflict.bottom - pill.top + margin;
     const pushLeft  = pill.right - conflict.left + margin;

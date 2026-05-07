@@ -353,7 +353,12 @@ function wireStatusbarDock(shell) {
   const bar = shell.querySelector('.shell-statusbar');
   if (!bar) return;
   makeDraggable(bar, {
-    storageKey: 'sftp-loadtest-statusbar-pos-v2',
+    // v0.19.35 — storage version bumped to v3 so saved positions
+    // from before the new 24 px collision margin are discarded;
+    // a previously-cached offset that landed on Save preset would
+    // otherwise re-overlap on every reload until the operator
+    // dragged it away again.
+    storageKey: 'sftp-loadtest-statusbar-pos-v3',
     defaultTop: null, // null → CSS default (topbar + 8 px)
     defaultRight: 240,
     anchorSelector: '[data-role="save-preset"]',

@@ -11,6 +11,25 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.35] — 2026-05-07
+### Fixed — pill still touched Save preset after v0.19.34 (margin too small + stale localStorage)
+v0.19.34 fixed the timing race so the resolver runs against a
+populated DOM, but two things kept the visible "kissing" overlap:
+
+1. The collision margin was 8 px. With both pill and Save preset
+   rendered as 999-radius rounded shapes, anti-aliasing at 8 px
+   gap reads as overlap to the operator's eye. Bumped to 24 px so
+   there's a clear visible gutter.
+2. localStorage carried a saved offset from a previous launch that
+   was computed under the smaller margin. Even after the binary
+   upgrade, the cached position was re-applied on every load,
+   re-overlapping. Bumped storage versions: host pill
+   `…statusbar-pos-v3`, summary pill `…summary-pos-v2`. Old keys
+   are ignored, so first launch on v0.19.35 starts fresh.
+
+The resolver's push margin matches (24 px) so a single iteration
+clears the collision threshold for the next pass.
+
 ## [v0.19.34] — 2026-05-07
 ### Fixed — pill overlapping Save preset on first paint (race fix)
 The collision resolver was correct; the timing wasn't. shell.js's
