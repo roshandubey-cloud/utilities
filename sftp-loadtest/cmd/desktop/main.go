@@ -159,15 +159,23 @@ func main() {
 		},
 		Windows: &windows.Options{
 			// Keep the OS-native title bar with its built-in close /
-			// minimise / maximise triplet rendered by the system — the
-			// previous combo of WindowIsTranslucent + Mica + CustomTheme
-			// painted over the system control glyphs and left the
-			// window with no visible way to quit. The in-app CSS polish
-			// (Mica-style gloss inside the WebView) carries the visual
-			// language without us touching the OS chrome.
+			// minimise / maximise triplet rendered by the system. The
+			// earlier combo of WindowIsTranslucent + CustomTheme broke
+			// the system control glyphs; we keep those flags off.
 			DisableWindowIcon:    false,
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
+			// v0.19.38 — Mica backdrop on Windows 11 brings the
+			// "live frosted" feel the macOS build gets for free via
+			// HiddenInset. Wails falls back gracefully on Windows 10
+			// (SupportsBackdropTypes() check inside the lib) so this
+			// is safe on both major OS versions. Operator feedback:
+			// Windows app felt flat / faded next to the Mac app's
+			// glossy Apple-TV-class look — Mica closes most of that
+			// gap by giving the window itself the same translucent
+			// substrate as native Win11 apps (Settings, File
+			// Explorer, etc.).
+			BackdropType: windows.Mica,
 			// System dark theme for the title bar so it doesn't render
 			// bright white above our dark shell; the system still owns
 			// the close / minimise / maximise buttons and renders them

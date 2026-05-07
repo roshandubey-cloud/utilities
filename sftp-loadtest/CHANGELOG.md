@@ -11,6 +11,58 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.38] — 2026-05-07
+### Changed — Mac vs Windows visual gap audit + Mica on Windows 11
+Operator: "the Mac desktop app feels like an Apple-TV-class app —
+glossy, live, stylish. On Windows it's extremely different. Find
+the real gaps."
+
+Drove a side-by-side Playwright + Chromium audit with Mac and
+Windows user-agent contexts (and the matching Wails platform body
+classes), snapshotted computed styles + element rectangles for
+every "look-and-feel" surface, diffed the two. **Real findings**:
+
+1. **Window translucency was off on Windows** — macOS's
+   `TitleBarHiddenInset()` gives the window edge-to-edge content
+   for free, but the Windows `BackdropType` was unset (no Mica /
+   Acrylic), so the window itself was a flat opaque rectangle.
+   The CSS `backdrop-filter` blur only blurs OTHER content in the
+   WebView; with no OS-level translucency, panels never picked
+   up the "live frosted substrate" feel that makes the Mac app
+   look modern. **Fix: enable `windows.Mica` BackdropType**;
+   Wails' `SupportsBackdropTypes()` gate falls back to flat on
+   Windows 10 so this is safe across versions.
+
+2. **Font cascade declarations differ but render the same** —
+   Mac falls through `-apple-system / BlinkMacSystemFont` and
+   Windows falls through `Segoe UI Variable Display`, but both
+   actually pick Inter (bundled via `@font-face` from
+   `/fonts/InterVariable.woff2`) because it leads the cascade.
+   Computed `font-family` strings differ; rendered glyphs come
+   from the same source. No fix needed.
+
+3. **Topbar padding differs by design** — Mac reserves 84 px on
+   the left for traffic lights; Windows reserves 140 px on the
+   right for the OS chrome triplet. Different on purpose. No fix.
+
+4. **Anti-aliasing path** — `-webkit-font-smoothing: antialiased`
+   in `base.css` already forces grayscale AA in both WebView2
+   (Windows) and WebKit (macOS), so Inter glyphs render with the
+   same softened edges on both. No fix.
+
+5. **All gloss / shadow / sheen tokens** are theme-scoped, not
+   platform-scoped, so identical on both. The previous
+   Windows-dark-theme-only overrides were intentionally stripped.
+
+What's NOT in this version:
+- True Mac-style "edge-to-edge" CustomFrame on Windows. Prior
+  attempt broke the system close/min/max triplet; the in-app
+  window controls (v0.19.17) could replace them but that's a
+  bigger change with cross-Windows-version risk.
+
+Audit script: `/tmp/slt-os-diff.mjs`. Re-run to verify after any
+CSS / `cmd/desktop/main.go` change.
+
 ## [v0.19.37] — 2026-05-07
 ### Fixed — visibility audit (Playwright + Chromium): contrast tokens fail AA
 Drove a Playwright + Chromium audit across all 6 views × 2 themes,
