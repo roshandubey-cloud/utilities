@@ -11,6 +11,40 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.22] — 2026-05-07
+### Added — single unified report per cluster run with worker provenance per row
+Operator question: "each loadtest run should show one report and within
+this report we should make it visible the details of which node
+handled this particular upload etc and summary from each node."
+
+Pre-fix: a cluster run produced one CSV per worker (worker-01.csv,
+worker-02.csv, …). The operator had to download each, eyeball the
+filename to know which node ran what, and stitch them mentally. No
+single per-run report.
+
+v0.19.22 changes that:
+
+- **Master-side `merged.csv`** built at archive time. First column
+  is the worker label `worker-NN (URL)`; remaining 32 columns mirror
+  the per-worker CSV header verbatim. Rows are stable-sorted by
+  `start_time` across workers so the file reads as one chronological
+  cluster timeline. Per-worker CSVs stay intact for narrow reads.
+- **`ClusterRunMeta`** carries new `merged_csv` (relative path),
+  `merged_rows` (count), and `merged_err` (best-effort failure
+  string) fields so the UI can render the right affordance.
+- **`/api/cluster/runs/file?name=merged.csv`** is whitelisted on the
+  same path-validator used for per-worker files.
+- **Cluster row in runs-history** gets a "Download merged CSV
+  (N rows)" primary button alongside the existing aggregated JSON +
+  Show workers expand.
+- Pins: `TestWriteMergedCSV_InterleavesWorkersWithLabel` (chrono
+  order + label), `TestWriteMergedCSV_EmptyWhenNoWorkerFiles` (no-op
+  when every worker fetch failed).
+
+Per-worker summaries are already in the `Workers` array on the
+cluster meta JSON and rendered via the existing "Show workers"
+drawer; no schema change needed there.
+
 ## [v0.19.21] — 2026-05-07
 ### Fixed — Schedule card hint mentioned Export when the Export button is hidden there
 The Schedule card's Export button is hidden on the shell-mounted view

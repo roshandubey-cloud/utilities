@@ -213,6 +213,14 @@ func validClusterFileName(name string) bool {
 	if name == "meta.json" {
 		return true
 	}
+	// v0.19.22 — merged.csv is the master-side single-report file
+	// (every worker's rows + a leading `worker` column). Whitelist it
+	// here so the existing /api/cluster/runs/file endpoint can serve
+	// it through the same path-component validator the per-worker
+	// files use.
+	if name == "merged.csv" {
+		return true
+	}
 	if !strings.HasPrefix(name, "worker-") {
 		return false
 	}

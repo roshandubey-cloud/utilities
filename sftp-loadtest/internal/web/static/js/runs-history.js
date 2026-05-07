@@ -305,6 +305,7 @@ function clusterRowMarkup(entry) {
           <div class="body-small" style="color:var(--text-tertiary)">${formatStarted(entry.started_at)}${entry.stopped_at ? ' · ' + formatDuration(entry.started_at, entry.stopped_at) : ''}${entry.master_version ? ' · master ' + escapeHTML(entry.master_version) : ''}</div>
         </div>
         <div class="runs-history-actions">
+          ${entry.merged_csv ? `<a class="btn btn-sm btn-primary" href="/api/cluster/runs/file?id=${encodeURIComponent(entry.id)}&name=merged.csv" download data-external="1" title="Single CSV with every worker's rows interleaved chronologically. First column is the worker label so you can tell which node ran each upload/download.">Download merged CSV (${Number(entry.merged_rows || 0).toLocaleString()} rows)</a>` : ''}
           <a class="btn btn-sm btn-ghost" href="${masterMetaHref}" download data-external="1">aggregated JSON</a>
           <button class="btn btn-sm btn-secondary" type="button" data-action="toggle-cluster">Show workers</button>
         </div>

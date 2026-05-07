@@ -11,6 +11,7 @@ package cluster
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,6 +40,16 @@ type ClusterRunMeta struct {
 	OverallMBps   float64               `json:"overall_mbps"`
 	WindowMBps    float64               `json:"window_mbps,omitempty"`
 	Workers       []ClusterWorkerReport `json:"workers"`
+	// MergedCSV (v0.19.22) — relative path under cluster-runs/<id>/ to a
+	// single CSV that interleaves every worker's rows with a leading
+	// `worker` column identifying which node ran each upload/download.
+	// Empty when archival happened without any successful per-worker CSV
+	// fetches (offline workers etc.). Renders as a single-report
+	// download in the UI so operators don't have to stitch per-worker
+	// files by hand.
+	MergedCSV    string `json:"merged_csv,omitempty"`
+	MergedRows   int64  `json:"merged_rows,omitempty"`
+	MergedErr    string `json:"merged_err,omitempty"`
 }
 
 // ClusterWorkerReport is one worker's contribution to a cluster run.
@@ -146,6 +157,20 @@ func (c *Coordinator) ArchiveOnStop(ctx context.Context) (string, error) {
 		out.Workers = append(out.Workers, wr)
 	}
 
+	// v0.19.22 — single unified report. After every per-worker CSV is on
+	// disk, build merged.csv: worker label + the original 32 columns,
+	// rows sorted by start_time across workers so the operator can
+	// scroll one file and see who did what when. Best-effort; if the
+	// merge fails (a worker CSV was malformed mid-run, say), leave the
+	// per-worker files alone and surface the error on the meta so the
+	// UI hides the merged-download button.
+	if mergedRows, mergedErr := writeMergedCSV(runDir, out.Workers); mergedErr != nil {
+		out.MergedErr = mergedErr.Error()
+	} else if mergedRows > 0 {
+		out.MergedCSV = "merged.csv"
+		out.MergedRows = mergedRows
+	}
+
 	// Write the master meta atomically — same pattern persist.WriteMeta
 	// uses for solo runs (tmp + rename) so a partial write never shows
 	// up in /api/cluster/runs listings.
@@ -161,6 +186,158 @@ func (c *Coordinator) ArchiveOnStop(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("seal cluster meta: %w", err)
 	}
 	return runDir, nil
+}
+
+// writeMergedCSV produces cluster-runs/<id>/merged.csv: the union of
+// every per-worker CSV with a leading `worker` column. Returns the
+// number of data rows written (header excluded). Pre-conditions:
+//   - workers contains the post-fetch ClusterWorkerReport list (so
+//     wr.FileCSV / wr.URL are populated for the rows that should be
+//     merged).
+//   - Each per-worker CSV is well-formed with the standard 32-column
+//     header (anything else is recorded as a row-level merge error,
+//     not a fatal abort).
+//
+// Sort key: start_time (ISO-8601 string compare is lexicographic-safe
+// for RFC 3339 with nanos, which is what the runner emits). Stable
+// merge: rows from the same worker keep their relative order.
+//
+// The leading `worker` column carries the worker label "worker-NN"
+// (matching the per-worker CSV filename) plus the worker URL when
+// available — operators reading the file can grep either form.
+func writeMergedCSV(runDir string, workers []ClusterWorkerReport) (int64, error) {
+	type rowWithSort struct {
+		startTime string
+		row       []string
+	}
+	var collected []rowWithSort
+	headerCols := 0
+
+	for i, w := range workers {
+		if w.FileCSV == "" {
+			continue
+		}
+		label := fmt.Sprintf("worker-%02d", i+1)
+		path := filepath.Join(runDir, w.FileCSV)
+		f, err := os.Open(path)
+		if err != nil {
+			return 0, fmt.Errorf("open %s: %w", w.FileCSV, err)
+		}
+		r := csv.NewReader(f)
+		r.FieldsPerRecord = -1 // tolerate row-shape drift between worker versions
+		hdr, err := r.Read()
+		if err == io.EOF {
+			f.Close()
+			continue
+		}
+		if err != nil {
+			f.Close()
+			return 0, fmt.Errorf("read header %s: %w", w.FileCSV, err)
+		}
+		if headerCols == 0 {
+			headerCols = len(hdr)
+		}
+		// Locate the start_time column once per worker so a future
+		// schema reorder doesn't break sort.
+		startIdx := -1
+		for ci, name := range hdr {
+			if name == "start_time" {
+				startIdx = ci
+				break
+			}
+		}
+		for {
+			rec, err := r.Read()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				f.Close()
+				return 0, fmt.Errorf("read row %s: %w", w.FileCSV, err)
+			}
+			st := ""
+			if startIdx >= 0 && startIdx < len(rec) {
+				st = rec[startIdx]
+			}
+			merged := make([]string, 0, 1+len(rec))
+			merged = append(merged, fmt.Sprintf("%s (%s)", label, w.URL))
+			merged = append(merged, rec...)
+			collected = append(collected, rowWithSort{startTime: st, row: merged})
+		}
+		f.Close()
+	}
+	if len(collected) == 0 {
+		return 0, nil
+	}
+
+	// Stable sort by start_time. Empty strings sort first, which is
+	// fine — they're failure-only rows the operator wants near top.
+	sort.SliceStable(collected, func(i, j int) bool {
+		return collected[i].startTime < collected[j].startTime
+	})
+
+	// Write tmp+rename for atomicity, matching the meta.json pattern.
+	dest := filepath.Join(runDir, "merged.csv")
+	tmp := dest + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return 0, fmt.Errorf("create %s: %w", tmp, err)
+	}
+	cw := csv.NewWriter(f)
+
+	// Header: prepend `worker` to whatever the workers' header carried.
+	// We re-read the first worker's header to copy column names exactly
+	// — easier than referencing report.CSVHeader (cross-package import).
+	hdrRow := []string{"worker"}
+	for i, w := range workers {
+		if w.FileCSV == "" {
+			continue
+		}
+		path := filepath.Join(runDir, w.FileCSV)
+		hf, herr := os.Open(path)
+		if herr != nil {
+			continue
+		}
+		hr := csv.NewReader(hf)
+		hr.FieldsPerRecord = -1
+		hdr, herr := hr.Read()
+		hf.Close()
+		if herr != nil {
+			continue
+		}
+		hdrRow = append(hdrRow, hdr...)
+		_ = i
+		break
+	}
+	if err := cw.Write(hdrRow); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return 0, fmt.Errorf("write header: %w", err)
+	}
+
+	var n int64
+	for _, r := range collected {
+		if err := cw.Write(r.row); err != nil {
+			f.Close()
+			os.Remove(tmp)
+			return 0, fmt.Errorf("write row %d: %w", n, err)
+		}
+		n++
+	}
+	cw.Flush()
+	if err := cw.Error(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return 0, fmt.Errorf("flush: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return 0, fmt.Errorf("close: %w", err)
+	}
+	if err := os.Rename(tmp, dest); err != nil {
+		return 0, fmt.Errorf("seal: %w", err)
+	}
+	return n, nil
 }
 
 func (c *Coordinator) fetchWorkerMeta(ctx context.Context, w runningWorker, dest string, into *ClusterWorkerReport) error {
