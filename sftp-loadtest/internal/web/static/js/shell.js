@@ -110,6 +110,29 @@ export function mountShell() {
         <span class="shell-topbar-status-led" aria-hidden="true"></span>
         <span data-role="status-text">Idle</span>
       </span>
+      <!-- v0.19.36 — host info lives INSIDE the topbar now (was a
+           draggable floating pill). The pill kept overlapping the
+           Configure prelude's Save preset / Import config buttons
+           on first paint because the avoid-rect timing race was
+           hard to nail down across every WebKit + Wails + viewport
+           combo. Embedding into the topbar puts the info in a
+           layout slot that physically can't overlap anything. -->
+      <span class="shell-topbar-host" data-role="topbar-host"
+            title="Local machine info — hostname, OS / arch, CPU cores, RAM, file-descriptor limit, version">
+        <span class="value mono" data-role="status-host">—</span>
+        <span class="sep">·</span>
+        <span class="value mono" data-role="status-os">—</span>
+        <span class="sep">·</span>
+        <span class="value mono" data-role="status-cpu">—</span>
+        <span class="sep">·</span>
+        <span class="value mono" data-role="status-fd">—</span>
+        <span class="sep">·</span>
+        <span class="value mono" data-role="status-version">${escapeHtml(serverVersionLabel())}</span>
+        <!-- Run id only renders when a run is active (CSS shows it
+             when its data attribute is non-empty). -->
+        <span class="sep" data-role="status-runid-sep"></span>
+        <span class="value mono" data-role="status-runid"></span>
+      </span>
       <span class="shell-topbar-spacer"></span>
       <span class="shell-topbar-run-controls">
         <button type="button" class="btn-icon" data-variant="primary"
@@ -212,54 +235,13 @@ export function mountShell() {
       </div>
     </aside>
 
-    <main class="shell-main" data-role="main"></main>
-
-    <footer class="shell-statusbar" role="contentinfo">
-      <span class="shell-statusbar-cell" title="Host">
-        <span class="label">host</span>
-        <span class="value" data-role="status-host">—</span>
-      </span>
-      <span class="shell-statusbar-cell" title="OS / arch">
-        <span class="value" data-role="status-os">—</span>
-      </span>
-      <span class="shell-statusbar-cell" title="CPU cores">
-        <span class="value" data-role="status-cpu">—</span>
-      </span>
-      <span class="shell-statusbar-cell" title="RAM">
-        <span class="value" data-role="status-ram">—</span>
-      </span>
-      <span class="shell-statusbar-cell" title="FD soft / hard">
-        <span class="label">FD</span>
-        <span class="value" data-role="status-fd">—</span>
-      </span>
-      <span class="shell-statusbar-spacer"></span>
-      <span class="shell-statusbar-cell" data-role="status-runid" title="Active run id">—</span>
-      <span class="shell-statusbar-cell" title="Platform version" data-role="status-version">${escapeHtml(serverVersionLabel())}</span>
-      <!-- v0.19.17 — dock toggle. Operators wanted the live status row
-           pinned at the TOP of the workspace (next to the topbar) rather
-           than the bottom; default is now top, with a one-click flip. -->
-      <button type="button" class="shell-statusbar-dock" data-role="statusbar-dock"
-              title="Move status bar to top / bottom" aria-label="Toggle status bar position">
-        <svg viewBox="0 0 16 16" width="11" height="11" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 8h10M8 3l-3 3M8 3l3 3M8 13l-3-3M8 13l3-3"/>
-        </svg>
-      </button>
-    </footer>`;
+    <main class="shell-main" data-role="main"></main>`;
 
   // Adopt every existing body child into .shell-main (preserves IDs).
   const main = shell.querySelector('[data-role="main"]');
   while (body.firstChild) main.appendChild(body.firstChild);
   body.appendChild(shell);
   body.classList.add('shell-mounted');
-
-  // v0.19.32 — detach the host status pill from the .app-shell grid
-  // and reparent to <body>. As long as the pill lived inside the
-  // grid container its width was being resolved by grid auto-flow
-  // (or by the row that originally hosted it), forcing the operator
-  // to lock dimensions. With <body> as parent there's no ancestor
-  // flex/grid to influence sizing — content-driven width works.
-  const hostPill = shell.querySelector('.shell-statusbar');
-  if (hostPill) document.body.appendChild(hostPill);
 
   // Build the view containers and migrate components into them.
   buildViews(main);
@@ -290,7 +272,9 @@ export function mountShell() {
   // crash the shell.
   wireSidebarSections(shell);
   wireWindowControls(shell);
-  wireStatusbarDock(shell);
+  // wireStatusbarDock retired in v0.19.36 — host info now lives
+  // inline inside the topbar's `.shell-topbar-host` span, so there's
+  // no floating bar left to drag.
 
   // Restore last view (default workbench).
   const initial = readView();
@@ -536,13 +520,16 @@ async function pollStatus(shell) {
         tbStatusText.textContent = 'Running';
         tbRun.disabled = true;
         tbStop.disabled = false;
-        sbRunID.textContent = j.id || '—';
+        if (sbRunID) sbRunID.textContent = j.id || '';
       } else {
         tbStatus.dataset.state = 'idle';
         tbStatusText.textContent = 'Idle';
         tbRun.disabled = false;
         tbStop.disabled = true;
-        sbRunID.textContent = '—';
+        // v0.19.36 — empty string (not "—") so the :empty CSS rule
+        // collapses the run-id cell + its separator dot when no
+        // run is active. Keeps the topbar tidy in idle state.
+        if (sbRunID) sbRunID.textContent = '';
       }
     } catch {
       tbStatus.dataset.state = 'error';

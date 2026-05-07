@@ -11,6 +11,28 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.36] — 2026-05-07
+### Changed — host info embedded into the topbar; floating host pill retired
+The floating draggable host pill kept overlapping the Configure
+prelude's Save preset / Import config buttons on first paint
+despite repeated tries (multi-tick re-resolve, bigger collision
+margin, storage version bumps, body reparenting). The right
+architectural answer: stop trying to fit a floating pill around
+content and put the host info in the only place that's structurally
+guaranteed to never overlap — the topbar layout itself.
+
+`.shell-topbar-host` is a compact mono-font row sitting between
+the Idle/Running status badge and the run controls. Cells:
+`hostname · os/arch · cores · FD · version` (+ run id when
+active). Truncates with ellipsis on narrow viewports so the topbar
+never wraps. Empty run-id cell collapses via `:empty` CSS so idle
+state stays tidy.
+
+The Configure summary pill (PROTO / TARGET / FOLDER / etc.) stays
+floating + draggable — that one's view-specific and the operator
+flagged it as the more important surface. The host pill drag was
+just decorative.
+
 ## [v0.19.35] — 2026-05-07
 ### Fixed — pill still touched Save preset after v0.19.34 (margin too small + stale localStorage)
 v0.19.34 fixed the timing race so the resolver runs against a

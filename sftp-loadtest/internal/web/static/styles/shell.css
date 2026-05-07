@@ -202,6 +202,35 @@ body.wails-linux {
 @keyframes ledPulse { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }
 
 .shell-topbar-spacer { flex: 1; }
+
+/* v0.19.36 — host info pill moved INTO the topbar (was a floating
+   draggable bar that kept overlapping content). Sits between the
+   status badge and the run controls. Compact mono-font cells with
+   thin separator dots. Truncates with ellipsis on narrow viewports
+   so the topbar never wraps. */
+.shell-topbar-host {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0 var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shell-topbar-host .value { color: var(--text-secondary); }
+.shell-topbar-host .sep   { color: var(--text-tertiary); opacity: 0.5; }
+/* Hide the run-id slot when empty (no active run). */
+.shell-topbar-host [data-role="status-runid"]:empty,
+.shell-topbar-host [data-role="status-runid"]:empty + .sep,
+.shell-topbar-host [data-role="status-runid-sep"]:empty {
+  display: none;
+}
+.shell-topbar-host [data-role="status-runid"]:not(:empty) ~ * { display: inline-flex; }
 .shell-topbar-actions { display: inline-flex; align-items: center; gap: var(--sp-2); }
 .shell-topbar-run-controls { display: inline-flex; align-items: center; gap: var(--sp-1); }
 
