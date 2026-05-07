@@ -1329,13 +1329,8 @@
             <button type="button" class="primary" id="importRunBtn">Import &amp; Run now</button>
             <input type="file" id="importFile" accept="application/json,.json" style="display:none">
           </div>
-          <div class="hint" style="margin-bottom:10px">
-            <label style="display:inline-flex; align-items:center; gap:6px; margin-right:14px">
-              <input type="checkbox" id="export_with_passwords"> Include passwords in export (off by default — exports get password columns blanked)
-            </label>
-          </div>
           <div class="hint">
-            <b>Export</b> saves the form to a JSON file. Passwords are stripped unless the checkbox above is set.
+            <b>Export</b> saves the form to a JSON file. Passwords are stripped by default; if any are present, the Export action prompts you to confirm before including them.
             <b>Import</b> loads that JSON back into the form (you click Start run yourself).
             <b>Import &amp; Run now</b> loads the JSON and immediately starts the run — ideal for CLI-style repeatable tests.
           </div>

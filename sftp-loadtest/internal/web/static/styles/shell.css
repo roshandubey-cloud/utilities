@@ -257,6 +257,35 @@ body.wails-linux {
   margin-left: 4px;
 }
 
+/* v0.19.17 — In-app window controls. Visible only inside the Wails
+   desktop app (JS toggles inline display:none in plain browser mode).
+   Square, tight, sit at the right edge of the topbar so they're always
+   reachable even when the OS hides its native chrome (macOS fullscreen
+   hides traffic lights; Windows custom-themed frame can hide the
+   triplet). */
+.shell-window-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: var(--sp-1);
+  padding-left: var(--sp-1);
+  border-left: var(--bw-1) solid var(--border-weak);
+}
+.shell-window-controls .btn-icon {
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  justify-content: center;
+}
+/* Hide the duplicate min/max/close on macOS Wails — the OS traffic
+   lights are still rendered by the OS chrome in non-fullscreen mode and
+   doubling them up reads as clutter. The user explicitly asked for a
+   visible-in-fullscreen affordance, but in normal mode the OS controls
+   are the canonical source. We'll re-show them only when the window is
+   in fullscreen (handled by .wails-fullscreen which the desktop app
+   may toggle, see cmd/desktop/main.go follow-ups). */
+body.wails-mac:not(.wails-fullscreen) .shell-window-controls { display: none; }
+
 /* Theme segmented — pill-shaped, matte. */
 .shell-topbar .segmented {
   display: inline-flex;
@@ -416,6 +445,40 @@ body.wails-linux {
   padding: 0;
 }
 .shell-sidebar-section-header-add:hover { background: var(--sidebar-hover-bg); color: var(--sidebar-fg); }
+
+/* v0.19.17 — collapsible section header. The same uppercase title bar
+   becomes a button when its [data-collapsible] section opts in; the
+   chevron flips on expand/collapse and the body is hidden when the
+   section is in the collapsed state. Default = collapsed (set by JS).
+   Keeps the sidebar visually quiet on first load — primary nav
+   remains the focal point. */
+button.shell-sidebar-section-header {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--sidebar-mute);
+  font-weight: var(--fw-semibold);
+}
+button.shell-sidebar-section-header:hover { color: var(--sidebar-fg); }
+.shell-sidebar-section-chevron {
+  display: inline-block;
+  transition: transform var(--t-fast);
+  font-size: var(--fs-12);
+  color: var(--sidebar-mute);
+}
+.shell-sidebar-section[data-collapsed="false"] .shell-sidebar-section-chevron {
+  transform: rotate(90deg);
+}
+.shell-sidebar-section[data-collapsed="true"] .shell-sidebar-section-body {
+  display: none;
+}
 
 /* ---- Row (primary or sub) ---- */
 .shell-sidebar-row {
@@ -642,6 +705,46 @@ body.wails-linux {
 .shell-statusbar-cell .value { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .shell-statusbar-spacer { flex: 1; }
 
+/* v0.19.17 — dock toggle + position swap. Default position is now TOP
+   (just under the topbar) per operator request; clicking the dock
+   button flips top↔bottom and persists the choice in localStorage. */
+.shell-statusbar-dock {
+  appearance: none;
+  border: var(--bw-1) solid var(--border-weak);
+  background: transparent;
+  color: var(--text-tertiary);
+  width: 22px;
+  height: 18px;
+  border-radius: var(--r-1);
+  margin-left: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast);
+}
+.shell-statusbar-dock:hover {
+  color: var(--text-primary);
+  border-color: var(--border-medium);
+  background: var(--action-hover);
+}
+/* Dock = top: swap the row order so the statusbar sits between the
+   topbar and the sidebar/main area. Sticky positioning flips so the
+   bar stays glued to the top of the inner viewport. */
+.app-shell[data-statusbar="top"] {
+  grid-template-rows: var(--shell-topbar-h) var(--shell-statusbar-h) 1fr;
+  grid-template-areas:
+    "topbar    topbar"
+    "statusbar statusbar"
+    "sidebar   main";
+}
+.app-shell[data-statusbar="top"] .shell-statusbar {
+  bottom: auto;
+  top: var(--shell-topbar-h);
+  border-top: 0;
+  border-bottom: var(--bw-1) solid var(--border-weak);
+}
+
 /* ============================================================================
    Hide legacy chrome the shell now owns.
    ============================================================================ */
@@ -675,9 +778,9 @@ body.wails-linux {
    Schedule card just confuses the operator. Hide the legacy Export
    button — it stays in the DOM so the Configure proxy's .click()
    delegate still fires. Import config + Import & Run now stay
-   (they're scheduling-flow specific). The "include passwords"
-   checkbox stays visible: it's read by the Export logic, so leaving
-   it reachable matters even when the button itself isn't here. */
+   (they're scheduling-flow specific). v0.19.17 — the prior
+   "include passwords" checkbox was deleted; the export flow now
+   prompts via a confirm modal at the moment of export. */
 .shell-mounted #exportBtn { display: none !important; }
 
 /* ============================================================================

@@ -11,6 +11,38 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.17] — 2026-05-06
+### Changed — UI shell: window controls always reachable, sidebar quieter, status row at top, password prompts at point of action
+Operator feedback after the v0.19.16 cluster validation:
+
+- **Window controls** (min / maximise-toggle / close) now live in the
+  top-right of the in-app topbar. Wails desktop fullscreen on macOS
+  hides the OS traffic lights and Windows custom-themed frames can hide
+  the system triplet — these in-app controls stay reachable in either
+  case. Hidden in plain-browser mode (the OS already supplies chrome).
+  In normal-window mode on macOS, the in-app cluster stays hidden so
+  the OS traffic lights remain the canonical source of truth.
+- **Sidebar groups** below the primary nav (Connections / Saved configs
+  / Recent runs) are **collapsed by default**. The header is now a real
+  toggle button with a chevron; per-section state persists in
+  localStorage so the operator's choice survives reloads.
+- **Status row** now defaults to **top** (just under the topbar) instead
+  of bottom. A small dock button on the bar flips top↔bottom and
+  persists the choice. Free-drag detach is a follow-up.
+- **Password export checkbox removed.** The orphan checkbox on the
+  Schedule card (its Export button was hidden by the shell mount, so
+  the toggle was unreachable in normal flow) is gone. Export now
+  detects whether any password / key is present in the form and shows
+  an explicit confirm modal at the moment of export.
+- **Save-connection password prompt** swapped from "type yes" textbox
+  to the same confirm modal pattern (Save with password / Save
+  without password) — clearer affordance, default = no save.
+
+Pre-runtime — needs the tester (or operator) to verify in-browser and
+desktop builds before declaring it polished. Architecture-grade local
+password storage (OS keychain + master-passphrase fallback) is queued
+as a separate v0.20.0 effort because it's a breaking change.
+
 ## [v0.19.16] — 2026-05-06
 ### Fixed — `/api/runs` was hand-curating the schema, leaving new fields null on UI cards
 The runs-history endpoint built each entry from a hand-coded whitelist

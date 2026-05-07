@@ -136,6 +136,23 @@ export function mountShell() {
           <button type="button" data-theme="light" aria-pressed="false" title="Light">Light</button>
           <button type="button" data-theme="dark"  aria-pressed="false" title="Dark">Dark</button>
         </div>
+        <!-- v0.19.17 — in-app window controls. Always visible regardless
+             of OS chrome state, so a Wails fullscreen (which hides the
+             native traffic lights on macOS and the OS triplet on Windows)
+             still gives the operator min/max/close affordances. Hidden
+             via CSS in plain-browser mode where the OS already supplies
+             window chrome. -->
+        <span class="shell-window-controls" data-role="window-controls" aria-label="Window">
+          <button type="button" class="btn-icon" data-role="win-min" title="Minimise">
+            <svg viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"><path d="M3 8h10"/></svg>
+          </button>
+          <button type="button" class="btn-icon" data-role="win-max" title="Maximise / restore">
+            <svg viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.5" fill="none"><rect x="3.5" y="3.5" width="9" height="9" rx="1"/></svg>
+          </button>
+          <button type="button" class="btn-icon" data-role="win-close" data-variant="danger" title="Close window">
+            <svg viewBox="0 0 16 16" width="12" height="12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+          </button>
+        </span>
       </span>
     </header>
 
@@ -160,21 +177,35 @@ export function mountShell() {
           </div>`).join('')}
       </nav>
 
-      <div class="shell-sidebar-section">
-        <div class="shell-sidebar-section-header"><span>Connections</span></div>
-        <div data-role="sidebar-connections">
+      <!-- v0.19.17 — collapsible sections. Default = collapsed so the
+           sidebar stays visually quiet on first load (only the primary
+           nav with Trust at the bottom is visible without effort). The
+           operator clicks the header to expand any group. State per
+           section persists in localStorage. -->
+      <div class="shell-sidebar-section" data-collapsible data-section="connections">
+        <button type="button" class="shell-sidebar-section-header" data-role="section-toggle" aria-expanded="false">
+          <span>Connections</span>
+          <span class="shell-sidebar-section-chevron" aria-hidden="true">▸</span>
+        </button>
+        <div data-role="sidebar-connections" class="shell-sidebar-section-body">
           <div class="shell-sidebar-empty">No saved connections yet.</div>
         </div>
       </div>
-      <div class="shell-sidebar-section">
-        <div class="shell-sidebar-section-header"><span>Saved configs</span></div>
-        <div data-role="sidebar-configs">
+      <div class="shell-sidebar-section" data-collapsible data-section="configs">
+        <button type="button" class="shell-sidebar-section-header" data-role="section-toggle" aria-expanded="false">
+          <span>Saved configs</span>
+          <span class="shell-sidebar-section-chevron" aria-hidden="true">▸</span>
+        </button>
+        <div data-role="sidebar-configs" class="shell-sidebar-section-body">
           <div class="shell-sidebar-empty">Save the current form via ⌘K → “Save current config…”.</div>
         </div>
       </div>
-      <div class="shell-sidebar-section">
-        <div class="shell-sidebar-section-header"><span>Recent runs</span></div>
-        <div data-role="sidebar-runs">
+      <div class="shell-sidebar-section" data-collapsible data-section="runs">
+        <button type="button" class="shell-sidebar-section-header" data-role="section-toggle" aria-expanded="false">
+          <span>Recent runs</span>
+          <span class="shell-sidebar-section-chevron" aria-hidden="true">▸</span>
+        </button>
+        <div data-role="sidebar-runs" class="shell-sidebar-section-body">
           <div class="shell-sidebar-empty">Finished runs appear here.</div>
         </div>
       </div>
@@ -203,6 +234,15 @@ export function mountShell() {
       <span class="shell-statusbar-spacer"></span>
       <span class="shell-statusbar-cell" data-role="status-runid" title="Active run id">—</span>
       <span class="shell-statusbar-cell" title="Platform version" data-role="status-version">${escapeHtml(serverVersionLabel())}</span>
+      <!-- v0.19.17 — dock toggle. Operators wanted the live status row
+           pinned at the TOP of the workspace (next to the topbar) rather
+           than the bottom; default is now top, with a one-click flip. -->
+      <button type="button" class="shell-statusbar-dock" data-role="statusbar-dock"
+              title="Move status bar to top / bottom" aria-label="Toggle status bar position">
+        <svg viewBox="0 0 16 16" width="11" height="11" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 8h10M8 3l-3 3M8 3l3 3M8 13l-3-3M8 13l3-3"/>
+        </svg>
+      </button>
     </footer>`;
 
   // Adopt every existing body child into .shell-main (preserves IDs).
@@ -234,9 +274,83 @@ export function mountShell() {
     document.dispatchEvent(new CustomEvent('sftpl:open-cmdk'));
   });
 
+  // v0.19.17 — wire collapsible sidebar sections, in-app window
+  // controls, and the statusbar dock toggle. Each helper is no-op safe
+  // if its DOM nodes aren't present, so partial template renders won't
+  // crash the shell.
+  wireSidebarSections(shell);
+  wireWindowControls(shell);
+  wireStatusbarDock(shell);
+
   // Restore last view (default workbench).
   const initial = readView();
   setView(initial, shell, main);
+}
+
+// Sidebar collapsible sections — Connections / Saved configs / Recent
+// runs. Default-collapsed; remembered per-section in localStorage so
+// the operator's choice survives reloads.
+const SIDEBAR_KEY = 'sftp-loadtest-sidebar-sections-v1';
+function wireSidebarSections(shell) {
+  const state = (() => {
+    try {
+      return JSON.parse(localStorage.getItem(SIDEBAR_KEY) || '{}') || {};
+    } catch { return {}; }
+  })();
+  const sections = shell.querySelectorAll('.shell-sidebar-section[data-collapsible]');
+  sections.forEach((sec) => {
+    const id = sec.dataset.section;
+    const expanded = state[id] === true; // default = collapsed
+    sec.dataset.collapsed = expanded ? 'false' : 'true';
+    const btn = sec.querySelector('[data-role="section-toggle"]');
+    if (btn) btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    btn?.addEventListener('click', () => {
+      const next = sec.dataset.collapsed !== 'true'; // currently expanded → collapse
+      sec.dataset.collapsed = next ? 'true' : 'false';
+      btn.setAttribute('aria-expanded', next ? 'false' : 'true');
+      state[id] = !next;
+      try { localStorage.setItem(SIDEBAR_KEY, JSON.stringify(state)); } catch {}
+    });
+  });
+}
+
+// In-app window controls — Min / Max / Close. Wired to Wails runtime
+// when running inside the desktop app; CSS hides the cluster in plain
+// browser mode. Always visible inside Wails so a fullscreen window
+// (which hides macOS traffic lights / Windows triplet) still has
+// reachable affordances.
+function wireWindowControls(shell) {
+  const wrap = shell.querySelector('[data-role="window-controls"]');
+  if (!wrap) return;
+  const isWails = !!(typeof window !== 'undefined' && window.runtime);
+  if (!isWails) {
+    wrap.style.display = 'none';
+    return;
+  }
+  const r = window.runtime;
+  const min = wrap.querySelector('[data-role="win-min"]');
+  const max = wrap.querySelector('[data-role="win-max"]');
+  const close = wrap.querySelector('[data-role="win-close"]');
+  min?.addEventListener('click', () => { try { r.WindowMinimise?.(); } catch {} });
+  max?.addEventListener('click', () => { try { r.WindowToggleMaximise?.(); } catch {} });
+  close?.addEventListener('click', () => { try { r.Quit?.(); } catch {} });
+}
+
+// Statusbar dock — operators wanted the bar pinned at the TOP, next
+// to the topbar, rather than at the bottom. Default = top; one-click
+// flip; persisted. The grid swap is driven by the data attribute on
+// .app-shell so the layout reorders without re-mounting children.
+const STATUSBAR_KEY = 'sftp-loadtest-statusbar-dock-v1';
+function wireStatusbarDock(shell) {
+  const stored = (() => { try { return localStorage.getItem(STATUSBAR_KEY); } catch { return null; } })();
+  const initial = stored === 'bottom' ? 'bottom' : 'top'; // default = top
+  shell.dataset.statusbar = initial;
+  const btn = shell.querySelector('[data-role="statusbar-dock"]');
+  btn?.addEventListener('click', () => {
+    const next = shell.dataset.statusbar === 'top' ? 'bottom' : 'top';
+    shell.dataset.statusbar = next;
+    try { localStorage.setItem(STATUSBAR_KEY, next); } catch {}
+  });
 }
 
 // buildViews creates [data-view="<id>"] containers in the main pane and

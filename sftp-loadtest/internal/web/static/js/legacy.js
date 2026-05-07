@@ -1186,24 +1186,41 @@ async function exportConfig() {
   if (cu && cu.value.trim()) cfg.target_username = cu.value.trim();
   if (cp && cp.value) cfg.target_password = cp.value;
 
-  const includePwd = $('export_with_passwords') && $('export_with_passwords').checked;
+  // v0.19.17 — single point of truth for the include-passwords decision.
+  // Pre-fix the schedule card had an "Include passwords" checkbox whose
+  // owning Export button was hidden by the shell mount, so the toggle was
+  // essentially orphan UI. Now we ask the operator at the moment of
+  // export, with an explicit Yes/No modal that matches the save-connection
+  // flow. Default = strip (safe).
+  let includePwd = false;
+  const hasAnyPassword =
+    /,[^,\n]*[^,\s][^\n]*$/m.test(cfg.normal_users_csv || '') ||
+    /,[^,\n]*[^,\s][^\n]*$/m.test(cfg.large_users_csv || '') ||
+    /,[^,\n]*[^,\s][^\n]*$/m.test(cfg.download_users_csv || '') ||
+    !!cfg.target_password ||
+    !!cfg.private_key_pem ||
+    !!cfg.bastion_pass ||
+    !!cfg.bastion_private_key_pem;
+  if (hasAnyPassword) {
+    const { confirm: confirmModal } = await import('./modal.js');
+    includePwd = await confirmModal({
+      title: 'Include passwords in this export?',
+      message: 'The exported JSON would contain plaintext passwords / private keys. Default is to strip them — only include if you fully trust where this file is going.',
+      okLabel: 'Include passwords',
+      cancelLabel: 'Strip passwords',
+      danger: true,
+    });
+  }
   if (!includePwd) {
     cfg.normal_users_csv   = stripPasswordsFromCSV(cfg.normal_users_csv);
     cfg.large_users_csv    = stripPasswordsFromCSV(cfg.large_users_csv);
     cfg.download_users_csv = stripPasswordsFromCSV(cfg.download_users_csv);
-    // Credentials get blanked the same way CSV passwords do — they
-    // only ship when "include passwords" is explicitly on.
     cfg.private_key_pem = '';
     cfg.private_key_passphrase = '';
     cfg.target_password = '';
-    // v0.17.2 — bastion credentials follow the same gate. Pre-v0.17.2
-    // an exported config with passwords-off still leaked the bastion
-    // PEM and pass into the JSON.
     cfg.bastion_pass = '';
     cfg.bastion_passphrase = '';
     cfg.bastion_private_key_pem = '';
-  } else if (!confirm('Export will include plaintext passwords. Continue?')) {
-    return;
   }
   // v0.18.3 — include schedules + alerts in the export so a single
   // JSON captures the WHOLE operator-facing setup, not just the run

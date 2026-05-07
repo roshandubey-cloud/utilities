@@ -110,19 +110,26 @@ export async function promptSave() {
     { name: 'name',     label: 'Connection name', placeholder: `${host}:${port}`, value: '', required: true,
       hint: 'A friendly label for the sidebar.' },
   ];
-  if (password) {
-    fields.push({
-      name: 'savePassword', label: 'Save password too?', type: 'text',
-      placeholder: 'no', value: 'no',
-      hint: 'Type "yes" to store the password in localStorage (plaintext on this machine). Anything else = name + creds without the password.',
-    });
-  }
   const out = await formModal({ title: 'Save connection', fields, submitLabel: 'Save' });
   if (!out) return null;
+  // v0.19.17 — explicit confirm dialog when a password is present, instead
+  // of asking the operator to type "yes" into a free-form text field.
+  // Same intent (default = no save), clearer affordance, and matches the
+  // export-with-passwords flow.
+  let savePassword = false;
+  if (password) {
+    savePassword = await confirmModal({
+      title: 'Save the password too?',
+      message: `Storing this password keeps it in browser localStorage in plaintext on this machine.\n\nKeep "${out.name.trim() || `${host}:${port}`}" without the password unless you really want it saved here.`,
+      okLabel: 'Save with password',
+      cancelLabel: 'Save without password',
+      danger: true,
+    });
+  }
   const entry = {
     name: out.name.trim() || `${host}:${port}`,
     host, port, username, password,
-    savePassword: password && /^y(es)?$/i.test((out.savePassword || '').trim()),
+    savePassword,
     // Multi-protocol fields (v0.13.0).
     protocol: (document.getElementById('protocol')?.value || 'sftp'),
     tls_mode: (document.getElementById('tls_mode')?.value || ''),
