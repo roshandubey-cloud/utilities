@@ -1,4 +1,12 @@
 // draggable.js — v0.19.26 shared draggable helper for floating pills.
+// v0.19.29 adds collision avoidance: the operator can drag freely
+// around the workspace but the bar refuses to enter screen real-
+// estate occupied by any "content" element (cards, buttons, inputs,
+// the other pill). Pre-fix, the host pill could be parked over the
+// Save preset button or the form fields; operators flagged any
+// overlap as a layout bug. Now the proposed move is rejected
+// (cursor flips to not-allowed for visual feedback) when it would
+// occlude another tracked element.
 //
 // Two consumers today: the host-info pill (`.shell-statusbar`, mounted
 // in shell.js) and the Configure summary pill (`.cfg-summary-bar`,
@@ -29,6 +37,62 @@
 // `position`.
 
 const DEFAULT_PADDING = 8;
+
+// Selectors a floating pill must NOT overlap. Each is a "content"
+// element the operator interacts with (or another pill). Picked to
+// be specific enough that empty layout containers are excluded but
+// generous enough that any actionable surface is covered. Tested on
+// the Configure view today; extend as new view-specific affordances
+// land.
+const AVOID_SELECTORS = [
+  '.shell-topbar',
+  '.shell-sidebar',
+  '.cfg-prelude',
+  '.cfg-section',
+  '.cfg-actionzone',
+  '.cfg-summary-bar',
+  '.shell-statusbar',
+  '[data-component="connection"]',
+  '[data-role="save-preset"]',
+  '#importBtn',
+  '#importRunBtn',
+  '#startBtn',
+  '#stopBtn',
+];
+
+// gatherAvoidRects returns the bounding boxes of every visible
+// "content" element on the page, excluding the bar that's being
+// dragged itself (so a pill never collides with its own rect).
+// Filters out hidden / zero-area elements.
+function gatherAvoidRects(self) {
+  const out = [];
+  for (const sel of AVOID_SELECTORS) {
+    document.querySelectorAll(sel).forEach((el) => {
+      if (el === self || el.contains(self) || self.contains(el)) return;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return;
+      // Skip elements that are display:none or off-screen (e.g.,
+      // hidden views' contents in a SPA).
+      const style = window.getComputedStyle(el);
+      if (style.visibility === 'hidden' || style.display === 'none') return;
+      out.push({ top: r.top, right: r.right, bottom: r.bottom, left: r.left });
+    });
+  }
+  return out;
+}
+
+// rectsOverlap is the standard AABB intersection with a small margin
+// so the pill doesn't end up flush-against an avoid target — the
+// margin gives the operator a visible gutter around every other
+// element.
+function rectsOverlap(a, b, margin = 6) {
+  return !(
+    a.right + margin <= b.left ||
+    a.left >= b.right + margin ||
+    a.bottom + margin <= b.top ||
+    a.top >= b.bottom + margin
+  );
+}
 
 export function makeDraggable(el, opts) {
   if (!el || el.dataset.draggableMounted === '1') return;
@@ -63,33 +127,64 @@ export function makeDraggable(el, opts) {
     const startTop = startRect.top;
     const startRight = window.innerWidth - startRect.right;
 
+    // Collision avoidance — gather every content rect once at the
+    // start of the drag (cheap; ~20 elements) so move events are
+    // O(N) instead of O(DOM) per tick.
+    const avoid = gatherAvoidRects(el);
+    let lastValidTop = startTop;
+    let lastValidRight = startRight;
+
     const onMove = (mv) => {
       const dx = mv.clientX - startX;
       const dy = mv.clientY - startY;
-      const newTop = clamp(
+      const proposedTop = clamp(
         startTop + dy,
         DEFAULT_PADDING,
         Math.max(DEFAULT_PADDING, window.innerHeight - startRect.height - DEFAULT_PADDING),
       );
-      const newRight = clamp(
+      const proposedRight = clamp(
         startRight - dx,
         DEFAULT_PADDING,
         Math.max(DEFAULT_PADDING, window.innerWidth - startRect.width - DEFAULT_PADDING),
       );
-      el.style.top = newTop + 'px';
-      el.style.right = newRight + 'px';
-      el.style.left = ''; // Clear any centering left value when dragging.
+      // Compute the rect the pill WOULD occupy at the proposed
+      // position, then test against every avoid rect.
+      const proposedLeft = window.innerWidth - proposedRight - startRect.width;
+      const proposedRect = {
+        top: proposedTop,
+        bottom: proposedTop + startRect.height,
+        left: proposedLeft,
+        right: proposedLeft + startRect.width,
+      };
+      const collision = avoid.some((r) => rectsOverlap(proposedRect, r));
+      if (collision) {
+        // Visual feedback — flag the dragging state so CSS can swap
+        // the cursor and dim the pill while the operator is being
+        // "guided" away. Don't update top/right; the pill stays at
+        // the last valid position until the operator moves toward a
+        // free zone.
+        el.dataset.dragBlocked = 'true';
+        return;
+      }
+      el.dataset.dragBlocked = 'false';
+      lastValidTop = proposedTop;
+      lastValidRight = proposedRight;
+      el.style.top = proposedTop + 'px';
+      el.style.right = proposedRight + 'px';
+      el.style.left = '';
       el.style.bottom = '';
       el.style.margin = '';
     };
     const onUp = () => {
       el.dataset.dragging = 'false';
+      el.dataset.dragBlocked = 'false';
       el.style.cursor = 'grab';
       el.releasePointerCapture(ev.pointerId);
       el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp);
-      const r = el.getBoundingClientRect();
-      writePos({ topPx: r.top, rightPx: window.innerWidth - r.right });
+      // Persist the LAST VALID (collision-free) position so a reload
+      // never lands the pill on top of content.
+      writePos({ topPx: lastValidTop, rightPx: lastValidRight });
     };
     el.addEventListener('pointermove', onMove);
     el.addEventListener('pointerup', onUp);
@@ -145,7 +240,10 @@ export function makeDraggable(el, opts) {
     if (!anchor) return null;
     const rect = anchor.getBoundingClientRect();
     if (!rect.width) return null;
-    const right = Math.round(window.innerWidth - rect.left + DEFAULT_PADDING);
+    // 24 px gutter (was 8) — operators flagged 8 px as feeling
+    // "overlapping" because anti-aliased pill borders blended into
+    // the adjacent button's edge. 24 reads as a deliberate gap.
+    const right = Math.round(window.innerWidth - rect.left + 24);
     const w = el.getBoundingClientRect().width;
     if (right + w > window.innerWidth - DEFAULT_PADDING) return null;
     return right;

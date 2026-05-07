@@ -11,6 +11,27 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.29] — 2026-05-07
+### Changed — drag avoids overlapping any text / field / button
+Operator request: "we cannot have overlapping text ever even when
+user is moving this bar — guide the user out of that screen space
+for the bar." Pre-fix the host pill could be parked over Save
+preset, the form fields, or the Configure cards.
+
+The shared `draggable.js` helper now collects the bounding rects of
+every visible "content" element on `pointerdown` (sidebar, topbar,
+prelude action zone, every card, action-zone buttons, the OTHER
+floating pill). On each `pointermove` it computes the proposed bar
+rect and tests it against every avoid rect with a 6 px gutter. If
+any overlap, the move is refused — the pill stays at its last
+valid position and `data-drag-blocked="true"` flips the cursor to
+not-allowed and dims the pill with a red outline so the operator
+sees they're being guided away. Once they steer toward a free zone,
+the block lifts and the pill follows the cursor again.
+
+Also bumped the default anchor gutter from 8 px to 24 px so the
+host pill doesn't sit flush against Save preset on first paint.
+
 ## [v0.19.28] — 2026-05-07
 ### Fixed — Configure summary pill rendered as a giant oval (round 2)
 v0.19.27's `width: max-content` + `display: flex` was the right CSS

@@ -718,6 +718,16 @@ button.shell-sidebar-section-header:hover { color: var(--sidebar-fg); }
   box-shadow: var(--shadow-3);
   transition: none;
 }
+/* v0.19.29 — visual feedback when collision avoidance refuses a
+   move. Cursor flips to not-allowed and the pill dims so the
+   operator sees they're being "guided" out of an occupied zone. */
+.shell-statusbar[data-drag-blocked="true"],
+.cfg-summary-bar[data-drag-blocked="true"] {
+  cursor: not-allowed;
+  opacity: 0.6;
+  outline: 2px solid var(--danger-fg-soft);
+  outline-offset: 2px;
+}
 .shell-statusbar-cell {
   display: inline-flex;
   align-items: center;
