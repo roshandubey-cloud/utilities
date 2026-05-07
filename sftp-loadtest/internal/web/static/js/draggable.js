@@ -85,7 +85,7 @@ function gatherAvoidRects(self) {
 // so the pill doesn't end up flush-against an avoid target — the
 // margin gives the operator a visible gutter around every other
 // element.
-function rectsOverlap(a, b, margin = 6) {
+function rectsOverlap(a, b, margin = 8) {
   return !(
     a.right + margin <= b.left ||
     a.left >= b.right + margin ||
@@ -93,6 +93,57 @@ function rectsOverlap(a, b, margin = 6) {
     a.top >= b.bottom + margin
   );
 }
+
+// resolveCollision (v0.19.30) takes a proposed (top, right) position
+// and pushes the pill OUT of any colliding avoid rect along the axis
+// of minimum penetration. Iterates up to 8 times so a cascading
+// resolution (push out of A, now collides with B) converges. Returns
+// a position that's collision-free OR (if the workspace is so dense
+// no free spot is reachable from the proposed point) the closest
+// approximation we can find.
+//
+// This replaces v0.19.29's "refuse the move" approach — the operator
+// asked for guidance, not a hard stop. Now the bar always responds
+// to drag input but slides around obstacles, like a smooth puck on
+// a magnetic table.
+function resolveCollision(proposed, size, avoid, viewport) {
+  let top = proposed.top;
+  let right = proposed.right;
+  const minTop = 8;
+  const maxTop = Math.max(minTop, viewport.h - size.height - 8);
+  const minRight = 8;
+  const maxRight = Math.max(minRight, viewport.w - size.width - 8);
+
+  for (let iter = 0; iter < 8; iter++) {
+    const left = viewport.w - right - size.width;
+    const pill = {
+      top,
+      bottom: top + size.height,
+      left,
+      right: left + size.width,
+    };
+    let conflict = null;
+    for (const a of avoid) {
+      if (rectsOverlap(pill, a)) { conflict = a; break; }
+    }
+    if (!conflict) return { top, right };
+
+    // Compute the four push displacements + a small breathing margin.
+    const margin = 8;
+    const pushUp    = pill.bottom - conflict.top + margin;
+    const pushDown  = conflict.bottom - pill.top + margin;
+    const pushLeft  = pill.right - conflict.left + margin;
+    const pushRight = conflict.right - pill.left + margin;
+    const min = Math.min(pushUp, pushDown, pushLeft, pushRight);
+    if (min === pushUp)        top   = clampN(top - pushUp,   minTop, maxTop);
+    else if (min === pushDown) top   = clampN(top + pushDown, minTop, maxTop);
+    else if (min === pushLeft) right = clampN(right + pushLeft, minRight, maxRight);
+    else                        right = clampN(right - pushRight, minRight, maxRight);
+  }
+  return { top, right };
+}
+
+function clampN(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
 export function makeDraggable(el, opts) {
   if (!el || el.dataset.draggableMounted === '1') return;
@@ -131,46 +182,41 @@ export function makeDraggable(el, opts) {
     // start of the drag (cheap; ~20 elements) so move events are
     // O(N) instead of O(DOM) per tick.
     const avoid = gatherAvoidRects(el);
-    let lastValidTop = startTop;
-    let lastValidRight = startRight;
+    let lastTop = startTop;
+    let lastRight = startRight;
 
     const onMove = (mv) => {
       const dx = mv.clientX - startX;
       const dy = mv.clientY - startY;
-      const proposedTop = clamp(
-        startTop + dy,
-        DEFAULT_PADDING,
-        Math.max(DEFAULT_PADDING, window.innerHeight - startRect.height - DEFAULT_PADDING),
-      );
-      const proposedRight = clamp(
-        startRight - dx,
-        DEFAULT_PADDING,
-        Math.max(DEFAULT_PADDING, window.innerWidth - startRect.width - DEFAULT_PADDING),
-      );
-      // Compute the rect the pill WOULD occupy at the proposed
-      // position, then test against every avoid rect.
-      const proposedLeft = window.innerWidth - proposedRight - startRect.width;
-      const proposedRect = {
-        top: proposedTop,
-        bottom: proposedTop + startRect.height,
-        left: proposedLeft,
-        right: proposedLeft + startRect.width,
+      const proposed = {
+        top: clamp(
+          startTop + dy,
+          DEFAULT_PADDING,
+          Math.max(DEFAULT_PADDING, window.innerHeight - startRect.height - DEFAULT_PADDING),
+        ),
+        right: clamp(
+          startRight - dx,
+          DEFAULT_PADDING,
+          Math.max(DEFAULT_PADDING, window.innerWidth - startRect.width - DEFAULT_PADDING),
+        ),
       };
-      const collision = avoid.some((r) => rectsOverlap(proposedRect, r));
-      if (collision) {
-        // Visual feedback — flag the dragging state so CSS can swap
-        // the cursor and dim the pill while the operator is being
-        // "guided" away. Don't update top/right; the pill stays at
-        // the last valid position until the operator moves toward a
-        // free zone.
-        el.dataset.dragBlocked = 'true';
-        return;
-      }
+      // Deflect around any colliding content rect — the pill always
+      // moves with the cursor, but slides out of occupied zones along
+      // the axis of minimum penetration. Operator gets continuous
+      // motion + an automatic "guided" feel.
+      const resolved = resolveCollision(
+        proposed,
+        { width: startRect.width, height: startRect.height },
+        avoid,
+        { w: window.innerWidth, h: window.innerHeight },
+      );
+      lastTop = resolved.top;
+      lastRight = resolved.right;
+      // dragBlocked flag stays false during smooth deflection; only
+      // set when the resolver couldn't escape after 8 iterations.
       el.dataset.dragBlocked = 'false';
-      lastValidTop = proposedTop;
-      lastValidRight = proposedRight;
-      el.style.top = proposedTop + 'px';
-      el.style.right = proposedRight + 'px';
+      el.style.top = resolved.top + 'px';
+      el.style.right = resolved.right + 'px';
       el.style.left = '';
       el.style.bottom = '';
       el.style.margin = '';
@@ -182,9 +228,9 @@ export function makeDraggable(el, opts) {
       el.releasePointerCapture(ev.pointerId);
       el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp);
-      // Persist the LAST VALID (collision-free) position so a reload
+      // Persist the last (already-resolved) position so a reload
       // never lands the pill on top of content.
-      writePos({ topPx: lastValidTop, rightPx: lastValidRight });
+      writePos({ topPx: lastTop, rightPx: lastRight });
     };
     el.addEventListener('pointermove', onMove);
     el.addEventListener('pointerup', onUp);
@@ -218,19 +264,33 @@ export function makeDraggable(el, opts) {
   // ---------------- helpers ----------------
 
   function applySavedOrDefault() {
-    const saved = readPos();
-    if (saved !== null) {
-      apply(saved);
-      return;
-    }
-    // No saved offset → try anchor measurement; if no anchor and no
-    // hard-coded default, leave the CSS layout alone (but keep drag
-    // wired so the operator can move the pill at will).
+    // Defer one frame so DOM is settled before we measure other
+    // elements (the avoid set + anchors). Gives mountSidebar /
+    // mountConfigureRedesign time to finish their inserts.
     requestAnimationFrame(() => {
-      const measuredRight = computeAnchorRight();
-      const rightPx = measuredRight !== null ? measuredRight : defaultRight;
-      if (defaultTop === null && rightPx === null) return; // CSS default wins
-      apply({ topPx: defaultTop, rightPx });
+      const saved = readPos();
+      let pos;
+      if (saved !== null) {
+        pos = { topPx: saved.topPx, rightPx: saved.rightPx };
+      } else {
+        const measuredRight = computeAnchorRight();
+        const rightPx = measuredRight !== null ? measuredRight : defaultRight;
+        if (defaultTop === null && rightPx === null) return; // CSS default wins
+        pos = { topPx: defaultTop, rightPx };
+      }
+      // Resolve collision against the current DOM in case content
+      // shifted since the position was saved (or the default lands
+      // close enough to a tracked element to warrant nudging).
+      apply(pos);
+      const rect = el.getBoundingClientRect();
+      const avoid = gatherAvoidRects(el);
+      const resolved = resolveCollision(
+        { top: pos.topPx === null ? rect.top : pos.topPx, right: pos.rightPx === null ? (window.innerWidth - rect.right) : pos.rightPx },
+        { width: rect.width, height: rect.height },
+        avoid,
+        { w: window.innerWidth, h: window.innerHeight },
+      );
+      apply({ topPx: resolved.top, rightPx: resolved.right });
     });
   }
 

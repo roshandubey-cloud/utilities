@@ -11,6 +11,22 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.19.30] — 2026-05-07
+### Changed — drag uses smooth deflection, not "refuse to move"
+v0.19.29's hard-stop approach left both pills feeling stuck — the
+operator couldn't drag them anywhere because the resolver kept
+refusing moves. Replaced with **deflection**: the pill always
+follows the cursor but slides out of any colliding content rect
+along the axis of minimum penetration, iterating up to 8 times so
+cascading resolutions converge. The same resolver runs on first
+paint / saved-position restore so a position that was valid before
+a layout shift auto-corrects to the nearest free spot.
+
+8 px breathing-room margin around every avoid rect (was 6) so
+anti-aliased pill borders don't visually blend into adjacent
+buttons. The default anchor gutter (saved-position-empty case) now
+sits at 24 px from Save preset's left edge.
+
 ## [v0.19.29] — 2026-05-07
 ### Changed — drag avoids overlapping any text / field / button
 Operator request: "we cannot have overlapping text ever even when
