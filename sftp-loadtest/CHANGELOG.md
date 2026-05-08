@@ -11,6 +11,18 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.20.1] — 2026-05-07
+### Changed — Save preset / Import config moved into the Target section header
+The prelude strip at the top of the Configure view held just two
+buttons (Save preset, Import config) and otherwise sat empty above
+the form. Relocated both buttons into the right side of the
+Target section's header, so the empty strip is gone and the
+section title block reads as a proper toolbar (eyebrow + subtitle
+on the left, primary actions on the right). No JS surface change —
+`[data-slot="prelude"]` is now nested inside the target section
+header instead of being its own row, so the existing button-
+mounting code still finds it.
+
 ## [v0.20.0] — 2026-05-07
 ### Added — OS-independent encrypted secret vault (full UI + migration + ref-resolution wiring)
 New `internal/vault` package: a single-file encrypted secret store

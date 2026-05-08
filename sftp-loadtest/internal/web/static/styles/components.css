@@ -2526,6 +2526,26 @@ button.primary:hover:not(:disabled),
   padding-bottom: var(--sp-2);
   border-bottom: var(--bw-1) solid var(--border-weak);
 }
+/* v0.20.1 — Target section head doubles as a horizontal toolbar.
+   Eyebrow + subtitle on the left; Save preset / Import config
+   pinned to the right. Pre-fix the prelude slot lived in a
+   standalone strip above the section, leaving wasted vertical
+   space at the top of every form. Now the strip is gone; the
+   buttons live next to the section heading they belong to. */
+.cfg-section-head-with-prelude {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.cfg-section-head-with-prelude > div:first-child {
+  min-width: 0; /* let the eyebrow+sub block shrink before the buttons wrap */
+}
+.cfg-section-head-with-prelude .cfg-prelude {
+  margin: 0;
+  flex-shrink: 0;
+}
 /* Eyebrow pattern (v0.14.11). Subtle accent rule fades into the
    tertiary uppercase label so the section markers feel like a
    typographic system instead of bold headings. The same shape and

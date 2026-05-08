@@ -100,15 +100,17 @@ export function mountConfigureRedesign() {
   layout.className = 'configure-layout';
   layout.innerHTML = `
     <div class="configure-main">
-      <!-- Prelude toolbar — bootstrap actions that belong BEFORE the form
-           (Import config). The user wants Import reachable without
-           scrolling all the way to the action zone at the bottom. -->
-      <div class="cfg-prelude" data-slot="prelude"></div>
-
       <section class="cfg-section" data-section="target">
-        <header class="cfg-section-head">
-          <div class="cfg-section-eyebrow">1 · Target</div>
-          <p class="cfg-section-sub">Host, port, and credentials — verified live by Test connection.</p>
+        <header class="cfg-section-head cfg-section-head-with-prelude">
+          <div>
+            <div class="cfg-section-eyebrow">1 · Target</div>
+            <p class="cfg-section-sub">Host, port, and credentials — verified live by Test connection.</p>
+          </div>
+          <!-- v0.20.1 — Save preset / Import config moved from the
+               top empty strip into the Target section header so the
+               vertical space above the form isn't wasted. Aligns
+               right; the section eyebrow + subtitle stay left. -->
+          <div class="cfg-prelude" data-slot="prelude"></div>
         </header>
         <div class="cfg-section-body" data-slot="target"></div>
       </section>
