@@ -33,6 +33,7 @@ import { mountWizard } from './wizard.js';
 import { mountSavedConnections } from './saved-connections.js';
 import { mountFileUploads } from './file-upload.js';
 import { mountStopProgress } from './stop-progress.js';
+import { mountVaultStatus } from './vault-ui.js';
 
 initTheme();
 installExternalOpener();
@@ -74,6 +75,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // /api/status until the runner seals; "Force close dialog" lets
     // the operator dismiss without aborting the seal.
     mountStopProgress();
+    // v0.20.0 — encrypted secret vault status pill in the topbar
+    // (lock icon → click to unlock / view stored secrets).
+    mountVaultStatus();
     mountStartPreflight();
     mountWizard('[data-component="wizard"]');
     mountCeilingBanner();

@@ -11,6 +11,153 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.20.0] — 2026-05-07
+### Added — OS-independent encrypted secret vault (full UI + migration + ref-resolution wiring)
+New `internal/vault` package: a single-file encrypted secret store
+that runs identically on macOS, Windows, Linux, in the desktop
+Wails app, and in the headless worker. Replaces (eventually —
+migration is a follow-up) the plaintext-on-disk credentials in
+schedule files and the localStorage password storage in the
+browser UI.
+
+**Cryptographic design**
+
+- **KDF:** Argon2id (RFC 9106). Defaults: 64 MiB memory, 3
+  iterations, 4-way parallelism. ~150-300 ms unlock cost on a
+  2024 laptop; well above any sane offline-attack budget.
+- **AEAD:** ChaCha20-Poly1305 (RFC 8439). Constant-time software
+  performance independent of AES-NI hardware support;
+  IETF-mandated 96-bit nonce + 128-bit tag matches
+  `golang.org/x/crypto/chacha20poly1305`.
+- **Salt:** 16 random bytes per file, regenerated on every Save.
+- **Nonce:** 12 random bytes per encryption, regenerated on every
+  Save. AEAD additional-data binds the file magic so a future
+  format-version splice can't be silently misinterpreted.
+- **Atomic writes:** tmp file + fsync + rename. A crash mid-Save
+  leaves either the previous good vault or no vault, never a torn
+  blob.
+- **Versioned format:** `"SLTV"` magic + 1-byte version + KDF
+  parameters + salt + nonce + ciphertext. Forwards-compatible.
+
+**Why a file vault, not OS keychain (Keychain / DPAPI / libsecret)**
+
+One source of truth across every platform we ship — macOS Wails
+app, Windows Wails app, Linux Wails app, headless CLI worker,
+browser UI driving a remote worker. The OS-keychain story is
+different on each, with no equivalent in the browser. One
+file-format vault audited as one Go package is far easier to
+reason about than per-OS implementation drift.
+
+**HTTP surface** (`internal/web/vault_handlers.go`)
+
+- `GET /api/vault/status` — exists / unlocked / count / updated.
+- `POST /api/vault/unlock {passphrase, create?}` — opens or
+  creates. ErrWrongPass → HTTP 403; corruption → 422.
+- `POST /api/vault/lock` — zeros in-memory key material.
+- `POST /api/vault/set {ref, secret}` — stores under ref.
+- `POST /api/vault/delete {ref}` — idempotent removal.
+- `GET /api/vault/list` — refs only (no plaintext leak).
+- `POST /api/vault/change-passphrase {new_passphrase}` — rotates.
+
+**Wiring**
+
+- `Server.SetVaultPath(path)` — called from CLI worker `main.go`
+  (`<reportsDir>/secrets.vault`) and from desktop `cmd/desktop/main.go`
+  (`<userConfigDir>/sftp-loadtest/secrets.vault`).
+- Locked-by-default: `unlocked=false` until the operator unlocks
+  via `/api/vault/unlock`.
+
+**Tests**
+
+- 9 unit tests in `internal/vault/vault_test.go`: round-trip,
+  wrong-passphrase, empty-passphrase, bad-magic, delete-persists,
+  nonce-freshness across Saves, list-sorted, change-passphrase
+  rotates, atomic-save leaves no .tmp.
+- 1 HTTP integration test in
+  `internal/web/vault_handlers_test.go` — drives the full mux
+  (status → create-on-unlock → set → list → status → lock →
+  forbidden-when-locked → wrong-passphrase → re-unlock → delete).
+
+**UI integration** (`static/js/vault.js`, `static/js/vault-ui.js`)
+
+- Topbar pill (between host info and Run/Stop) with three states:
+  `vault: not set up` (absent) / `vault: locked` (warning border) /
+  `vault: N secrets` (success border).
+- Click → unlock prompt (or create-on-first-unlock with
+  passphrase-confirm round-trip), then a management panel listing
+  every stored ref with delete + lock + rotate-passphrase actions.
+- `vault.js` exports `vaultStatus`, `unlockVault`, `lockVault`,
+  `storeSecret`, `getSecret`, `deleteSecret`, `listRefs`,
+  `changeMasterPassphrase`, `scanMigrations`, `applyMigrations`.
+  Auto-unlocks on demand; ref-only `listRefs` keeps plaintext
+  out of the browser.
+
+**Save-connection 3-way storage choice** (`saved-connections.js`)
+
+The "save with password" dialog now offers:
+1. Save without password (default; safest)
+2. Encrypted vault (server-side, OS-independent)
+3. Browser localStorage (legacy, plaintext-on-this-machine)
+
+Picking "vault" stores the password under `connection:<name>/password`
+and keeps the entry's `password` field empty, with a `vault_ref`
+pointer instead. `applyEntry` auto-fetches via `/api/vault/get`
+when restoring (auto-unlocking the vault if needed).
+
+**Bulk migration** (`internal/web/vault_migrate.go`)
+
+- `GET /api/vault/migrate-scan` — read-only, lists every
+  plaintext schedule credential the operator could move
+  (target_password, private_key_pem + passphrase, bastion_*,
+  per-row CSV passwords).
+- `POST /api/vault/migrate-apply` — moves each plaintext into
+  the vault under `schedule:<id>/<field>` and rewrites the
+  schedule JSON to carry the `$vault:` marker. Atomic per-
+  schedule save; partial failures surface a list to the UI.
+- The vault-ui pill auto-prompts on first successful unlock when
+  the scan returns non-empty: "Found N plaintext credentials in
+  schedule files. Move them into the encrypted vault now?"
+
+**Ref resolution at the runner boundary** (`internal/vault/refs.go`,
+`internal/web/vault_refs.go`)
+
+- New marker syntax `$vault:<refkey>` — opaque to JSON / CSV
+  storage, resolved server-side at probe / start time.
+- `vault.ResolveString` (single value) + `vault.ResolveCSV`
+  (per-row password column) take a `*Vault` and substitute
+  plaintext when unlocked, return verbatim otherwise.
+- `web.resolveStartReqVaultRefs` swaps every credential field on
+  a `startReq` (target_password, private_key_pem, bastion_*,
+  three CSVs) before `buildRunConfig` parses them, so the
+  runner stays unaware of the vault.
+- Same pass applied in `handleProbe` (Test Connection).
+
+**Auto-lock on idle** (`vault_handlers.go`)
+
+`vaultBinder.shouldAutoLock` + a `startVaultIdleSweepOnce`
+goroutine (60-second tick) flip the binder to locked when the
+configured idle window elapses. Defaults: **30 min** for the
+headless CLI worker (single-tenant, dedicated host), **15 min**
+for the desktop app (shared-laptop posture).
+
+**Tests** (all passing)
+
+- `internal/vault/` — 17 unit tests: round-trip, wrong-pass,
+  empty-reject, bad-magic, delete-persists, nonce-freshness
+  across Saves, list, change-passphrase, atomic-save (9 from
+  Phase 1) plus 8 ref-helper tests (`IsRef`, `MakeRef`/`RefKey`,
+  `ResolveString` plaintext / hit / vault-missing / nil-vault,
+  `ResolveCSV` mixed plaintext+refs, locked-vault leaves marker
+  intact).
+- `internal/web/vault_handlers_test.go` — full HTTP round-trip
+  through every endpoint (status / unlock-create / set / list /
+  status / get-200 / get-404 / lock / forbidden-when-locked /
+  wrong-pass / re-unlock / delete).
+- `internal/web/vault_migrate_test.go` —
+  `scheduleCandidates_FindsPlaintextSkipsRefs` (scan path) and
+  `applyScheduleMigrations_MovesPlaintextToVault` (apply path
+  with idempotency: re-scan after migrate is empty).
+
 ## [v0.19.38] — 2026-05-07
 ### Changed — Mac vs Windows visual gap audit + Mica on Windows 11
 Operator: "the Mac desktop app feels like an Apple-TV-class app —

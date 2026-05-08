@@ -16,6 +16,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/fdlimit"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/hostkeys"
@@ -54,6 +55,19 @@ func main() {
 
 	srv := web.NewServer(reportsDir, schedulesDir)
 	defer srv.Shutdown()
+
+	// v0.20.0 — OS-independent encrypted secret vault. Lives under
+	// the per-user config dir (next to hosts.json + tls-hosts.json)
+	// so backups capture every secret the operator entrusted to
+	// the desktop app together. The path is identical on macOS,
+	// Windows, and Linux; only the OS-specific config-dir prefix
+	// differs (handled by os.UserConfigDir).
+	srv.SetVaultPath(filepath.Join(dataDir, "secrets.vault"))
+	// Auto-lock the vault after 15 minutes of UI idle time. Shorter
+	// than the headless CLI worker because the desktop app runs on
+	// shared laptops where leaving secrets unlocked while the
+	// operator walks away is the bigger risk.
+	srv.SetVaultIdleTimeout(15 * time.Minute)
 
 	// SSH host-key trust store — UI-managed JSON at <dataDir>/hosts.json,
 	// the same shape the CLI's `default` branch uses. Opened BEFORE any

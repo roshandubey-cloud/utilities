@@ -286,6 +286,67 @@ body.wails-linux {
   border-color: var(--danger);
 }
 .shell-topbar .btn-icon[disabled] { opacity: 0.4; cursor: not-allowed; }
+/* v0.20.0 — encrypted-secret-vault pill in the topbar. Sits between
+   the host info and the Run / Stop run-controls. Three states
+   (data-state on the pill) drive colour: absent (vault not set up
+   yet), locked, open. Click → unlocks (or opens the management
+   panel when already unlocked). */
+.shell-topbar-vault {
+  appearance: none;
+  border: var(--bw-1) solid var(--border-weak);
+  background: transparent;
+  color: var(--text-tertiary);
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: var(--fs-11);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast);
+}
+.shell-topbar-vault:hover {
+  color: var(--text-primary);
+  border-color: var(--border-medium);
+  background: var(--action-hover);
+}
+.shell-topbar-vault[data-state="locked"]  { color: var(--warning-fg-soft); border-color: var(--warning-border); }
+.shell-topbar-vault[data-state="open"]    { color: var(--success-fg-soft); border-color: var(--success-border); }
+.shell-topbar-vault[data-state="absent"]  { color: var(--text-tertiary); }
+
+/* Stored-secrets management panel — list of refs + delete buttons. */
+.vault-ref-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.vault-ref-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+}
+.vault-ref-name {
+  font-size: var(--fs-12);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .shell-topbar .kbd {
   display: inline-block;
   padding: 1px 5px;

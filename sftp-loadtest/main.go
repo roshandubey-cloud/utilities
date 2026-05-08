@@ -27,7 +27,7 @@ import (
 // freshness. Also surfaced via the `-version` flag — the SSH-bootstrap
 // smoke test on a remote host runs `<bin> -version` to confirm the
 // binary it just installed actually executes.
-const platformVersion = "0.19.38"
+const platformVersion = "0.20.0"
 
 func main() {
 	if len(os.Args) >= 2 && (os.Args[1] == "-version" || os.Args[1] == "--version") {
@@ -151,6 +151,17 @@ func main() {
 	srv := web.NewServer(absDir, absSchedules)
 	defer srv.Shutdown()
 	srv.SetVersion(platformVersion)
+	// v0.20.0 — encrypted secret vault. Lives next to reports so a
+	// backup of the reports dir captures the operator's stored
+	// secrets. The desktop app overrides this path in its own
+	// main.go so the vault sits under the user-config dir, not
+	// next to per-run CSVs.
+	srv.SetVaultPath(filepath.Join(absDir, "secrets.vault"))
+	// Auto-lock-on-idle. 30 minutes by default for the CLI worker
+	// (longer than the desktop app because headless workers usually
+	// run on dedicated hosts where re-typing the master passphrase
+	// every 15 min is friction).
+	srv.SetVaultIdleTimeout(30 * time.Minute)
 	web.SetClusterFanOutTimeout(*clusterTimeout)
 	// Tell the probe handler where the known_hosts file lives — that's the
 	// only place TOFU will append to. When the operator launched in

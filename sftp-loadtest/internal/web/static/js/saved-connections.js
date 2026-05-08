@@ -37,6 +37,11 @@ export function saveEntry(entry) {
     username: entry.username || '',
     password: entry.savePassword ? (entry.password || '') : '',
     has_password: !!entry.savePassword && !!entry.password,
+    // v0.20.0 — when password lives in the encrypted vault, the
+    // entry only carries the ref; the plaintext stays server-side.
+    // has_password reflects EITHER kind of stored credential so
+    // sidebar UI doesn't have to branch.
+    vault_ref: entry.vaultRef || '',
     // Multi-protocol fields (v0.13.0). Optional — older entries without
     // these load identically to today as SFTP.
     protocol: entry.protocol || 'sftp',
@@ -45,6 +50,7 @@ export function saveEntry(entry) {
     tls_insecure_skip_verify: !!entry.tls_insecure_skip_verify,
     saved_at: new Date().toISOString(),
   };
+  if (stored.vault_ref) stored.has_password = true;
   if (idx >= 0) list[idx] = stored;
   else list.unshift(stored);
   while (list.length > MAX_ENTRIES) list.pop();
@@ -65,7 +71,14 @@ export function removeEntry(id) {
 // applyEntry fills the Quick Checks card inputs (host / port / user / pass)
 // with the saved entry. Dispatches input + change events so dependent UI
 // (validation, run-summary chip, recent-history) re-renders.
-export function applyEntry(entry) {
+//
+// v0.20.0 — when the saved entry has `vault_ref`, fetch the plaintext
+// from the encrypted vault (auto-unlocks via UI prompt) and write it
+// into the password field. Falls through to whatever is in
+// entry.password when the vault fetch fails (locked + cancelled,
+// ref deleted from vault since save, server unreachable) so the
+// connection is still usable; the operator just re-types.
+export async function applyEntry(entry) {
   if (!entry) return;
   const set = (id, val) => {
     const el = document.getElementById(id);
@@ -89,7 +102,14 @@ export function applyEntry(entry) {
   set('conn-host', entry.host);
   set('conn-port', entry.port);
   set('conn-user', entry.username || '');
-  set('conn-pass', entry.password || '');
+
+  let password = entry.password || '';
+  if (!password && entry.vault_ref) {
+    const { getSecret } = await import('./vault.js');
+    const fromVault = await getSecret(entry.vault_ref);
+    if (fromVault) password = fromVault;
+  }
+  set('conn-pass', password);
   // Mirror to the legacy hidden inputs that legacy.js / runner read.
   set('host', entry.host);
   set('port', entry.port);
@@ -112,35 +132,77 @@ export async function promptSave() {
   ];
   const out = await formModal({ title: 'Save connection', fields, submitLabel: 'Save' });
   if (!out) return null;
-  // v0.19.17 — explicit confirm dialog when a password is present, instead
-  // of asking the operator to type "yes" into a free-form text field.
-  // Same intent (default = no save), clearer affordance, and matches the
-  // export-with-passwords flow.
+  // v0.20.0 — when a password is present, offer THREE options (was
+  // a binary "store in browser yes/no" since v0.19.17):
+  //   1. Save without password (safest; default)
+  //   2. Store in encrypted vault (server-side, OS-independent)
+  //   3. Store in browser localStorage (plaintext, legacy)
+  // Branch order is deliberate: vault is the recommended path so
+  // it gets the primary button. The localStorage option remains
+  // for offline / no-server scenarios but is clearly labeled as
+  // plaintext.
   let savePassword = false;
+  let storeInVault = false;
   if (password) {
-    savePassword = await confirmModal({
-      title: 'Save the password too?',
-      message: `Storing this password keeps it in browser localStorage in plaintext on this machine.\n\nKeep "${out.name.trim() || `${host}:${port}`}" without the password unless you really want it saved here.`,
-      okLabel: 'Save with password',
-      cancelLabel: 'Save without password',
-      danger: true,
+    const choice = await formModal({
+      title: 'Where should this password live?',
+      submitLabel: 'Save connection',
+      fields: [
+        {
+          name: 'where',
+          label: 'Password storage',
+          type: 'select',
+          options: [
+            { value: 'none',  label: 'Save without password (you re-enter on each use)' },
+            { value: 'vault', label: 'Encrypted vault (recommended — Argon2id + ChaCha20-Poly1305)' },
+            { value: 'local', label: 'Browser localStorage (plaintext on this machine)' },
+          ],
+          value: 'none',
+        },
+      ],
     });
+    if (choice) {
+      if (choice.where === 'vault') storeInVault = true;
+      else if (choice.where === 'local') savePassword = true;
+    }
   }
+
   const entry = {
     name: out.name.trim() || `${host}:${port}`,
     host, port, username, password,
-    savePassword,
+    savePassword, // localStorage path
+    storeInVault, // server vault path
     // Multi-protocol fields (v0.13.0).
     protocol: (document.getElementById('protocol')?.value || 'sftp'),
     tls_mode: (document.getElementById('tls_mode')?.value || ''),
     tls_server_name: (document.getElementById('tls_server_name')?.value || '').trim(),
     tls_insecure_skip_verify: !!document.getElementById('tls_skip_verify')?.checked,
   };
+
+  // Store in the server-side vault first (if elected). On vault
+  // failure (locked + cancelled prompt, server unreachable, etc.)
+  // fall back to saving the entry without a password reference so
+  // the operator can complete the save and revisit the password
+  // choice later.
+  if (storeInVault) {
+    const { storeSecret } = await import('./vault.js');
+    const ref = `connection:${entry.name}/password`;
+    const ok = await storeSecret(ref, password);
+    if (ok) {
+      entry.vaultRef = ref;
+      entry.password = ''; // never persist plaintext alongside a vault ref
+    } else {
+      pushToast('Vault save failed; connection saved without password.', 'warn');
+      entry.storeInVault = false;
+    }
+  }
+
   const stored = saveEntry(entry);
   if (stored) {
-    pushToast(stored.has_password
-      ? `Saved "${stored.name}" with password.`
-      : `Saved "${stored.name}".`, 'success');
+    const where = entry.storeInVault ? ' (password in vault)'
+      : stored.has_password ? ' (password in browser)'
+      : '';
+    pushToast(`Saved "${stored.name}"${where}.`, 'success');
   }
   return stored;
 }

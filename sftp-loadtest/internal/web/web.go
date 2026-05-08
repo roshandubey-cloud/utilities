@@ -36,6 +36,7 @@ import (
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/alerts"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/sftpx"
 	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/source"
+	"github.com/roshandubey-cloud/utilities/sftp-loadtest/internal/vault"
 )
 
 //go:embed static
@@ -74,6 +75,14 @@ type Server struct {
 	// /api/alerts. nil-safe — empty Config disables every channel.
 	alertsCfg   alerts.Config
 	alertsCfgMu sync.Mutex
+
+	// v0.20.0 — OS-independent encrypted secret store. vaultPath is
+	// the on-disk file path (typically <reportsDir>/secrets.vault on
+	// the worker, <userConfigDir>/sftp-loadtest/secrets.vault on the
+	// desktop app). vaultBinder owns the in-process unlocked Vault;
+	// nil means locked. See internal/vault for the cryptography.
+	vaultPath   string
+	vaultBinder vaultBinder
 }
 
 // NewServer constructs the HTTP server. schedulesDir may be empty, in which
@@ -181,6 +190,18 @@ func (s *Server) SetKnownHostsPath(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.knownHostsPath = path
+}
+
+// SetVaultPath wires the on-disk path used by the secret-vault
+// endpoints (internal/vault). Called from main.go (CLI worker) +
+// cmd/desktop/main.go (Wails app) so both surfaces share one code
+// path. Empty path disables every /api/vault/* endpoint with a
+// 500 — operators that don't want a vault simply don't pass the
+// flag.
+func (s *Server) SetVaultPath(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.vaultPath = path
 }
 
 func (s *Server) getKnownHostsPath() string {
@@ -308,6 +329,18 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 		return
+	}
+	// v0.20.0 — substitute vault refs in credential fields before
+	// the underlying SSH/FTP dial. Same boundary the runner uses
+	// (resolveStartReqVaultRefs); keeps the dial layer ignorant of
+	// the vault.
+	if vv := s.vaultBinder.get(); vv != nil {
+		req.Password, _, _ = vault.ResolveString(req.Password, vv)
+		req.PrivateKey, _, _ = vault.ResolveString(req.PrivateKey, vv)
+		req.Passphrase, _, _ = vault.ResolveString(req.Passphrase, vv)
+		req.BastionPass, _, _ = vault.ResolveString(req.BastionPass, vv)
+		req.BastionPrivateKeyPEM, _, _ = vault.ResolveString(req.BastionPrivateKeyPEM, vv)
+		req.BastionPassphrase, _, _ = vault.ResolveString(req.BastionPassphrase, vv)
 	}
 	if req.Host == "" || req.Port <= 0 {
 		http.Error(w, "host and port required", http.StatusBadRequest)
@@ -1161,6 +1194,19 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/cluster/stop", s.handleClusterStop)
 	mux.HandleFunc("/api/cluster/runs", s.handleClusterRuns)
 	mux.HandleFunc("/api/cluster/runs/file", s.handleClusterRunFile)
+
+	// v0.20.0 — OS-independent encrypted secret vault. See
+	// internal/vault and internal/web/vault_handlers.go.
+	mux.HandleFunc("/api/vault/status", s.handleVaultStatus)
+	mux.HandleFunc("/api/vault/unlock", s.handleVaultUnlock)
+	mux.HandleFunc("/api/vault/lock", s.handleVaultLock)
+	mux.HandleFunc("/api/vault/set", s.handleVaultSet)
+	mux.HandleFunc("/api/vault/get", s.handleVaultGet)
+	mux.HandleFunc("/api/vault/delete", s.handleVaultDelete)
+	mux.HandleFunc("/api/vault/list", s.handleVaultList)
+	mux.HandleFunc("/api/vault/change-passphrase", s.handleVaultChangePassphrase)
+	mux.HandleFunc("/api/vault/migrate-scan", s.handleVaultMigrateScan)
+	mux.HandleFunc("/api/vault/migrate-apply", s.handleVaultMigrateApply)
 	mux.HandleFunc("/api/worker/spawn", s.handleWorkerSpawn)
 	mux.HandleFunc("/api/worker/despawn", s.handleWorkerDespawn)
 	mux.HandleFunc("/api/worker/spawned", s.handleWorkerSpawnedList)
@@ -1490,6 +1536,13 @@ func (s *Server) startRun(req startReq, startedBy string) (*runner.Run, error) {
 	// and persist files. Operators can still stop runs individually via
 	// /api/stop?run=<id>. The schedule sweep keeps its own gate (see
 	// schedule.go) so cron firings never spawn surprise overlaps.
+	// v0.20.0 — resolve any vault refs in the request BEFORE
+	// buildRunConfig sees them. The runner doesn't know about the
+	// vault; refs are a UI / persistence concern. By resolving at
+	// the boundary we keep the runner's surface unchanged.
+	if v := s.vaultBinder.get(); v != nil {
+		req = resolveStartReqVaultRefs(req, v)
+	}
 	cfg, err := buildRunConfig(req)
 	if err != nil {
 		return nil, err
