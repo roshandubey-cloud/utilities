@@ -404,6 +404,140 @@ body.wails-linux {
   min-width: 0;
 }
 
+/* v0.20.3 — encrypted-vault management panel inside the Trust view.
+   Lives above the trusted-hosts panel as the canonical "where do my
+   keys / passwords / certs go?" surface. Status row + primary action
+   on the right; migration banner; secrets list with rotate / lock
+   foot. Briefly flashes when navigated-to from a hint link so the
+   operator's eye is drawn to the right place. */
+.panel-vault .panel-title { display: inline-flex; align-items: center; }
+.panel-vault.vault-trust-flash {
+  animation: vaultTrustFlash 1.4s ease-out 1;
+}
+@keyframes vaultTrustFlash {
+  0%   { box-shadow: 0 0 0 2px rgba(230, 98, 10, 0.45); }
+  100% { box-shadow: 0 0 0 0 rgba(230, 98, 10, 0); }
+}
+
+.vault-trust-status {
+  display: flex; align-items: flex-start;
+  gap: var(--sp-4);
+  padding: var(--sp-2) 0 var(--sp-4);
+  border-bottom: var(--bw-1) solid var(--border-weak);
+  margin-bottom: var(--sp-3);
+}
+.vault-trust-state {
+  flex: 1;
+  display: flex; align-items: flex-start; gap: 10px;
+  min-width: 0;
+}
+.vault-trust-led {
+  width: 10px; height: 10px; border-radius: 50%;
+  margin-top: 6px; flex-shrink: 0;
+  background: var(--text-tertiary);
+  box-shadow: 0 0 0 3px transparent;
+}
+.vault-trust-led[data-state="locked"] {
+  background: var(--warning-fg-soft);
+  box-shadow: 0 0 0 3px rgba(245, 178, 91, 0.18);
+}
+.vault-trust-led[data-state="open"] {
+  background: var(--success-fg-soft);
+  box-shadow: 0 0 0 3px rgba(94, 208, 133, 0.18);
+  animation: ledPulse 2.4s ease-in-out infinite;
+}
+.vault-trust-led[data-state="absent"]      { background: var(--text-tertiary); }
+.vault-trust-led[data-state="unsupported"] { background: var(--danger-fg-soft); }
+.vault-trust-state-headline {
+  font-size: var(--fs-14);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+.vault-trust-state-detail {
+  margin-top: 3px;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  line-height: var(--lh-normal);
+}
+.vault-trust-actions {
+  display: inline-flex; gap: 6px;
+  flex-shrink: 0;
+}
+
+.vault-trust-migration {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: 10px 12px;
+  margin-bottom: var(--sp-3);
+  background: var(--warning-bg-soft);
+  border: var(--bw-1) solid var(--warning-border);
+  border-radius: var(--r-2);
+}
+.vault-trust-migration-text {
+  flex: 1;
+  font-size: var(--fs-12);
+  color: var(--text-primary);
+  line-height: var(--lh-normal);
+}
+.vault-trust-migration-actions {
+  display: inline-flex; gap: 6px;
+  flex-shrink: 0;
+}
+
+.vault-trust-secrets {
+  margin-bottom: var(--sp-3);
+}
+.vault-trust-secrets-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+.vault-trust-secrets-foot {
+  display: flex; gap: 6px; justify-content: flex-end;
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: var(--bw-1) solid var(--border-weak);
+}
+.vault-trust-empty {
+  text-align: center;
+  padding: var(--sp-5) 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-12);
+}
+.vault-trust-foot {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  line-height: var(--lh-normal);
+}
+
+/* v0.20.3 — small "Save in vault" hint shown below password fields
+   in the connection / bastion / SSH-key sections. Redirects to
+   Trust → Vault. Soft surface so it doesn't compete with the
+   primary form labels. */
+.vault-hint {
+  display: flex; align-items: center; gap: 6px;
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border: var(--bw-1) dashed var(--border-weak);
+  border-radius: var(--r-2);
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+  line-height: var(--lh-normal);
+}
+.vault-hint svg { color: var(--accent); flex-shrink: 0; }
+.vault-hint code.mono { color: var(--text-primary); }
+.vault-hint-link {
+  color: var(--text-link);
+  text-decoration: none;
+  font-weight: var(--fw-medium);
+}
+.vault-hint-link:hover { color: var(--text-link-hover); text-decoration: underline; }
+
 .shell-topbar .kbd {
   display: inline-block;
   padding: 1px 5px;

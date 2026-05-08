@@ -570,6 +570,18 @@
           </div>
         </div>
         <p class="target-creds-caption">Credentials are used by <b>Test connection</b> only — the real run uses each load's user CSV.</p>
+        <!-- v0.20.3 — single visible hint pointing to Trust → Vault.
+             Surfaces here so an operator entering a password sees
+             where the encrypted store lives without hunting. -->
+        <p class="vault-hint" data-role="vault-hint-conn">
+          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor"
+               stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+            <rect x="3" y="7" width="10" height="7" rx="1.2"/><path d="M5 7V5a3 3 0 016 0v2"/>
+          </svg>
+          Tip — passwords, keys &amp; cert passphrases can be stored encrypted in your
+          <a href="#" data-role="open-vault" class="vault-hint-link">Trust → Vault</a>
+          and referenced as <code class="mono">$vault:&lt;ref&gt;</code> from any saved connection.
+        </p>
 
         <!-- FTPS-specific fields. Hidden via CSS when the picker is on
              SFTP or FTP; the protocol-picker JS toggles
@@ -650,6 +662,14 @@
           <div class="help" style="white-space:normal">
             SFTP-only. The runner opens one SSH session to the bastion and reuses it for every per-user pool slot. The bastion host key uses the same TOFU store as the target.
           </div>
+          <p class="vault-hint" data-role="vault-hint-bastion">
+            <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor"
+                 stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+              <rect x="3" y="7" width="10" height="7" rx="1.2"/><path d="M5 7V5a3 3 0 016 0v2"/>
+            </svg>
+            Bastion password / key passphrase belongs in your
+            <a href="#" data-role="open-vault" class="vault-hint-link">Trust → Vault</a> too.
+          </p>
         </details>
 
         <!-- SSH key disclosure. Closed by default. When opened with PEM
@@ -676,6 +696,14 @@
             The key is held in memory only — it never reaches localStorage unless you explicitly
             Export config with passwords included.
           </div>
+          <p class="vault-hint" data-role="vault-hint-key">
+            <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor"
+                 stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+              <rect x="3" y="7" width="10" height="7" rx="1.2"/><path d="M5 7V5a3 3 0 016 0v2"/>
+            </svg>
+            Store the PEM and its passphrase encrypted-at-rest in your
+            <a href="#" data-role="open-vault" class="vault-hint-link">Trust → Vault</a>.
+          </p>
         </details>
 
         <div class="target-actions">
@@ -768,6 +796,40 @@
     <!-- Hosting node for the runs-history panel. The mount script relocates
          this into the legacy right-column at runtime so historical runs
          appear where operators expect them. -->
+    <!-- v0.20.3 — Encrypted vault panel. Lives in the Trust view so
+         "where do my keys / passwords / certificates go?" has one
+         obvious answer. Reparented into the Trust container by
+         shell.js. mountVaultTrust() fills the body with status,
+         action buttons, and the stored-secrets list. -->
+    <section class="panel panel-compact panel-vault" data-component="vault-trust" id="vault-trust-panel">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <div class="panel-title">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
+                 stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
+                 aria-hidden="true" style="vertical-align:-2px;margin-right:6px;color:var(--accent)">
+              <rect x="3" y="7" width="10" height="7" rx="1.2"/>
+              <path d="M5 7V5a3 3 0 016 0v2"/>
+            </svg>
+            Encrypted vault — keys, passwords &amp; certificates
+          </div>
+          <div class="panel-subtitle">
+            One OS-independent encrypted store for every secret this tool needs:
+            SFTP / FTPS passwords, SSH private keys (and their passphrases),
+            bastion credentials, and TLS client certs. Argon2id key derivation +
+            ChaCha20-Poly1305 AEAD; auto-locks after idle. Stored secrets are
+            referenced from saved connections / schedules as opaque
+            <code class="mono">$vault:&lt;ref&gt;</code> markers — plaintext never
+            leaves this panel.
+          </div>
+        </div>
+        <div class="panel-actions">
+          <span data-role="vault-state-badge" class="badge-mini">checking…</span>
+        </div>
+      </div>
+      <div class="panel-body" data-role="content"></div>
+    </section>
+
     <section class="panel panel-compact" data-component="trusted-hosts" id="trusted-hosts">
       <div class="panel-header">
         <div class="panel-title-group">

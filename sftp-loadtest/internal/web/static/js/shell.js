@@ -56,7 +56,7 @@ const VIEWS = [
   { id: 'schedule',  label: 'Schedule',  icon: ICONS.schedule,  hint: 'Run later, save / load configs' },
   { id: 'runs',      label: 'Runs',      icon: ICONS.runs,      hint: 'About to run + past runs' },
   { id: 'cluster',   label: 'Cluster',   icon: ICONS.cluster,   hint: 'Distribute load across workers' },
-  { id: 'trust',     label: 'Trust',     icon: ICONS.trust,     hint: 'SSH host keys' },
+  { id: 'trust',     label: 'Trust & Vault', icon: ICONS.trust, hint: 'Encrypted vault for keys / passwords / certs, plus SSH host-key trust store' },
 ];
 
 const VIEW_KEY = 'sftp-loadtest-active-view-v1';
@@ -433,8 +433,14 @@ function buildViews(main) {
   const runsHistory = legacy.querySelector('[data-component="runs-history"]');
   if (runsHistory) runs.appendChild(runsHistory);
 
-  // Trust: trusted-hosts component.
+  // Trust & Vault: vault panel (v0.20.3) renders ABOVE the trusted-
+  // hosts panel so the encrypted vault — the answer to "where do my
+  // keys / passwords / certs live?" — is the first thing visible
+  // when an operator clicks Trust in the sidebar. Trusted-hosts
+  // (SSH host-key TOFU store) follows below.
   const trust = containers.trust;
+  const vaultPanel = legacy.querySelector('[data-component="vault-trust"]');
+  if (vaultPanel) trust.appendChild(vaultPanel);
   const trusted = legacy.querySelector('[data-component="trusted-hosts"]');
   if (trusted) trust.appendChild(trusted);
 

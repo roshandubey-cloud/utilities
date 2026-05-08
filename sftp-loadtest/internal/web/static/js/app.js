@@ -34,6 +34,7 @@ import { mountSavedConnections } from './saved-connections.js';
 import { mountFileUploads } from './file-upload.js';
 import { mountStopProgress } from './stop-progress.js';
 import { mountVaultStatus } from './vault-ui.js';
+import { mountVaultTrust } from './vault-trust.js';
 
 initTheme();
 installExternalOpener();
@@ -54,6 +55,12 @@ document.addEventListener('DOMContentLoaded', () => {
   mountLiveCharts('[data-component="records"]');
   mountRunsHistory('[data-component="runs-history"]');
   mountTrustedHosts('[data-component="trusted-hosts"]');
+  // v0.20.3 — encrypted-vault management surface in the Trust view.
+  // Renders ABOVE trusted-hosts and is the canonical home for all
+  // vault interactions (status, unlock/create, secrets list,
+  // migration, lock, rotate). Topbar pill and password-field hints
+  // navigate here.
+  mountVaultTrust('[data-component="vault-trust"]');
   // Order matters: upload-restructure relocates DOM, users-editors then
   // mounts on the textareas in their final positions, wizard tags cards
   // last so it sees the merged structure.

@@ -11,6 +11,44 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.20.3] — 2026-05-08
+### Added — Trust & Vault: encrypted-vault management lives inside the Trust view
+The encrypted vault gained a dedicated panel inside the Trust view
+("Encrypted vault — keys, passwords & certificates"), rendered
+ABOVE the SSH host-key trust store. It is now the canonical home
+for every vault interaction:
+
+  - status (set up / locked / N stored) with a coloured LED + clear
+    one-line headline + supporting detail line;
+  - primary action button that adapts to state — `Create vault…`
+    when absent, `Unlock vault…` when locked, secrets list when
+    open;
+  - stored-secrets table with per-row delete + a foot row for
+    `Lock vault` and `Rotate master passphrase…`;
+  - migration banner that auto-surfaces when schedule files still
+    carry plaintext credentials (one-click "Move to vault");
+  - explanatory copy covering Argon2id KDF, ChaCha20-Poly1305 AEAD,
+    auto-lock, and the no-recovery design.
+
+The sidebar entry is renamed `Trust` → `Trust & Vault` so the new
+home is discoverable from the nav, and the topbar pill click
+(`vault: locked` / `vault: 3 secrets`) now navigates to this panel
+instead of opening a separate modal — single source of truth.
+
+Inline `Tip — store passwords / keys / passphrases in your
+Trust → Vault` hints sit below the connection password, the SSH
+private-key disclosure, and the bastion auth disclosure, each
+linking to the panel. Click delegation on `[data-role="open-vault"]`
+catches every link, and `window.__sftpl_openVault({ unlock })` is
+exposed for non-module callers (legacy.js, palette commands,
+post-save toasts).
+
+vault-ui.js shed its old in-modal management surface — it is now
+just the topbar status pill (~190 → ~80 LoC), with all the
+list / delete / rotate / lock logic moving into the new
+`vault-trust.js` module that owns the in-Trust panel.
+
+
 ## [v0.20.2] — 2026-05-08
 ### Changed — topbar declutter (brand wordmark dropped, host strip → chip + popover)
 The topbar wordmark "SFTP Load Test" wrapped onto a second line on
