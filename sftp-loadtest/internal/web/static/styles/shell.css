@@ -212,34 +212,91 @@ body.wails-linux {
 
 .shell-topbar-spacer { flex: 1; }
 
-/* v0.19.36 — host info pill moved INTO the topbar (was a floating
-   draggable bar that kept overlapping content). Sits between the
-   status badge and the run controls. Compact mono-font cells with
-   thin separator dots. Truncates with ellipsis on narrow viewports
-   so the topbar never wraps. */
+/* v0.20.2 — host info collapsed from a 9-cell strip to a single chip
+   with a click-to-open popover. Frees ~280 px of topbar width so the
+   brand mark, status badge, run controls, and theme switcher always fit
+   on one row regardless of viewport width. Uses <details> for native
+   click-to-pin and Esc-to-close behavior; popover is positioned
+   absolutely so it floats above the page below the topbar. */
 .shell-topbar-host {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 0;
+  -webkit-app-region: no-drag;
+}
+.shell-topbar-host > summary {
+  list-style: none;            /* hide default disclosure triangle */
+  cursor: pointer;
+}
+.shell-topbar-host > summary::-webkit-details-marker { display: none; }
+
+.shell-topbar-host-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  flex: 0 1 auto;
-  min-width: 0;
+  height: 26px;
   padding: 0 var(--sp-2);
+  border-radius: var(--r-pill);
   font-family: var(--font-mono);
   font-size: var(--fs-11);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  user-select: none;
 }
-.shell-topbar-host .value { color: var(--text-secondary); }
-.shell-topbar-host .sep   { color: var(--text-tertiary); opacity: 0.5; }
-/* Hide the run-id slot when empty (no active run). */
-.shell-topbar-host [data-role="status-runid"]:empty,
-.shell-topbar-host [data-role="status-runid"]:empty + .sep,
-.shell-topbar-host [data-role="status-runid-sep"]:empty {
+.shell-topbar-host-chip:hover { border-color: var(--border-medium); color: var(--text-primary); }
+.shell-topbar-host[open] > .shell-topbar-host-chip {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.shell-topbar-host-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--success-fg-soft);
+  flex-shrink: 0;
+}
+.shell-topbar-host-chip .value { color: var(--text-secondary); }
+.shell-topbar-host-chip .sep   { color: var(--text-tertiary); opacity: 0.5; }
+/* Hide the run-id chip cell + leading separator when no run is active. */
+.shell-topbar-host-chip [data-role="status-runid"]:empty,
+.shell-topbar-host-chip [data-role="status-runid"]:empty + .sep,
+.shell-topbar-host-chip [data-role="status-runid-sep"]:empty {
   display: none;
 }
-.shell-topbar-host [data-role="status-runid"]:not(:empty) ~ * { display: inline-flex; }
+
+.shell-topbar-host-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  min-width: 240px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-medium);
+  border-radius: var(--r-3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  display: grid;
+  gap: 4px;
+  font-size: var(--fs-12);
+}
+.shell-topbar-host-pop .row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 3px 0;
+}
+.shell-topbar-host-pop .k {
+  flex: 0 0 72px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-11);
+  letter-spacing: var(--tracking-wide);
+}
+.shell-topbar-host-pop .v {
+  flex: 1;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  text-align: right;
+  white-space: nowrap;
+}
 .shell-topbar-actions { display: inline-flex; align-items: center; gap: var(--sp-2); }
 .shell-topbar-run-controls { display: inline-flex; align-items: center; gap: var(--sp-1); }
 

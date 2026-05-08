@@ -99,40 +99,48 @@ export function mountShell() {
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
              stroke-width="1.5" stroke-linecap="round"><path d="M2 4h12M2 8h12M2 12h12"/></svg>
       </button>
-      <a href="#" class="shell-topbar-brand" data-role="brand">
+      <a href="#" class="shell-topbar-brand" data-role="brand" aria-label="SFTP Load Test"
+         title="SFTP Load Test">
         <span class="shell-topbar-brand-mark" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5L20.5 19.5H3.5z"/></svg>
         </span>
-        <span>SFTP Load Test</span>
       </a>
       <span class="shell-topbar-status" data-role="status" data-state="idle"
             title="Idle: no run is active">
         <span class="shell-topbar-status-led" aria-hidden="true"></span>
         <span data-role="status-text">Idle</span>
       </span>
-      <!-- v0.19.36 — host info lives INSIDE the topbar now (was a
-           draggable floating pill). The pill kept overlapping the
-           Configure prelude's Save preset / Import config buttons
-           on first paint because the avoid-rect timing race was
-           hard to nail down across every WebKit + Wails + viewport
-           combo. Embedding into the topbar puts the info in a
-           layout slot that physically can't overlap anything. -->
-      <span class="shell-topbar-host" data-role="topbar-host"
-            title="Local machine info — hostname, OS / arch, CPU cores, RAM, file-descriptor limit, version">
-        <span class="value mono" data-role="status-host">—</span>
-        <span class="sep">·</span>
-        <span class="value mono" data-role="status-os">—</span>
-        <span class="sep">·</span>
-        <span class="value mono" data-role="status-cpu">—</span>
-        <span class="sep">·</span>
-        <span class="value mono" data-role="status-fd">—</span>
-        <span class="sep">·</span>
-        <span class="value mono" data-role="status-version">${escapeHtml(serverVersionLabel())}</span>
-        <!-- Run id only renders when a run is active (CSS shows it
-             when its data attribute is non-empty). -->
-        <span class="sep" data-role="status-runid-sep"></span>
-        <span class="value mono" data-role="status-runid"></span>
-      </span>
+      <!-- v0.20.2 — host info collapsed from a 9-cell strip to a single
+           chip with a click-to-open popover. The strip ate ~40% of the
+           topbar width and pushed the brand wordmark into a second line
+           on narrow viewports. The chip shows os · cores · version
+           (the only items glanced-at during a run); full hostname,
+           RAM, FD limit, run id live in the popover. Uses <details>
+           so click-to-pin and Esc-to-close are native. -->
+      <details class="shell-topbar-host" data-role="topbar-host">
+        <summary class="shell-topbar-host-chip"
+                 title="Click for full machine info — hostname, OS / arch, CPU, RAM, FD limit, version, run id">
+          <span class="shell-topbar-host-dot" aria-hidden="true"></span>
+          <span class="value mono" data-role="status-os-short">—</span>
+          <span class="sep">·</span>
+          <span class="value mono" data-role="status-cpu-short">—</span>
+          <span class="sep">·</span>
+          <span class="value mono" data-role="status-version">${escapeHtml(serverVersionLabel())}</span>
+          <span class="sep" data-role="status-runid-sep"></span>
+          <span class="value mono" data-role="status-runid"></span>
+        </summary>
+        <div class="shell-topbar-host-pop" role="dialog" aria-label="Machine info">
+          <div class="row"><span class="k">Hostname</span><span class="v mono" data-role="status-host">—</span></div>
+          <div class="row"><span class="k">OS / arch</span><span class="v mono" data-role="status-os">—</span></div>
+          <div class="row"><span class="k">CPU</span><span class="v mono" data-role="status-cpu">—</span></div>
+          <div class="row"><span class="k">RAM</span><span class="v mono" data-role="status-ram">—</span></div>
+          <div class="row"><span class="k">FD limit</span><span class="v mono" data-role="status-fd">—</span></div>
+          <div class="row"><span class="k">Version</span><span class="v mono" data-role="status-version-pop">${escapeHtml(serverVersionLabel())}</span></div>
+          <div class="row" data-role="status-runid-row" hidden>
+            <span class="k">Run id</span><span class="v mono" data-role="status-runid-pop"></span>
+          </div>
+        </div>
+      </details>
       <span class="shell-topbar-spacer"></span>
       <span class="shell-topbar-run-controls">
         <button type="button" class="btn-icon" data-variant="primary"
@@ -510,6 +518,9 @@ async function pollStatus(shell) {
   // v0.19.32 is reparented to <body>. Search the document for these
   // status-cell roles so they're found wherever the pill ends up.
   const sbRunID = document.querySelector('[data-role="status-runid"]');
+  // v0.20.2 — popover mirror of run id, only visible when a run is active.
+  const sbRunIDPop = document.querySelector('[data-role="status-runid-pop"]');
+  const sbRunIDRow = document.querySelector('[data-role="status-runid-row"]');
   async function tick() {
     try {
       const r = await apiFetch('/api/status');
@@ -521,15 +532,18 @@ async function pollStatus(shell) {
         tbRun.disabled = true;
         tbStop.disabled = false;
         if (sbRunID) sbRunID.textContent = j.id || '';
+        if (sbRunIDPop) sbRunIDPop.textContent = j.id || '';
+        if (sbRunIDRow) sbRunIDRow.hidden = !j.id;
       } else {
         tbStatus.dataset.state = 'idle';
         tbStatusText.textContent = 'Idle';
         tbRun.disabled = false;
         tbStop.disabled = true;
-        // v0.19.36 — empty string (not "—") so the :empty CSS rule
-        // collapses the run-id cell + its separator dot when no
-        // run is active. Keeps the topbar tidy in idle state.
+        // Empty string (not "—") so the :empty CSS rule collapses the
+        // run-id cell + its separator dot when no run is active.
         if (sbRunID) sbRunID.textContent = '';
+        if (sbRunIDPop) sbRunIDPop.textContent = '';
+        if (sbRunIDRow) sbRunIDRow.hidden = true;
       }
     } catch {
       tbStatus.dataset.state = 'error';
@@ -559,6 +573,10 @@ async function fetchHost(_shell) {
     set('status-cpu', `${j.num_cpu || '?'} cores`);
     set('status-ram', formatRam(j.ram_mb));
     set('status-fd', formatFD(j.fd_limit_soft, j.fd_limit_hard));
+    // Compact chip cells (v0.20.2 collapsed strip → chip + popover).
+    const osShort = ({ darwin: 'mac', windows: 'win', linux: 'lnx' })[j.os] || j.os || '?';
+    set('status-os-short', osShort);
+    set('status-cpu-short', `${j.num_cpu || '?'}C`);
   } catch { /* leave placeholders */ }
 }
 

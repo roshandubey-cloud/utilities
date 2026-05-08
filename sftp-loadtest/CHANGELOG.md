@@ -11,6 +11,28 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.20.2] — 2026-05-08
+### Changed — topbar declutter (brand wordmark dropped, host strip → chip + popover)
+The topbar wordmark "SFTP Load Test" wrapped onto a second line on
+narrow viewports because nine other elements (status, host strip
+with five mono cells, run/stop, ⌘K, theme switcher, window
+controls) competed for the same flex row. Dropped the wordmark
+text — the brand mark icon stays — and collapsed the host
+information strip into a single compact chip showing only
+`os · cores · version` (plus a green status dot and the active
+run id when a run is in flight). Full hostname, OS/arch, RAM, FD
+limit, and version live in a click-to-open popover anchored to
+the chip. Built on `<details>` so click-to-pin and Esc-to-close
+are native. Saves ~280 px of topbar width; the bar now lays out
+on one row at every supported viewport.
+
+JS surface: same `data-role` attributes (`status-host`,
+`status-os`, `status-cpu`, `status-ram`, `status-fd`,
+`status-version`, `status-runid`) — `fetchHost` and `pollStatus`
+continue to populate them; the chip adds `status-os-short` and
+`status-cpu-short` for the compact display.
+
+
 ## [v0.20.1] — 2026-05-07
 ### Changed — Save preset / Import config moved into the Target section header
 The prelude strip at the top of the Configure view held just two
