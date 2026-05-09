@@ -11,6 +11,38 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.20.5] — 2026-05-09
+### Changed — Run Doctor: business-level transparency
+The 0.20.4 panel showed a single opaque "thinking…" line while
+the AI call was in flight. Operators reasonably found that
+nervous-making — they couldn't see what was happening or what
+was being sent. Two transparency surfaces added:
+
+  * **"How Run Doctor works"** disclosure at the top of the panel,
+    open by default. Plain-English 5-step recipe (reads → finds →
+    builds → sends → renders) followed by an explicit
+    Sent / Never-sent table — "we send numeric run summaries,
+    comparison deltas, baseline ids; we never send passwords,
+    private keys, vault secrets, raw CSV rows, file contents, or
+    the AI key itself".
+  * **Live step-by-step progress** replaces the spinner. Each
+    stage announces itself BEFORE running ("Selecting baselines…",
+    "Preparing comparison summary (with redaction)", "Sending to
+    your AI provider", "Rendering diagnosis") and updates with
+    concrete numbers AFTER finishing — baseline count, prompt
+    char count, redaction count, model name, response size,
+    elapsed seconds. On error, the failing stage is marked with
+    a red ✕ + the error message; remaining stages stay pending so
+    it's clear at which step the pipeline broke.
+
+The Analyze handler now makes the previously-hidden dry-run call
+visible: it calls `/api/run-doctor/analyze` with `dry_run=true`
+first to measure prompt size + count redactions, surfaces those
+numbers, then makes the real AI call. The dry-run is free (no
+tokens consumed) so the extra round-trip costs nothing the
+operator wouldn't have seen by clicking "Preview" anyway.
+
+
 ## [v0.20.4] — 2026-05-09
 ### Added — Run Doctor: AI run analyzer with apples-to-apples historical comparison
 Every finished run now has a "Run Doctor" button in the run-detail

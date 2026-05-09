@@ -145,16 +145,87 @@ export async function mountRunDoctor(panel, meta) {
     }
   });
 
-  // 5. Analyze. Fires the real AI call. Streams a "thinking…"
-  //    placeholder; replaces it with the narrative on response.
+  // 5. Analyze. Drives a real, observable, step-by-step progression
+  //    so the operator can see exactly what is happening at each
+  //    stage — no opaque spinner. Each step writes its concrete
+  //    result into the DOM (baseline count, prompt size, redaction
+  //    count, model name, elapsed time) before moving on.
   analyzeBtn.addEventListener('click', async () => {
     if (!configData.configured) return;
     analyzeBtn.disabled = true;
     resultBlock.hidden = false;
     const out = resultBlock.querySelector('[data-role="result-content"]');
-    out.innerHTML = '<div class="run-doctor-thinking">Run Doctor is analysing… this typically takes 5–15 s.</div>';
+    const stages = [
+      { id: 'select',  label: 'Selecting baselines to compare against' },
+      { id: 'build',   label: 'Preparing comparison summary (with redaction)' },
+      { id: 'send',    label: 'Sending to your AI provider' },
+      { id: 'render',  label: 'Rendering diagnosis' },
+    ];
+    out.innerHTML = `
+      <div class="run-doctor-stages-wrap">
+        <div class="run-doctor-stages-head">Run Doctor steps — live</div>
+        <ol class="run-doctor-stages">
+          ${stages.map((s) => `
+            <li class="run-doctor-stage" data-stage="${s.id}" data-state="pending">
+              <span class="run-doctor-stage-icon" aria-hidden="true"></span>
+              <span class="run-doctor-stage-body">
+                <span class="run-doctor-stage-label">${escapeHTML(s.label)}</span>
+                <span class="run-doctor-stage-detail"></span>
+              </span>
+            </li>`).join('')}
+        </ol>
+        <div class="run-doctor-stages-foot" data-role="stages-foot"></div>
+      </div>`;
+
+    const setStage = (id, state, detail) => {
+      const el = out.querySelector(`[data-stage="${id}"]`);
+      if (!el) return;
+      el.dataset.state = state;
+      if (detail !== undefined) {
+        el.querySelector('.run-doctor-stage-detail').textContent = detail;
+      }
+    };
+    const fail = (id, msg) => setStage(id, 'error', msg);
+
+    const t0 = performance.now();
     try {
+      // Stage 1 — select baselines (purely client-side; the operator
+      // already chose; we just enumerate what the request will carry).
+      setStage('select', 'active');
       const body = currentRequestBody(meta, compareSelect, peerPicker, redactToggle);
+      const baseCount = body.compare_ids.length;
+      const mode = compareSelect.value;
+      const modeLabel = mode === 'auto' ? 'Auto (server picks 5 newest same-host)'
+        : mode === 'all' ? 'All same-host runs'
+        : 'Pick by date';
+      const detail1 = baseCount === 0
+        ? `${modeLabel} — server will fall back to "no comparable historical runs" if none exist`
+        : `${modeLabel} — ${baseCount} run${baseCount === 1 ? '' : 's'} selected`;
+      setStage('select', 'done', detail1);
+
+      // Stage 2 — build prompt via the same endpoint with dry_run=true
+      // so we can show prompt size + redaction count BEFORE paying
+      // tokens. Free; no AI tokens consumed.
+      setStage('build', 'active');
+      const dryR = await apiFetch('/api/run-doctor/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...body, dry_run: true }),
+      });
+      if (!dryR.ok) throw new Error(`build failed: ${await dryR.text()}`);
+      const dryJ = await dryR.json();
+      const sysLen = (dryJ.prompt?.system_prompt || '').length;
+      const usrLen = (dryJ.prompt?.user_prompt || '').length;
+      const redCount = Object.keys(dryJ.prompt?.redactions || {}).length;
+      const redLabel = body.redact
+        ? `${redCount} value${redCount === 1 ? '' : 's'} redacted (host / users / paths → opaque tokens)`
+        : 'redaction OFF — raw values will be sent';
+      setStage('build', 'done', `${(sysLen + usrLen).toLocaleString()} chars · ${dryJ.baseline_runs?.length || 0} baseline${(dryJ.baseline_runs?.length || 0) === 1 ? '' : 's'} · ${redLabel}`);
+
+      // Stage 3 — real AI call. Track elapsed time so we can show
+      // honest latency.
+      setStage('send', 'active', 'Anthropic Messages API · awaiting response…');
+      const tSend = performance.now();
       const r = await apiFetch('/api/run-doctor/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -162,10 +233,36 @@ export async function mountRunDoctor(panel, meta) {
       });
       if (!r.ok) throw new Error(await r.text());
       const j = await r.json();
-      out.innerHTML = renderResult(j);
-      wireResultActions(out, j);
+      const elapsedSec = ((performance.now() - tSend) / 1000).toFixed(1);
+      const respChars = (j.narrative || '').length;
+      setStage('send', 'done', `${respChars.toLocaleString()} chars in ${elapsedSec} s · model ${j.model || 'default'}`);
+
+      // Stage 4 — render. Trivial but worth showing as a closing
+      // checkmark so the operator knows the pipeline finished cleanly.
+      setStage('render', 'active');
+      const totalSec = ((performance.now() - t0) / 1000).toFixed(1);
+      const foot = out.querySelector('[data-role="stages-foot"]');
+      if (foot) foot.textContent = `Total time: ${totalSec} s`;
+      setStage('render', 'done');
+
+      // Append the diagnosis below the stages, leaving the stages
+      // visible — the operator gets a record of what just happened.
+      const result = document.createElement('div');
+      result.className = 'run-doctor-result-after-stages';
+      result.innerHTML = renderResult(j);
+      out.appendChild(result);
+      wireResultActions(result, j);
     } catch (e) {
-      out.innerHTML = `<div class="run-doctor-error">Analysis failed: ${escapeHTML(e.message || String(e))}</div>`;
+      // Mark the active stage as failed; remaining stages stay
+      // pending so it's clear at which step we broke.
+      const active = out.querySelector('[data-stage][data-state="active"]');
+      if (active) fail(active.dataset.stage, e.message || String(e));
+      else {
+        const errTile = document.createElement('div');
+        errTile.className = 'run-doctor-error';
+        errTile.textContent = 'Analysis failed: ' + (e.message || String(e));
+        out.appendChild(errTile);
+      }
     } finally {
       analyzeBtn.disabled = false;
     }
@@ -330,6 +427,43 @@ function renderShell(meta) {
         </p>
       </div>
     </header>
+
+    <!-- "How Run Doctor works" — plain-English transparency disclosure.
+         Open by default so a first-time operator immediately understands
+         what is sent, what isn't, and what each step does. Once they
+         trust the feature they can collapse it; the <details> state is
+         not persisted on purpose — the disclosure is cheap and the
+         clarity matters. -->
+    <details class="run-doctor-explainer" open>
+      <summary>
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor"
+             stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+          <circle cx="8" cy="8" r="6"/>
+          <path d="M8 11v-4"/><circle cx="8" cy="5" r="0.6" fill="currentColor"/>
+        </svg>
+        How Run Doctor works (and what it does NOT send)
+      </summary>
+      <ol class="run-doctor-explainer-steps">
+        <li><strong>Reads</strong> this run's structured metrics — file counts, latencies, error codes, throughput, host peaks — from your local reports directory.</li>
+        <li><strong>Finds</strong> past runs that hit the <em>same destination</em> (host, port, protocol). Other servers' runs are <em>never</em> compared — apples-to-apples only.</li>
+        <li><strong>Builds</strong> a comparison summary. With redaction on (default), hostnames / usernames / file paths are replaced with stable opaque tokens (<span class="mono">&lt;host_a1b2&gt;</span>) before anything leaves this machine.</li>
+        <li><strong>Sends</strong> the summary to your configured AI provider (Anthropic Claude). The API key lives encrypted in your vault; it never sits in plaintext on disk.</li>
+        <li><strong>Renders</strong> the diagnosis below — copy or re-run any time.</li>
+      </ol>
+      <div class="run-doctor-explainer-policy">
+        <div class="run-doctor-explainer-row">
+          <span class="run-doctor-explainer-tag run-doctor-tag-ok">Sent</span>
+          <span>numeric run summary (counts, latencies, errors), comparison deltas, baseline ids</span>
+        </div>
+        <div class="run-doctor-explainer-row">
+          <span class="run-doctor-explainer-tag run-doctor-tag-no">Never sent</span>
+          <span>passwords, private keys, vault secrets, raw CSV rows, file contents, the AI key itself</span>
+        </div>
+      </div>
+      <p class="run-doctor-explainer-foot">
+        Want to verify? Click <strong>Preview what will be sent</strong> below — it shows the exact prompt without spending any tokens.
+      </p>
+    </details>
 
     <!-- Setup block — shown only when the operator hasn't stored
          an AI key yet. Links to Trust → Vault so the canonical

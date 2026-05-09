@@ -3994,3 +3994,164 @@ body:not([data-active-view="configure"]) .cfg-summary-bar {
   color: var(--accent);
   letter-spacing: var(--tracking-wide);
 }
+
+/* ---------- v0.20.5 — Run Doctor transparency surfaces ----------
+   The original 0.20.4 panel showed a single opaque "thinking…" line
+   while the AI call was in flight. Operators reasonably found that
+   nervous-making — they couldn't see what was happening or what
+   was being sent. v0.20.5 adds:
+     * an always-visible "How Run Doctor works" explainer at the top
+       of the panel listing the 5 steps in plain English, with
+       Sent / Never-sent tags;
+     * a step-by-step progression panel that replaces the spinner
+       and updates each stage with concrete numbers (baseline count,
+       prompt size, redaction count, model name, elapsed time)
+       as the call moves through the pipeline. */
+
+.run-doctor-explainer {
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-2);
+}
+.run-doctor-explainer > summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+.run-doctor-explainer > summary::-webkit-details-marker { display: none; }
+.run-doctor-explainer > summary svg { color: var(--accent); }
+.run-doctor-explainer-steps {
+  margin: var(--sp-3) 0 var(--sp-2);
+  padding-left: var(--sp-4);
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  line-height: var(--lh-relaxed);
+}
+.run-doctor-explainer-steps li { margin-bottom: 4px; }
+.run-doctor-explainer-steps strong { color: var(--text-primary); }
+.run-doctor-explainer-policy {
+  display: grid; gap: 6px;
+  padding: var(--sp-2) var(--sp-3);
+  margin-top: var(--sp-2);
+  background: var(--canvas);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-1);
+}
+.run-doctor-explainer-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  line-height: var(--lh-normal);
+}
+.run-doctor-explainer-tag {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-10);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+.run-doctor-tag-ok {
+  background: color-mix(in oklab, var(--success-fg-soft) 18%, transparent);
+  color: var(--success-fg-soft);
+}
+.run-doctor-tag-no {
+  background: color-mix(in oklab, var(--danger-fg-soft) 18%, transparent);
+  color: var(--danger-fg-soft);
+}
+.run-doctor-explainer-foot {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  line-height: var(--lh-normal);
+}
+
+.run-doctor-stages-wrap { padding: var(--sp-3) var(--sp-4); }
+.run-doctor-stages-head {
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--text-tertiary);
+  font-weight: var(--fw-semibold);
+  margin-bottom: var(--sp-2);
+}
+.run-doctor-stages { list-style: none; margin: 0; padding: 0; }
+.run-doctor-stage {
+  position: relative;
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 0 8px 4px;
+  border-left: 2px solid var(--border-weak);
+  padding-left: 16px;
+  margin-left: 7px;
+}
+.run-doctor-stage:last-child { border-left-color: transparent; }
+.run-doctor-stage-icon {
+  position: absolute;
+  left: -7px; top: 10px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  border: 2px solid var(--canvas);
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.run-doctor-stage[data-state="pending"] .run-doctor-stage-icon { background: var(--surface-3); }
+.run-doctor-stage[data-state="active"]  .run-doctor-stage-icon {
+  background: var(--accent);
+  animation: rdStagePulse 1.2s ease-in-out infinite;
+}
+.run-doctor-stage[data-state="done"]    .run-doctor-stage-icon {
+  background: var(--success-fg-soft);
+}
+.run-doctor-stage[data-state="done"]    .run-doctor-stage-icon::after {
+  content: "";
+  width: 6px; height: 3px;
+  border-left: 2px solid var(--canvas);
+  border-bottom: 2px solid var(--canvas);
+  transform: rotate(-45deg) translate(0, -1px);
+}
+.run-doctor-stage[data-state="error"]   .run-doctor-stage-icon { background: var(--danger-fg-soft); }
+.run-doctor-stage[data-state="error"]   .run-doctor-stage-icon::after {
+  content: "\2715";
+  color: var(--canvas);
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  line-height: 1;
+}
+@keyframes rdStagePulse {
+  0%,100% { box-shadow: 0 0 0 0  color-mix(in oklab, var(--accent) 50%, transparent); }
+  50%     { box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 0%,  transparent); }
+}
+.run-doctor-stage-body {
+  display: flex; flex-direction: column; gap: 1px;
+  flex: 1; min-width: 0;
+}
+.run-doctor-stage-label { font-size: var(--fs-12); color: var(--text-secondary); }
+.run-doctor-stage[data-state="active"] .run-doctor-stage-label,
+.run-doctor-stage[data-state="done"]   .run-doctor-stage-label { color: var(--text-primary); }
+.run-doctor-stage-detail {
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+.run-doctor-stage[data-state="error"] .run-doctor-stage-detail { color: var(--danger-fg-soft); }
+.run-doctor-stages-foot {
+  margin-top: var(--sp-2);
+  padding-left: 23px;
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+}
+.run-doctor-result-after-stages {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: var(--bw-1) solid var(--border-weak);
+}
