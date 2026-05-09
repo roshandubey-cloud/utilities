@@ -158,11 +158,34 @@ function renderDetail(m) {
           ${m.interrupted ? ' · <span class="badge badge-warning"><span class="dot"></span>Interrupted</span>' : ''}
           ${skips > 0 ? ` · <span class="badge badge-warning"><span class="dot"></span>Throttled · ${skippedPct.toFixed(1)}%</span>` : ''}
         </div>
+        <!-- v0.20.4 — destination host badge always visible in the
+             header so an operator instantly knows which server this
+             run hit. Run Doctor only compares apples-to-apples
+             (same host:port:protocol) and displays this same badge
+             on every comparison so the source of truth is here. -->
+        <div class="run-detail-target">
+          ${renderTargetBadge(m)}
+        </div>
       </div>
       <div class="run-detail-actions">
+        <button class="btn btn-primary" type="button" data-role="run-doctor"
+                title="Get an AI-generated diagnosis comparing this run to its same-host history">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor"
+               stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 2h6"/><path d="M8 2v3"/>
+            <path d="M5 5a3 3 0 003 3 3 3 0 003-3"/>
+            <path d="M8 8v3"/>
+            <circle cx="8" cy="13" r="1.5"/>
+          </svg>
+          <span>Run Doctor</span>
+        </button>
         <a class="btn btn-secondary" href="${csvUrl}" download data-external="1">Download CSV</a>
       </div>
     </header>
+
+    <!-- Run Doctor panel — populated lazily by rundoctor.js when the
+         "Run Doctor" button above is clicked. Hidden until then. -->
+    <section class="run-doctor-panel" data-role="run-doctor-panel" data-run-id="${escapeAttr(m.id)}" hidden></section>
 
     <div class="run-detail-kpis">
       ${kpi('Success rate', total > 0 ? successPct.toFixed(1) + '%' : '—', successPct >= 99 ? 'ok' : successPct >= 85 ? 'warn' : 'bad')}
@@ -287,6 +310,24 @@ function wireDetail(view, meta) {
     ev.preventDefault();
     closeDetail();
   });
+  // v0.20.4 — Run Doctor button. Lazy-imports rundoctor.js so the
+  // ~12 KB module + AI-call deps are only fetched when an operator
+  // actually wants the diagnosis. The module owns mounting, the
+  // compare-against picker, prompt preview, and the AI call.
+  const doctorBtn = view.querySelector('[data-role="run-doctor"]');
+  const doctorPanel = view.querySelector('[data-role="run-doctor-panel"]');
+  if (doctorBtn && doctorPanel) {
+    doctorBtn.addEventListener('click', async () => {
+      doctorBtn.disabled = true;
+      doctorPanel.hidden = false;
+      try {
+        const mod = await import('./rundoctor.js');
+        await mod.mountRunDoctor(doctorPanel, meta);
+      } finally {
+        doctorBtn.disabled = false;
+      }
+    });
+  }
   // Filter chips swap CSS scope; records render below.
   const records = view.querySelector('[data-role="records"]');
   const countEl = view.querySelector('[data-role="records-count"]');
@@ -405,3 +446,33 @@ function formatDuration(startISO, stopISO) {
 
 function escapeHTML(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function escapeAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+
+// renderTargetBadge — compact "destination" line shown in the run
+// header. v0.20.4 sealed every new run with target_host / port /
+// protocol so this is reliable for fresh runs; older runs (legacy
+// meta files) lack the fields and we surface "host unknown" so an
+// operator knows Run Doctor can't compare them apples-to-apples.
+function renderTargetBadge(m) {
+  const host = m.target_host || '';
+  const port = Number(m.target_port || 0);
+  const proto = (m.target_protocol || '').toLowerCase();
+  if (!host) {
+    return `<span class="run-detail-target-badge run-detail-target-badge-unknown" title="This run was sealed before v0.20.4 — destination host wasn't recorded. Run Doctor cannot compare it to other runs apples-to-apples.">
+      <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+        <circle cx="8" cy="8" r="6"/><path d="M6 7a2 2 0 014 0c0 1-2 1-2 2"/><circle cx="8" cy="11.5" r="0.6" fill="currentColor"/>
+      </svg>
+      destination unknown — legacy run
+    </span>`;
+  }
+  const protoLabel = proto || 'sftp';
+  const portLabel = port > 0 ? `:${port}` : '';
+  return `<span class="run-detail-target-badge" title="Destination this run targeted. Same host runs are compared apples-to-apples by Run Doctor.">
+    <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="2" y="3" width="12" height="4" rx="1"/>
+      <rect x="2" y="9" width="12" height="4" rx="1"/>
+      <circle cx="4.5" cy="5" r="0.6" fill="currentColor"/>
+      <circle cx="4.5" cy="11" r="0.6" fill="currentColor"/>
+    </svg>
+    <span class="mono">${escapeHTML(protoLabel)}://${escapeHTML(host)}${escapeHTML(portLabel)}</span>
+  </span>`;
+}

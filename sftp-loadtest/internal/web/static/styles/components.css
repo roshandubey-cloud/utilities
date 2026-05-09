@@ -3733,3 +3733,264 @@ body:not([data-active-view="configure"]) .cfg-summary-bar {
   letter-spacing: 0.04em;
   vertical-align: 1px;
 }
+
+/* ---------- v0.20.4 — Run Doctor + destination-host surfaces ----------
+   Run Doctor is the AI run analyzer; it lives in the run-detail page
+   below the existing analysis section, lazy-mounted by rundoctor.js
+   when the operator clicks the "Run Doctor" button. The destination-
+   host badge appears in three places (run-detail header, runs-history
+   card, Run Doctor panel) and uses identical styling for instant
+   recognition — apples-to-apples comparison is the whole point of
+   the feature, so the host you're comparing must be glanceable. */
+
+.run-detail-target { margin-top: 6px; }
+.run-detail-target-badge,
+.runs-history-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 28%, transparent);
+  color: var(--text-primary);
+  font-size: var(--fs-11);
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+.runs-history-target { margin-top: 4px; }
+.run-detail-target-badge svg { color: var(--accent); flex-shrink: 0; }
+.run-detail-target-badge-unknown,
+.runs-history-target-unknown {
+  background: var(--surface-2);
+  border-color: var(--border-medium);
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+.run-detail-target-badge-unknown svg { color: var(--text-tertiary); }
+
+/* ---------- Run Doctor panel ---------- */
+.run-doctor-panel {
+  margin-top: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-medium);
+  border-radius: var(--r-3);
+}
+.run-doctor-head {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding-bottom: var(--sp-3);
+  border-bottom: var(--bw-1) solid var(--border-weak);
+  margin-bottom: var(--sp-4);
+}
+.run-doctor-head-icon {
+  width: 36px; height: 36px;
+  border-radius: var(--r-2);
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  color: var(--accent);
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.run-doctor-head-text { flex: 1; min-width: 0; }
+.run-doctor-head-text h3 {
+  margin: 0;
+  font-size: var(--fs-16);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+.run-doctor-head-sub {
+  margin: 4px 0 0;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  line-height: var(--lh-normal);
+}
+.run-doctor-target {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  border-radius: var(--r-1);
+  color: var(--text-primary);
+  font-size: var(--fs-11);
+}
+
+/* Setup CTA — shown only when no AI key is configured. */
+.run-doctor-setup {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-3);
+  background: var(--warning-bg-soft);
+  border: var(--bw-1) solid var(--warning-border);
+  border-radius: var(--r-2);
+}
+.run-doctor-setup-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+.run-doctor-setup-text { flex: 1; }
+.run-doctor-setup-text strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: var(--fs-13);
+  margin-bottom: 2px;
+}
+.run-doctor-setup-text p {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  line-height: var(--lh-normal);
+}
+
+.run-doctor-controls {
+  display: grid; gap: var(--sp-2);
+  padding-bottom: var(--sp-3);
+  border-bottom: var(--bw-1) dashed var(--border-weak);
+  margin-bottom: var(--sp-3);
+}
+.run-doctor-control-row {
+  display: flex; align-items: center; gap: var(--sp-3);
+}
+.run-doctor-control-row-foot {
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: var(--bw-1) solid var(--border-weak);
+}
+.run-doctor-control-label {
+  flex: 0 0 auto;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+.run-doctor-select {
+  flex: 0 1 320px;
+  padding: 6px 10px;
+  background: var(--canvas);
+  color: var(--text-primary);
+  border: var(--bw-1) solid var(--border-medium);
+  border-radius: var(--r-2);
+  font-size: var(--fs-13);
+}
+.run-doctor-peers-count {
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+}
+.run-doctor-selected {
+  display: inline-block;
+  padding: 4px 10px;
+  background: var(--surface-2);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+}
+.run-doctor-control-spacer { flex: 1; }
+.run-doctor-redact {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+/* Peer picker — date-grouped checkbox list. */
+.run-doctor-peer-picker {
+  max-height: 240px;
+  overflow-y: auto;
+  padding: var(--sp-2);
+  background: var(--canvas);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+}
+.run-doctor-peer-day { margin-bottom: var(--sp-2); }
+.run-doctor-peer-day-head {
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--text-tertiary);
+  font-weight: var(--fw-semibold);
+  padding: 4px 6px;
+}
+.run-doctor-peer-row {
+  display: grid;
+  grid-template-columns: 18px 70px 1fr 90px 90px;
+  gap: 10px;
+  align-items: center;
+  padding: 5px 6px;
+  border-radius: var(--r-1);
+  cursor: pointer;
+  font-size: var(--fs-12);
+}
+.run-doctor-peer-row:hover { background: var(--surface-2); }
+.run-doctor-peer-time   { color: var(--text-tertiary); }
+.run-doctor-peer-id     { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-doctor-peer-mbps,
+.run-doctor-peer-fail   { color: var(--text-secondary); text-align: right; }
+
+/* Preview block — shows the exact prompt before send. */
+.run-doctor-preview,
+.run-doctor-result {
+  margin-top: var(--sp-3);
+  padding: var(--sp-3);
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+}
+.run-doctor-preview-head,
+.run-doctor-result-head {
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--text-tertiary);
+  font-weight: var(--fw-semibold);
+  margin-bottom: var(--sp-2);
+}
+.run-doctor-pre {
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  background: var(--canvas);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  line-height: var(--lh-normal);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.run-doctor-thinking {
+  padding: var(--sp-3);
+  text-align: center;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+.run-doctor-error {
+  padding: var(--sp-3);
+  background: var(--danger-bg-soft);
+  border: var(--bw-1) solid var(--danger-border);
+  border-radius: var(--r-2);
+  color: var(--text-primary);
+  font-size: var(--fs-12);
+}
+.run-doctor-meta-line {
+  display: flex; align-items: center; gap: 8px;
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  padding-bottom: 8px;
+  border-bottom: var(--bw-1) solid var(--border-weak);
+  margin-bottom: 10px;
+}
+.run-doctor-meta-spacer { flex: 1; }
+.run-doctor-narrative {
+  font-size: var(--fs-13);
+  line-height: var(--lh-relaxed);
+  color: var(--text-primary);
+}
+.run-doctor-narrative p { margin: 0 0 var(--sp-3); }
+.run-doctor-narrative h4.run-doctor-section {
+  margin: var(--sp-3) 0 var(--sp-2);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  color: var(--accent);
+  letter-spacing: var(--tracking-wide);
+}

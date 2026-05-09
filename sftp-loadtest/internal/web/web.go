@@ -1207,6 +1207,12 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/vault/change-passphrase", s.handleVaultChangePassphrase)
 	mux.HandleFunc("/api/vault/migrate-scan", s.handleVaultMigrateScan)
 	mux.HandleFunc("/api/vault/migrate-apply", s.handleVaultMigrateApply)
+	// v0.20.4 — Run Doctor (AI run analyzer). Endpoints live in
+	// rundoctor_handlers.go; AI key + provider live in the encrypted
+	// vault under refs "ai/api_key" / "ai/provider".
+	mux.HandleFunc("/api/run-doctor/config", s.handleRunDoctorConfig)
+	mux.HandleFunc("/api/run-doctor/peers", s.handleRunDoctorPeers)
+	mux.HandleFunc("/api/run-doctor/analyze", s.handleRunDoctorAnalyze)
 	mux.HandleFunc("/api/worker/spawn", s.handleWorkerSpawn)
 	mux.HandleFunc("/api/worker/despawn", s.handleWorkerDespawn)
 	mux.HandleFunc("/api/worker/spawned", s.handleWorkerSpawnedList)
@@ -2099,6 +2105,11 @@ func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request) {
 			"source":             "memory",
 		}
 		if run.Cfg != nil {
+			// v0.20.4 — target host so the live entry carries the same
+			// destination tag as the post-seal historical entry.
+			entry["target_host"] = run.Cfg.Host
+			entry["target_port"] = run.Cfg.Port
+			entry["target_protocol"] = run.Cfg.Protocol
 			entry["upload_users"] = len(run.Cfg.NormalUsers)
 			entry["parallel_streams"] = run.Cfg.ParallelStreams
 			entry["large_enabled"] = run.Cfg.LargeFile != nil
@@ -2407,6 +2418,11 @@ func runMetaToMap(m persist.RunMeta, _live bool, source string) map[string]any {
 		"started_at":                m.StartedAt,
 		"stopped_at":                m.StoppedAt,
 		"active":                    false,
+		// v0.20.4 — target host info so Run Doctor + the history UI
+		// can show "what server did this hit?" + filter same-host peers.
+		"target_host":               m.TargetHost,
+		"target_port":               m.TargetPort,
+		"target_protocol":           m.TargetProtocol,
 		"total_files":               m.TotalFiles,
 		"total_bytes":               m.TotalBytes,
 		"overall_mbps":              m.OverallMBps,

@@ -238,6 +238,7 @@ function rowMarkup(entry) {
         <div class="runs-history-id">
           <div class="mono">${escapeHTML(r.id)}</div>
           <div class="body-small" style="color:var(--text-tertiary)">${formatStarted(r.started_at)}${r.stopped_at ? ' · ' + formatDuration(r.started_at, r.stopped_at) : ''}${shapeLine}${throttledBadge ? ' · ' + throttledBadge : ''}${interruptedBadge ? ' · ' + interruptedBadge : ''}</div>
+          ${runsHistoryTargetBadge(r)}
         </div>
         <div class="runs-history-actions">
           <label class="check-inline" title="Pick two runs to compare." style="font-size:var(--fs-12)">
@@ -446,6 +447,21 @@ function formatDuration(startISO, stopISO) {
 }
 function escapeHTML(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function escapeAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+
+// runsHistoryTargetBadge — destination-host badge shown on every
+// runs-history card. v0.20.4 sealed every new run with target_host;
+// older runs render a soft "host unknown" hint so an operator
+// understands why Run Doctor can't compare them apples-to-apples.
+function runsHistoryTargetBadge(r) {
+  const host = r.target_host || '';
+  if (!host) {
+    return `<div class="runs-history-target runs-history-target-unknown" title="Sealed before v0.20.4 — target host wasn't recorded; Run Doctor cannot compare apples-to-apples.">host unknown</div>`;
+  }
+  const proto = (r.target_protocol || 'sftp').toLowerCase();
+  const port = Number(r.target_port || 0);
+  const portLabel = port > 0 ? `:${port}` : '';
+  return `<div class="runs-history-target mono" title="Destination this run targeted.">${escapeHTML(proto)}://${escapeHTML(host)}${escapeHTML(portLabel)}</div>`;
+}
 
 // v0.15.0 — comparison banner. Renders nothing when no runs selected,
 // a single-row hint when 1 is selected, and a delta row when 2 are

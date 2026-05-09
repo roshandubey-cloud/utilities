@@ -24,6 +24,18 @@ type RunMeta struct {
 	TotalBytes  int64          `json:"total_bytes"`
 	OverallMBps float64        `json:"overall_mbps"`
 
+	// Target host info (v0.20.4) — captured at seal time so historical
+	// runs carry the destination they were aimed at. Run Doctor's
+	// apples-to-apples comparison filter keys on the (host, port,
+	// protocol) tuple: a 4 MiB / 60 s run against edge.acme.com:22 is
+	// only comparable to other runs against edge.acme.com:22 — comparing
+	// throughput across different servers is meaningless. Older meta
+	// files written before v0.20.4 lack these fields and are flagged
+	// "host unknown" in the UI.
+	TargetHost     string `json:"target_host,omitempty"`
+	TargetPort     int    `json:"target_port,omitempty"`
+	TargetProtocol string `json:"target_protocol,omitempty"`
+
 	// Success / failure breakdown so the UI can show success rate at a
 	// glance instead of recomputing from the CSV every render.
 	FailedFiles    int64 `json:"failed_files"`

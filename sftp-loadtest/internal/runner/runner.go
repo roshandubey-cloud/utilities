@@ -566,6 +566,14 @@ func sealAllAndWriteMeta(r *Run, reportsDir string) error {
 	// Capture workload-shape from the live config so the Previous-runs
 	// overview tells the user what was attempted, not just what finished.
 	if r.Cfg != nil {
+		// v0.20.4 — target host info goes onto the meta first so Run
+		// Doctor can filter same-host peers without re-reading the
+		// runner config. Comparing throughput across different
+		// destinations is meaningless; the field set anchors the
+		// apples-to-apples filter.
+		meta.TargetHost = r.Cfg.Host
+		meta.TargetPort = r.Cfg.Port
+		meta.TargetProtocol = r.Cfg.Protocol
 		meta.UploadUsers = len(r.Cfg.NormalUsers)
 		meta.ParallelStreams = r.Cfg.ParallelStreams
 		if r.Cfg.Normal != nil {

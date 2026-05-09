@@ -11,6 +11,84 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.20.4] — 2026-05-09
+### Added — Run Doctor: AI run analyzer with apples-to-apples historical comparison
+Every finished run now has a "Run Doctor" button in the run-detail
+header. Clicking it opens an in-page panel that:
+
+  * shows the focal run's destination (`sftp://edge.acme.com:22`)
+    in the header so the operator always knows what server is being
+    diagnosed;
+  * pulls the list of historical runs that targeted the *same*
+    `(host, port, protocol)` tuple — apples-to-apples by design.
+    Comparing throughput across different destinations is
+    meaningless, so the filter is strict; legacy runs sealed before
+    this version (no `target_host` field) are excluded with a
+    "host unknown — legacy run" badge so the operator understands
+    why they aren't comparable;
+  * lets the operator pick the comparison set — *Auto* (server
+    picks the 5 most-recent same-host runs, default), *All* (every
+    same-host run), or *Pick by date* (multi-select dropdown
+    grouped by day with throughput / failure counts inline);
+  * sends the focal + chosen baselines to Anthropic's Messages
+    API and renders a four-section narrative (`What happened`,
+    `Why it slowed down or failed`, `Compared to baseline(s)`,
+    `What to try next`) with a copy-to-clipboard action.
+
+Privacy is the spine of the design:
+
+  * **Opt-in only.** No automatic analysis; the operator clicks
+    "Analyze with AI" explicitly.
+  * **BYO key.** The operator pastes their own Anthropic key; it
+    is stored in the encrypted vault under `ai/api_key` and never
+    leaves the server in plaintext after that. UI flow goes
+    through Trust → Vault, so the canonical secret store handles
+    it.
+  * **Redaction on by default.** Hostnames, usernames in
+    disabled-user rows, file paths, and stop-detail strings are
+    replaced with stable opaque tokens (`<host_71a051>`,
+    `<user_xx>`, `<path_yy>`) before the prompt leaves the
+    process. Tokens are deterministic across calls so the same
+    real value always maps to the same token.
+  * **Preview before send.** A "Preview what will be sent" button
+    runs the analyze endpoint with `dry_run=true` so the operator
+    sees the exact system + user prompt — including any redactions
+    — without costing tokens.
+  * **CSRF-guarded.** All endpoints sit behind the existing
+    X-Requested-With check (`sftp-loadtest`).
+
+### Changed — RunMeta carries target host info
+`RunMeta` gained `TargetHost`, `TargetPort`, `TargetProtocol` fields,
+populated at seal time from the run config. `/api/runs` surfaces
+them in both the live and historical entries so every UI surface —
+runs-history card, run-detail header, Run Doctor panel — shows the
+same destination badge. Older meta files (pre-v0.20.4) lack the
+fields and render "host unknown"; they remain queryable but are
+explicitly excluded from same-host comparison.
+
+### Added — Backend
+  * `internal/rundoctor` package: comparable-peer filter,
+    deterministic redaction, prompt builder, Anthropic client.
+    Tests cover peer filtering (host/port/protocol/case match,
+    legacy exclusion, focal-without-host edge case), redaction
+    stability across calls, prompt sections, and the
+    no-baselines-explicit-message guarantee. All 6 tests pass.
+  * `internal/web/rundoctor_handlers.go`: three endpoints
+    (`GET/POST /api/run-doctor/config`, `GET /api/run-doctor/peers`,
+    `POST /api/run-doctor/analyze`) registered in `web.go`.
+
+### Added — Frontend
+  * `internal/web/static/js/rundoctor.js` — lazy-loaded UI module,
+    fetched only when the operator clicks "Run Doctor".
+  * `run-detail.js` — destination-host badge in the header,
+    "Run Doctor" button, lazy-mount of the rundoctor module.
+  * `runs-history.js` — destination-host badge on every card so an
+    operator scanning history sees which server each run hit
+    without opening the detail page.
+  * Styles in `components.css` for the Run Doctor panel, target
+    badges, peer picker, prompt preview block, narrative output.
+
+
 ## [v0.20.3] — 2026-05-08
 ### Added — Trust & Vault: encrypted-vault management lives inside the Trust view
 The encrypted vault gained a dedicated panel inside the Trust view
