@@ -11,6 +11,81 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.20.6] — 2026-05-10
+### Added — Run Doctor: persistent history, follow-up Q&A, comparison strip, model picker, cost estimate, retry
+The single-shot diagnosis from 0.20.4 / 0.20.5 turns into an
+actual diagnostic conversation:
+
+  * **Saved diagnosis history** — every analysis (initial + follow-up)
+    persists to `<reports-dir>/<run-id>.diagnoses.jsonl` (line-delimited
+    JSON, append-only). Reopening Run Doctor on a run renders the
+    full thread at the top of the panel as nested `<details>` cards
+    grouped by parent → child, with the newest root open by default.
+  * **Follow-up Q&A** — after the first diagnosis lands, a textbox
+    appears at the bottom of the panel ("Ask Run Doctor a follow-up
+    about this run"). Sending threads the operator's question under
+    the prior diagnosis as a real conversation turn: the model sees
+    the original structured run prompt, then the assistant's first
+    answer, then prior follow-ups, then the new question. Up to 12
+    turns of history are threaded; older drop off. Each follow-up
+    becomes its own saved diagnosis with `parent_id` set, and the
+    history thread re-renders to include it.
+  * **Visual comparison strip** — above each fresh diagnosis, two
+    horizontal bars compare the focal run to the median of the
+    selected baselines on throughput and success rate. Delta pill
+    coloured green / red / flat by direction; pure CSS (no chart
+    library).
+  * **Model picker** — `Haiku 4.5 (default, cheap)` /
+    `Sonnet 4.6 (balanced)` / `Opus 4.7 (deepest)` — selectable
+    from a dropdown next to the redaction toggle. Choice persists
+    in the encrypted vault (`ai/model` ref) so the next session
+    opens to the operator's preferred model without re-picking.
+  * **Cost estimate before send** — Stage 2 of the live progress
+    now ends with the dry-run prompt size + estimated USD cost
+    ("1,247 chars · 1 redacted · est. $0.0001"). The model picker
+    also shows a passive cost hint underneath ("~$0.0001 per
+    analysis · description"). The estimate uses a chars/4 token
+    proxy and per-model USD-per-1M rates carried in the `models`
+    endpoint response.
+  * **Re-analyze button** — under each rendered diagnosis. Replays
+    the same analysis with the current settings; produces a fresh
+    saved diagnosis (the original stays in the history thread).
+  * **"Saved as <id>" tag** — confirmation that the diagnosis hit
+    disk; flips to a yellow "not saved (persist warning)" if the
+    file write soft-failed (the AI response still renders so the
+    operator gets what they paid for).
+
+### Backend
+  * `internal/persist/diagnosis.go` (new) — `Diagnosis` type,
+    `AppendDiagnosis`, `ListDiagnoses`, `FindDiagnosis`. Per-run
+    JSONL log; corrupt lines are dropped on read; bufio scan
+    buffer raised to 1 MiB so verbose narratives don't truncate.
+  * `internal/rundoctor/rundoctor.go` — `Turn`, `BuildFollowupPrompt`,
+    `KnownModels`, `EstimateCostUSD`. Tests cover follow-up prompt
+    structure (structured prompt seeded as first user turn, history
+    preserved oldest-first, new question hoisted as UserPrompt) and
+    cost estimate sanity (Sonnet > Haiku for the same payload).
+  * `internal/web/rundoctor_handlers.go` — analyze accepts
+    `parent_diagnosis_id` + `question` for follow-ups (walks parent
+    chain up to depth 12); persists every non-dry-run call;
+    surfaces `model` body override; new endpoints
+    `GET /api/run-doctor/history` and `GET /api/run-doctor/models`.
+    `POST /api/run-doctor/config` accepts partial updates so
+    operators can change the model without re-pasting the API key.
+
+### Frontend
+  * `rundoctor.js` — extensive: model dropdown wired to the
+    `/models` endpoint with auto-save to vault on change; cost-hint
+    update on model change; saved-history thread loads on mount and
+    re-renders after every new diagnosis; follow-up textbox + send /
+    clear-parent buttons; comparison-strip block; re-analyze button.
+    The previously-monolithic Analyze handler is now a `runAnalysis`
+    function reusable by both the initial Analyze button and the
+    follow-up Send button so the staged-progress UX is identical.
+  * `components.css` — history-thread visuals, comparison-strip
+    bars + delta pills, follow-up box, model picker hint.
+
+
 ## [v0.20.5] — 2026-05-09
 ### Changed — Run Doctor: business-level transparency
 The 0.20.4 panel showed a single opaque "thinking…" line while

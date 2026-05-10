@@ -4155,3 +4155,248 @@ body:not([data-active-view="configure"]) .cfg-summary-bar {
   padding-top: var(--sp-3);
   border-top: var(--bw-1) solid var(--border-weak);
 }
+
+/* ---------- v0.20.6 — Run Doctor enhancements ----------
+   History thread, comparison strip, follow-up Q&A box, model
+   picker, cost hint. The visual language reuses surface-2 cards
+   and the existing accent colour so the panel still reads as one
+   coherent feature even with these additions. */
+
+.run-doctor-cost-hint {
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* Saved-diagnosis history thread. Each turn is a <details>; the
+   newest root opens by default so the operator's last conversation
+   is in view as soon as the panel re-renders. Follow-ups indent
+   visually so the parent → child relationship is glanceable. */
+.run-doctor-history {
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--canvas);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+}
+.run-doctor-history-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--text-tertiary);
+  font-weight: var(--fw-semibold);
+  margin-bottom: var(--sp-2);
+}
+.run-doctor-history-spacer { flex: 1; }
+.run-doctor-thread-turn {
+  margin: 4px 0;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+}
+.run-doctor-thread-turn[data-depth="1"] { margin-left: 24px; background: color-mix(in oklab, var(--accent) 5%, var(--surface-2)); }
+.run-doctor-thread-turn[data-depth="2"] { margin-left: 48px; }
+.run-doctor-thread-turn[data-depth="3"] { margin-left: 72px; }
+.run-doctor-thread-turn > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+}
+.run-doctor-thread-turn > summary::-webkit-details-marker { display: none; }
+.run-doctor-thread-time { color: var(--text-tertiary); font-size: var(--fs-11); flex-shrink: 0; }
+.run-doctor-thread-model { color: var(--text-tertiary); font-size: var(--fs-11); flex-shrink: 0; }
+.run-doctor-thread-tag {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-10);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+.run-doctor-thread-tag-initial {
+  background: color-mix(in oklab, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+.run-doctor-thread-tag-followup {
+  background: color-mix(in oklab, var(--text-link) 15%, transparent);
+  color: var(--text-link);
+}
+.run-doctor-thread-snippet {
+  flex: 1; min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-12);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.run-doctor-thread-question {
+  margin: var(--sp-2) 0 4px;
+  padding: 6px 8px;
+  background: color-mix(in oklab, var(--text-link) 8%, transparent);
+  border-left: 2px solid var(--text-link);
+  border-radius: var(--r-1);
+  font-size: var(--fs-12);
+  color: var(--text-primary);
+  font-style: italic;
+}
+.run-doctor-thread-question .lbl {
+  color: var(--text-link);
+  font-weight: var(--fw-semibold);
+  margin-right: 6px;
+  font-style: normal;
+}
+.run-doctor-thread-narrative {
+  margin: var(--sp-2) 0;
+  font-size: var(--fs-12);
+  color: var(--text-primary);
+  line-height: var(--lh-relaxed);
+}
+.run-doctor-thread-narrative h4.run-doctor-section {
+  margin: 8px 0 4px; font-size: var(--fs-12);
+  color: var(--accent); font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-wide);
+}
+.run-doctor-thread-foot {
+  display: flex; justify-content: flex-end;
+  padding-top: 6px;
+  border-top: var(--bw-1) solid var(--border-weak);
+}
+
+/* Comparison strip — focal vs baseline-median bars. Two stacked
+   horizontal bars per row (focal in accent, baseline in muted)
+   overlaid in the same track so the delta is visible at a glance.
+   Tone (good/bad/flat) drives the delta-pill colour. */
+.run-doctor-cmp {
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--canvas);
+  border: var(--bw-1) solid var(--border-weak);
+  border-radius: var(--r-2);
+}
+.run-doctor-cmp-empty {
+  color: var(--text-tertiary);
+  font-size: var(--fs-12);
+  font-style: italic;
+  text-align: center;
+}
+.run-doctor-cmp-head {
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--text-tertiary);
+  font-weight: var(--fw-semibold);
+  margin-bottom: var(--sp-2);
+}
+.run-doctor-cmp-row {
+  display: grid;
+  grid-template-columns: 100px 1fr 200px;
+  gap: 12px;
+  align-items: center;
+  padding: 4px 0;
+}
+.run-doctor-cmp-label {
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+}
+.run-doctor-cmp-bar {
+  position: relative;
+  display: block;
+  height: 16px;
+  background: var(--surface-3);
+  border-radius: var(--r-1);
+  overflow: hidden;
+}
+.run-doctor-cmp-fill {
+  position: absolute;
+  top: 0; left: 0; height: 100%;
+}
+.run-doctor-cmp-fill-base  { background: color-mix(in oklab, var(--text-tertiary) 40%, transparent); }
+.run-doctor-cmp-fill-focal {
+  background: var(--accent);
+  opacity: 0.85;
+  z-index: 1;
+  height: 50%;
+  top: 25%;
+}
+.run-doctor-cmp-vals {
+  display: flex; align-items: center; gap: 8px; justify-content: flex-end;
+  font-size: var(--fs-11);
+  color: var(--text-secondary);
+}
+.run-doctor-cmp-sep { color: var(--text-tertiary); }
+.run-doctor-cmp-delta {
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-11);
+}
+.run-doctor-cmp-row[data-tone="good"] .run-doctor-cmp-delta {
+  background: color-mix(in oklab, var(--success-fg-soft) 18%, transparent);
+  color: var(--success-fg-soft);
+}
+.run-doctor-cmp-row[data-tone="bad"] .run-doctor-cmp-delta {
+  background: color-mix(in oklab, var(--danger-fg-soft) 18%, transparent);
+  color: var(--danger-fg-soft);
+}
+.run-doctor-cmp-row[data-tone="flat"] .run-doctor-cmp-delta {
+  background: var(--surface-3);
+  color: var(--text-tertiary);
+}
+
+/* Result-actions row — Re-analyze + saved-as tag below a
+   freshly-rendered diagnosis. */
+.run-doctor-result-actions {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: var(--bw-1) solid var(--border-weak);
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+}
+.run-doctor-saved-tag { font-style: italic; }
+.run-doctor-saved-tag-warn { color: var(--warning-fg-soft); }
+
+/* Follow-up Q&A box. Always sits at the BOTTOM of the panel so the
+   operator scrolls past their last diagnosis to ask the next
+   question. */
+.run-doctor-followup {
+  margin-top: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface);
+  border: var(--bw-1) solid var(--border-medium);
+  border-left: 3px solid var(--text-link);
+  border-radius: var(--r-2);
+}
+.run-doctor-followup-head {
+  display: flex; align-items: center; gap: 10px;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--sp-2);
+}
+.run-doctor-followup-parent-tag {
+  font-size: var(--fs-11);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-weight: var(--fw-regular);
+}
+.run-doctor-followup-input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--canvas);
+  color: var(--text-primary);
+  border: var(--bw-1) solid var(--border-medium);
+  border-radius: var(--r-2);
+  font-family: var(--font-sans);
+  font-size: var(--fs-13);
+  line-height: var(--lh-normal);
+  resize: vertical;
+  min-height: 70px;
+}
+.run-doctor-followup-actions {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: var(--sp-2);
+}

@@ -1213,6 +1213,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/run-doctor/config", s.handleRunDoctorConfig)
 	mux.HandleFunc("/api/run-doctor/peers", s.handleRunDoctorPeers)
 	mux.HandleFunc("/api/run-doctor/analyze", s.handleRunDoctorAnalyze)
+	// v0.20.6 — diagnosis history (per-run thread of saved
+	// diagnoses + follow-up Q&As) and supported-model metadata.
+	mux.HandleFunc("/api/run-doctor/history", s.handleRunDoctorHistory)
+	mux.HandleFunc("/api/run-doctor/models", s.handleRunDoctorModels)
 	mux.HandleFunc("/api/worker/spawn", s.handleWorkerSpawn)
 	mux.HandleFunc("/api/worker/despawn", s.handleWorkerDespawn)
 	mux.HandleFunc("/api/worker/spawned", s.handleWorkerSpawnedList)

@@ -61,14 +61,73 @@ import (
 
 // PromptResult is what BuildPrompt returns. SystemPrompt holds the
 // expert framing the model needs to interpret tool-specific
-// terminology. UserPrompt is the per-call body. Redactions maps
-// each opaque token (e.g. "<host_001>") back to its real value;
-// callers may use it to un-redact the model's response when
-// rendering to a privacy-relaxed UI.
+// terminology. UserPrompt is the per-call body. PriorTurns carries
+// any follow-up conversation history (assistant + user pairs) so
+// the AI provider sees the same diagnostic thread the operator is
+// reading. Redactions maps each opaque token (e.g. "<host_001>")
+// back to its real value; callers may use it to un-redact the
+// model's response when rendering to a privacy-relaxed UI.
 type PromptResult struct {
 	SystemPrompt string            `json:"system_prompt"`
 	UserPrompt   string            `json:"user_prompt"`
+	PriorTurns   []Turn            `json:"prior_turns,omitempty"`
 	Redactions   map[string]string `json:"redactions,omitempty"`
+}
+
+// Turn is one prior message in a Run Doctor follow-up conversation.
+// Mirrors the Anthropic Messages API's role/content shape so callers
+// can hand it straight to the provider.
+type Turn struct {
+	Role    string `json:"role"`    // "user" | "assistant"
+	Content string `json:"content"`
+}
+
+// Known model identifiers + a lightweight per-token cost hint
+// (USD per million tokens, rough order-of-magnitude — kept here
+// so the UI cost estimate stays accurate across model swaps).
+type ModelInfo struct {
+	ID            string  `json:"id"`
+	Label         string  `json:"label"`
+	USDPer1MIn    float64 `json:"usd_per_million_input"`
+	USDPer1MOut   float64 `json:"usd_per_million_output"`
+	Description   string  `json:"description"`
+}
+
+// KnownModels lists the Anthropic models the UI offers. Order =
+// recommendation order (Haiku first because it's the fast/cheap
+// default; operators escalate to Sonnet / Opus when a complex run
+// needs deeper reasoning).
+var KnownModels = []ModelInfo{
+	{
+		ID: "claude-haiku-4-5-20251001", Label: "Haiku 4.5 (fast, cheap — default)",
+		USDPer1MIn: 1.00, USDPer1MOut: 5.00,
+		Description: "Best for quick triage of routine runs.",
+	},
+	{
+		ID: "claude-sonnet-4-6", Label: "Sonnet 4.6 (balanced)",
+		USDPer1MIn: 3.00, USDPer1MOut: 15.00,
+		Description: "Better at multi-baseline trend detection.",
+	},
+	{
+		ID: "claude-opus-4-7", Label: "Opus 4.7 (deepest reasoning)",
+		USDPer1MIn: 15.00, USDPer1MOut: 75.00,
+		Description: "Only for hard cases — slow and expensive.",
+	},
+}
+
+// EstimateCostUSD returns a rough cost estimate for a single call
+// given the prompt char count and an expected response size. Char
+// counts are converted to tokens at the standard ~4 chars/token
+// approximation. Returns 0 when the model id is not in KnownModels.
+func EstimateCostUSD(modelID string, promptChars, responseChars int) float64 {
+	for _, m := range KnownModels {
+		if m.ID == modelID {
+			inTokens := float64(promptChars) / 4.0
+			outTokens := float64(responseChars) / 4.0
+			return (inTokens*m.USDPer1MIn + outTokens*m.USDPer1MOut) / 1_000_000.0
+		}
+	}
+	return 0
 }
 
 // ComparablePeers returns the subset of `all` that targets the same
@@ -211,6 +270,33 @@ func redactMeta(m persist.RunMeta, seed map[string]string) (persist.RunMeta, map
 		out.StopDetail = s
 	}
 	return out, seed
+}
+
+// BuildFollowupPrompt produces the prompt for a follow-up question
+// in an existing diagnostic conversation. Convention:
+//
+//   * The FIRST user turn is always the structured prompt (focal +
+//     baselines) so the model sees the run data even on the 5th
+//     follow-up.  We synthesise it via BuildPrompt and stash it in
+//     PriorTurns[0] as a user role.
+//   * PriorTurns then alternates assistant / user across the
+//     conversation history (oldest first, excluding the new
+//     question).
+//   * UserPrompt is the operator's NEW question — what the model
+//     needs to answer in this call.
+//
+// `history` contains the assistant answers given so far AND the
+// operator's prior follow-up questions, paired oldest-first.
+// `newQuestion` is the operator's currently-typed question.
+func BuildFollowupPrompt(focal persist.RunMeta, baselines []persist.RunMeta, history []Turn, newQuestion string, redact bool) PromptResult {
+	base := BuildPrompt(focal, baselines, redact)
+	turns := make([]Turn, 0, 1+len(history))
+	turns = append(turns, Turn{Role: "user", Content: base.UserPrompt})
+	turns = append(turns, history...)
+	out := base
+	out.PriorTurns = turns
+	out.UserPrompt = newQuestion
+	return out
 }
 
 // BuildPrompt assembles the system + user prompt for an analysis
@@ -467,6 +553,18 @@ func CallAnthropic(ctx context.Context, apiKey, model string, p PromptResult) (s
 		Model:     model,
 		MaxTokens: 1024,
 		System:    p.SystemPrompt,
+	}
+	// First-turn analysis: PriorTurns is empty, UserPrompt is the
+	// structured prompt. Follow-up: PriorTurns is the full
+	// conversation so far (oldest first, starting with the
+	// structured prompt as a user message), and UserPrompt is the
+	// operator's new question. Either way we emit PriorTurns +
+	// UserPrompt in order.
+	for _, t := range p.PriorTurns {
+		body.Messages = append(body.Messages, struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		}{Role: t.Role, Content: t.Content})
 	}
 	body.Messages = append(body.Messages, struct {
 		Role    string `json:"role"`

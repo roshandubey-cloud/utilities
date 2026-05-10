@@ -1,33 +1,20 @@
 // rundoctor_handlers.go — HTTP surface for the Run Doctor AI
-// diagnostic feature. Three endpoints:
+// diagnostic feature. v0.20.6 endpoints:
 //
-//   GET  /api/run-doctor/config
-//        → { configured, provider, model } — does the vault hold an
-//          AI key and which provider is selected? UI surfaces the
-//          "set up your AI provider" call-to-action when not.
+//   GET  /api/run-doctor/config        → AI provider config + selected model
+//   POST /api/run-doctor/config        → save AI key + provider + model in vault
+//   GET  /api/run-doctor/models        → list available models with cost hints
+//   GET  /api/run-doctor/peers         → comparable same-host peers for a run
+//   GET  /api/run-doctor/history       → all saved diagnoses for a run (threaded)
+//   POST /api/run-doctor/analyze       → run a diagnosis (initial or follow-up);
+//                                         saves the result to disk for history.
 //
-//   POST /api/run-doctor/config
-//        body: { provider, api_key, model? }
-//        → stores the key in the encrypted vault under refs
-//          "ai/api_key" and "ai/provider"; key never leaves the
-//          server in plaintext after this. Idempotent.
-//
-//   GET  /api/run-doctor/peers?id=<runID>
-//        → { focal_run, peers: [...] } — every historical run
-//          targeting the same (host, port, protocol) tuple as the
-//          focal run, newest first. UI populates the "compare
-//          against" picker from this. Honours the apples-to-apples
-//          rule: legacy runs without target host are excluded.
-//
-//   POST /api/run-doctor/analyze
-//        body: { run_id, compare_ids?, redact?, dry_run? }
-//        → If dry_run=true, returns the prompt that would be sent
-//          (so the operator can preview before paying tokens).
-//          Otherwise calls the configured AI provider and returns
-//          the narrative. compare_ids may be empty (server picks
-//          the 5 most-recent same-host peers automatically) or a
-//          specific list (operator picked a particular date from
-//          the picker).
+// Follow-up flow (v0.20.6): when the analyze body carries a
+// non-empty `parent_diagnosis_id` and `question`, the handler walks
+// the parent chain to assemble the conversation history, threads it
+// into the prompt via rundoctor.BuildFollowupPrompt, calls the AI,
+// and persists the new diagnosis with the parent id linked. The UI
+// can then render the conversation as a thread.
 package web
 
 import (
@@ -102,20 +89,33 @@ func (s *Server) handleRunDoctorConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unsupported provider: only 'anthropic' currently", http.StatusBadRequest)
 		return
 	}
-	if strings.TrimSpace(body.APIKey) == "" {
-		http.Error(w, "api_key is required", http.StatusBadRequest)
+	apiKey := strings.TrimSpace(body.APIKey)
+	model := strings.TrimSpace(body.Model)
+	// v0.20.6 — accept partial updates. The first save needs a key;
+	// subsequent saves (e.g. operator picks a different model from
+	// the dropdown) can omit it. We still require AT LEAST one of
+	// api_key / model so a no-op POST is rejected.
+	_, hasExisting := v.Get(vaultRefAIKey)
+	if apiKey == "" && model == "" {
+		http.Error(w, "api_key or model is required", http.StatusBadRequest)
+		return
+	}
+	if apiKey == "" && !hasExisting {
+		http.Error(w, "api_key is required on first setup", http.StatusBadRequest)
 		return
 	}
 	if err := v.Set(vaultRefAIProvider, provider); err != nil {
 		http.Error(w, "vault set provider: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := v.Set(vaultRefAIKey, strings.TrimSpace(body.APIKey)); err != nil {
-		http.Error(w, "vault set key: "+err.Error(), http.StatusInternalServerError)
-		return
+	if apiKey != "" {
+		if err := v.Set(vaultRefAIKey, apiKey); err != nil {
+			http.Error(w, "vault set key: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
-	if body.Model != "" {
-		if err := v.Set(vaultRefAIModel, strings.TrimSpace(body.Model)); err != nil {
+	if model != "" {
+		if err := v.Set(vaultRefAIModel, model); err != nil {
 			http.Error(w, "vault set model: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -166,20 +166,30 @@ func (s *Server) handleRunDoctorPeers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleRunDoctorAnalyze runs the focal-vs-baselines diagnostic.
+// handleRunDoctorAnalyze runs the focal-vs-baselines diagnostic OR
+// a follow-up question on a prior diagnosis.
+//
 // Body: run_id (required), compare_ids (optional — empty = server
 // picks 5 newest same-host peers), redact (default true), dry_run
-// (default false — when true, no AI call, returns the prompt only).
+// (default false), model (optional — overrides vault-stored model
+// for this call only), parent_diagnosis_id + question (follow-up).
+// When parent_diagnosis_id is set, the handler walks the parent
+// chain to thread the prior assistant + user turns into the
+// prompt. Each non-dry-run call is appended to the per-run
+// diagnoses log so the UI can restore the conversation later.
 func (s *Server) handleRunDoctorAnalyze(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var body struct {
-		RunID      string   `json:"run_id"`
-		CompareIDs []string `json:"compare_ids"`
-		Redact     *bool    `json:"redact"`
-		DryRun     bool     `json:"dry_run"`
+		RunID             string   `json:"run_id"`
+		CompareIDs        []string `json:"compare_ids"`
+		Redact            *bool    `json:"redact"`
+		DryRun            bool     `json:"dry_run"`
+		Model             string   `json:"model"`              // override; empty ⇒ use vault-stored
+		ParentDiagnosisID string   `json:"parent_diagnosis_id"`// for follow-ups
+		Question          string   `json:"question"`           // for follow-ups
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -187,6 +197,10 @@ func (s *Server) handleRunDoctorAnalyze(w http.ResponseWriter, r *http.Request) 
 	}
 	if body.RunID == "" {
 		http.Error(w, "run_id is required", http.StatusBadRequest)
+		return
+	}
+	if body.ParentDiagnosisID != "" && strings.TrimSpace(body.Question) == "" {
+		http.Error(w, "question is required when parent_diagnosis_id is set", http.StatusBadRequest)
 		return
 	}
 	if s.reportsDir == "" {
@@ -251,7 +265,51 @@ func (s *Server) handleRunDoctorAnalyze(w http.ResponseWriter, r *http.Request) 
 	if body.Redact != nil {
 		redact = *body.Redact
 	}
-	prompt := rundoctor.BuildPrompt(focal, baselines, redact)
+
+	// Build the prompt. If this is a follow-up, walk the parent
+	// chain and assemble the conversation history; otherwise it's
+	// a first-turn analysis.
+	var prompt rundoctor.PromptResult
+	var parentChain []persist.Diagnosis
+	isFollowup := body.ParentDiagnosisID != ""
+	if isFollowup {
+		// Walk parent chain oldest-first so the model sees turns in
+		// the right order. Cap the depth at 12 to keep prompt size
+		// sane on a runaway thread; older turns drop off.
+		const maxDepth = 12
+		var chain []persist.Diagnosis
+		cur := body.ParentDiagnosisID
+		for i := 0; i < maxDepth && cur != ""; i++ {
+			d, ok, err := persist.FindDiagnosis(s.reportsDir, body.RunID, cur)
+			if err != nil {
+				http.Error(w, "lookup parent diagnosis: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if !ok {
+				break
+			}
+			chain = append([]persist.Diagnosis{d}, chain...) // prepend → oldest-first
+			cur = d.ParentID
+		}
+		parentChain = chain
+
+		// Convert chain into rundoctor.Turn pairs the prompt builder
+		// understands. Each saved diagnosis represents one assistant
+		// turn (and, for follow-ups, the user question that preceded
+		// it). The structured-prompt user turn is synthesised inside
+		// BuildFollowupPrompt; we only emit the assistant + later
+		// user-question entries here.
+		var history []rundoctor.Turn
+		for _, d := range chain {
+			if d.Question != "" {
+				history = append(history, rundoctor.Turn{Role: "user", Content: d.Question})
+			}
+			history = append(history, rundoctor.Turn{Role: "assistant", Content: d.Narrative})
+		}
+		prompt = rundoctor.BuildFollowupPrompt(focal, baselines, history, body.Question, redact)
+	} else {
+		prompt = rundoctor.BuildPrompt(focal, baselines, redact)
+	}
 
 	if body.DryRun {
 		writeJSON(w, map[string]any{
@@ -259,6 +317,8 @@ func (s *Server) handleRunDoctorAnalyze(w http.ResponseWriter, r *http.Request) 
 			"baseline_runs": peerSummaries(baselines),
 			"prompt":        prompt,
 			"dry_run":       true,
+			"parent_chain":  diagnosisSummaries(parentChain),
+			"is_followup":   isFollowup,
 		})
 		return
 	}
@@ -282,25 +342,148 @@ func (s *Server) handleRunDoctorAnalyze(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "unsupported provider stored in vault: "+provider, http.StatusInternalServerError)
 		return
 	}
-	model, _ := v.Get(vaultRefAIModel)
+	// Model resolution: per-call body override > vault-stored default >
+	// rundoctor default (Haiku 4.5). Validating against KnownModels
+	// would be overzealous — Anthropic ships new model ids over time
+	// and we should let an operator pick one we don't know about.
+	model := strings.TrimSpace(body.Model)
+	if model == "" {
+		model, _ = v.Get(vaultRefAIModel)
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 70*time.Second)
 	defer cancel()
+	tStart := time.Now()
 	narrative, err := rundoctor.CallAnthropic(ctx, apiKey, model, prompt)
 	if err != nil {
 		http.Error(w, "AI call failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
+	elapsed := time.Since(tStart)
+	promptChars := len(prompt.SystemPrompt) + len(prompt.UserPrompt)
+	for _, t := range prompt.PriorTurns {
+		promptChars += len(t.Content)
+	}
+	estUSD := rundoctor.EstimateCostUSD(model, promptChars, len(narrative))
+
+	// Persist the diagnosis so the operator can scroll back through
+	// prior diagnoses + follow-up threads when they reopen the panel.
+	// Failure to persist is logged but does not fail the call — the
+	// operator already paid for the AI response and should see it.
+	mode := "auto"
+	if len(body.CompareIDs) > 0 {
+		mode = "pick"
+	}
+	baselineIDs := make([]string, 0, len(baselines))
+	for _, b := range baselines {
+		baselineIDs = append(baselineIDs, b.ID)
+	}
+	saved := persist.Diagnosis{
+		RunID:         body.RunID,
+		Provider:      provider,
+		Model:         model,
+		Redacted:      redact,
+		BaselineIDs:   baselineIDs,
+		Mode:          mode,
+		Question:      body.Question,
+		ParentID:      body.ParentDiagnosisID,
+		Narrative:     narrative,
+		PromptChars:   promptChars,
+		ResponseChars: len(narrative),
+		ElapsedMs:     elapsed.Milliseconds(),
+		EstUSD:        estUSD,
+	}
+	if err := persist.AppendDiagnosis(s.reportsDir, saved); err != nil {
+		// Soft-fail: tag the response so the UI can warn.
+		writeJSON(w, map[string]any{
+			"focal_run":     focalSummary(focal),
+			"baseline_runs": peerSummaries(baselines),
+			"prompt":        prompt,
+			"narrative":     narrative,
+			"model":         model,
+			"provider":      provider,
+			"redacted":      redact,
+			"generated_at":  saved.GeneratedAt,
+			"prompt_chars":  promptChars,
+			"response_chars": len(narrative),
+			"elapsed_ms":    elapsed.Milliseconds(),
+			"est_usd":       estUSD,
+			"persist_warning": err.Error(),
+		})
+		return
+	}
+	// Re-fetch to get the assigned ID + canonical timestamp.
+	allDiags, _ := persist.ListDiagnoses(s.reportsDir, body.RunID)
+	var savedID string
+	var savedAt time.Time
+	if len(allDiags) > 0 {
+		last := allDiags[len(allDiags)-1]
+		savedID = last.ID
+		savedAt = last.GeneratedAt
+	}
 	writeJSON(w, map[string]any{
-		"focal_run":     focalSummary(focal),
-		"baseline_runs": peerSummaries(baselines),
-		"prompt":        prompt,
-		"narrative":     narrative,
-		"model":         model,
-		"provider":      provider,
-		"redacted":      redact,
-		"generated_at":  time.Now().UTC(),
+		"diagnosis_id":   savedID,
+		"focal_run":      focalSummary(focal),
+		"baseline_runs":  peerSummaries(baselines),
+		"prompt":         prompt,
+		"narrative":      narrative,
+		"model":          model,
+		"provider":       provider,
+		"redacted":       redact,
+		"generated_at":   savedAt,
+		"prompt_chars":   promptChars,
+		"response_chars": len(narrative),
+		"elapsed_ms":     elapsed.Milliseconds(),
+		"est_usd":        estUSD,
+		"is_followup":    isFollowup,
+		"parent_id":      body.ParentDiagnosisID,
 	})
+}
+
+// handleRunDoctorHistory returns every saved diagnosis for a run in
+// chronological order (oldest first). Each entry includes ParentID
+// so the UI can render the conversation as a tree of follow-ups.
+func (s *Server) handleRunDoctorHistory(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("run_id")
+	if id == "" {
+		http.Error(w, "run_id is required", http.StatusBadRequest)
+		return
+	}
+	if s.reportsDir == "" {
+		http.Error(w, "no reports directory configured", http.StatusServiceUnavailable)
+		return
+	}
+	diags, err := persist.ListDiagnoses(s.reportsDir, id)
+	if err != nil {
+		http.Error(w, "list diagnoses: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"run_id":      id,
+		"diagnoses":   diags,
+	})
+}
+
+// handleRunDoctorModels returns the list of supported AI models
+// with rough cost hints. Pure metadata — no vault required.
+func (s *Server) handleRunDoctorModels(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]any{"models": rundoctor.KnownModels})
+}
+
+// diagnosisSummaries — compact array form for the UI's parent-chain
+// breadcrumb under a follow-up dry-run preview.
+func diagnosisSummaries(ds []persist.Diagnosis) []map[string]any {
+	out := make([]map[string]any, len(ds))
+	for i, d := range ds {
+		out[i] = map[string]any{
+			"id":           d.ID,
+			"generated_at": d.GeneratedAt,
+			"model":        d.Model,
+			"question":     d.Question,
+			"parent_id":    d.ParentID,
+		}
+	}
+	return out
 }
 
 // focalSummary / peerSummaries emit the compact per-run object the

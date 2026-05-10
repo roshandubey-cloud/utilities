@@ -155,3 +155,50 @@ func ids(ms []persist.RunMeta) []string {
 	}
 	return out
 }
+
+func TestBuildFollowupPrompt_SeedsStructuredPromptAsFirstUserTurn(t *testing.T) {
+	now := time.Now()
+	focal := mkMeta("focal", "h", 22, "sftp", 90, 1000, 0, now)
+	history := []Turn{
+		{Role: "assistant", Content: "first answer"},
+		{Role: "user", Content: "first follow-up"},
+		{Role: "assistant", Content: "second answer"},
+	}
+	pr := BuildFollowupPrompt(focal, nil, history, "third question", false)
+
+	if pr.UserPrompt != "third question" {
+		t.Fatalf("UserPrompt should be the new question; got %q", pr.UserPrompt)
+	}
+	if len(pr.PriorTurns) != 1+len(history) {
+		t.Fatalf("PriorTurns should have %d entries (structured prompt + history); got %d", 1+len(history), len(pr.PriorTurns))
+	}
+	if pr.PriorTurns[0].Role != "user" {
+		t.Fatalf("first PriorTurn must be the structured prompt as user role; got %q", pr.PriorTurns[0].Role)
+	}
+	if !strings.Contains(pr.PriorTurns[0].Content, "## TARGET") {
+		t.Fatalf("first PriorTurn must carry the structured prompt; got %q", pr.PriorTurns[0].Content[:80])
+	}
+	// Subsequent turns preserve order.
+	for i, want := range history {
+		got := pr.PriorTurns[i+1]
+		if got.Role != want.Role || got.Content != want.Content {
+			t.Fatalf("PriorTurns[%d] mismatch: got %+v want %+v", i+1, got, want)
+		}
+	}
+}
+
+func TestEstimateCostUSD_KnownAndUnknownModels(t *testing.T) {
+	cost := EstimateCostUSD("claude-haiku-4-5-20251001", 4000, 800)
+	if cost <= 0 {
+		t.Fatalf("known model should produce a positive estimate; got %f", cost)
+	}
+	if EstimateCostUSD("not-a-real-model", 4000, 800) != 0 {
+		t.Fatalf("unknown model should produce zero estimate")
+	}
+	// Sonnet should cost more than Haiku for the same payload.
+	cHaiku := EstimateCostUSD("claude-haiku-4-5-20251001", 10000, 2000)
+	cSonnet := EstimateCostUSD("claude-sonnet-4-6", 10000, 2000)
+	if cSonnet <= cHaiku {
+		t.Fatalf("Sonnet should be more expensive than Haiku; got Sonnet=%f Haiku=%f", cSonnet, cHaiku)
+	}
+}
