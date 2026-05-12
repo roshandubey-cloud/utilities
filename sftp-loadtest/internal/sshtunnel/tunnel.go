@@ -499,7 +499,11 @@ func buildAuth(opts SpawnOpts) ([]ssh.AuthMethod, error) {
 		}
 		return []ssh.AuthMethod{ssh.PublicKeys(signer)}, nil
 	}
-	return []ssh.AuthMethod{ssh.Password(opts.Password)}, nil
+	// v0.20.8 — pair password with a keyboard-interactive responder
+	// so the same dial that succeeds against an OpenSSH server also
+	// succeeds against MoveIT / Tectia / GlobalSCAPE gateways that
+	// advertise only KI. See sftpx.PasswordAuthMethods for the why.
+	return sftpx.PasswordAuthMethods(opts.Password), nil
 }
 
 // PreflightResult is what Preflight returns — a structured snapshot of

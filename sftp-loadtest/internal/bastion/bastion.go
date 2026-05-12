@@ -83,7 +83,12 @@ func Open(cfg Config) (*Client, error) {
 		auth = append(auth, ssh.PublicKeys(signer))
 	}
 	if cfg.Pass != "" {
-		auth = append(auth, ssh.Password(cfg.Pass))
+		// v0.20.8 — append BOTH password and keyboard-interactive
+		// (answering each KI prompt with the same password) so
+		// enterprise SSH gateways that advertise only KI on the wire
+		// (e.g. MoveIT Transfer) authenticate the same as they do
+		// with any third-party SFTP client.
+		auth = append(auth, sftpx.PasswordAuthMethods(cfg.Pass)...)
 	}
 	if len(auth) == 0 {
 		return nil, errors.New("bastion: no auth method (provide pass or private key)")

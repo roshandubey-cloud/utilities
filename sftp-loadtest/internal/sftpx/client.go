@@ -377,6 +377,46 @@ func Dial(host string, port int, user, pass string) (*Client, error) {
 	return DialWithOpts(host, port, user, pass, DialOpts{})
 }
 
+// PasswordAuthMethods returns the two auth methods that together
+// approximate what every third-party SFTP client (FileZilla, WinSCP,
+// OpenSSH) does when given a password: try password auth, AND offer
+// to satisfy a keyboard-interactive challenge with the same password.
+//
+// Many enterprise SFTP gateways (Progress MoveIT Transfer, Tectia
+// SSH Server, IBM Sterling Connect:Direct, JSCAPE, GlobalSCAPE) do
+// not advertise `password` as a supported method on the wire — they
+// advertise only `keyboard-interactive`, then immediately ask a
+// single "Password:" prompt as the first KI question. Go's
+// golang.org/x/crypto/ssh does NOT auto-fall-back: if the only auth
+// method in ClientConfig.Auth is ssh.Password and the server doesn't
+// list `password` in `userauth_failure`, the dial fails with "unable
+// to authenticate, attempted methods [password], no supported
+// methods remain".
+//
+// Including both methods is the standard "well-behaved client"
+// posture and matches what every operator's third-party tool already
+// does. The KI responder answers EVERY prompt with the supplied
+// password — when the prompt is asking for the password (the
+// universal case) this is correct; when the server asks for
+// something exotic (e.g. an OTP) the response is just wrong and the
+// server fails the auth cleanly. Either outcome is no worse than
+// the password-only behaviour we had before; the common case
+// (password challenge wrapped in KI) now succeeds.
+func PasswordAuthMethods(pass string) []ssh.AuthMethod {
+	return passwordAuthMethods(pass)
+}
+
+func passwordAuthMethods(pass string) []ssh.AuthMethod {
+	ki := ssh.KeyboardInteractive(func(_, _ string, questions []string, _ []bool) ([]string, error) {
+		answers := make([]string, len(questions))
+		for i := range answers {
+			answers[i] = pass
+		}
+		return answers, nil
+	})
+	return []ssh.AuthMethod{ssh.Password(pass), ki}
+}
+
 // DialWithOpts is the same as Dial but lets the caller override the
 // host-key callback for this single connection (used by /api/probe TOFU).
 func DialWithOpts(host string, port int, user, pass string, opts DialOpts) (*Client, error) {
@@ -386,7 +426,7 @@ func DialWithOpts(host string, port int, user, pass string, opts DialOpts) (*Cli
 	}
 	auth := opts.Auth
 	if len(auth) == 0 {
-		auth = []ssh.AuthMethod{ssh.Password(pass)}
+		auth = passwordAuthMethods(pass)
 	}
 	cfg := &ssh.ClientConfig{
 		User:            user,

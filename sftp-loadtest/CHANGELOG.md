@@ -11,6 +11,51 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.20.8] — 2026-05-12
+### Fixed — Test connection failed against MoveIT-style gateways (auth method mismatch)
+Test connection against enterprise SFTP gateways
+(`*.walmart.internal.com:8022` and similar Progress MoveIT
+Transfer / Tectia / GlobalSCAPE deployments) failed even when
+the same hostname + port + user + password worked from
+third-party tools (FileZilla, WinSCP, OpenSSH).
+
+Root cause: when only a password was supplied, sftp-loadtest
+handed `golang.org/x/crypto/ssh` an Auth slice containing JUST
+`ssh.Password(pass)`. The Go SSH client does NOT auto-fall-back
+to keyboard-interactive — if the server advertises only
+`keyboard-interactive` on the wire (which MoveIT et al. do by
+default — they then ask a single "Password:" prompt as the
+first KI question), the dial failed with "unable to
+authenticate, attempted methods [password], no supported
+methods remain". Third-party clients hide this by always
+offering both methods; this tool didn't.
+
+Fix: a new `sftpx.PasswordAuthMethods(pass)` helper now returns
+BOTH `ssh.Password` and `ssh.KeyboardInteractive` (the KI
+responder answers every prompt with the supplied password —
+correct for the universal single-"Password:" case; harmless
+for exotic multi-prompt cases since the server cleanly fails
+auth). Applied at every production call site:
+
+  * `sftpx.DialWithOpts` (target SFTP dial — fixes /api/probe
+    and every runner pool slot)
+  * `bastion.Open` (SSH ProxyJump bastion auth)
+  * `sshtunnel.buildAuth` (worker-spawn tunnel auth)
+
+Behaviour against servers that already supported `password`
+is unchanged — Go's ssh client tries methods in the order
+listed in ClientConfig.Auth, falls through on the first
+success, so password auth still completes in one round-trip
+when the server accepts it.
+
+Tests added in `internal/sftpx/client_test.go`:
+  * `TestPasswordAuthMethods_PairsPasswordWithKeyboardInteractive`
+    locks in that the helper returns exactly 2 non-nil methods.
+  * `TestPasswordAuthMethods_KIResponderAnswersWithPassword`
+    drives the KI callback with 0 / 1 / 2 question prompts and
+    asserts each gets answered with the supplied password.
+
+
 ## [v0.20.7] — 2026-05-11
 ### Fixed — Run Doctor: empty styled box appearing between run header and KPIs
 Run Doctor's panel container was pre-rendered as
