@@ -11,6 +11,30 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.20.7] — 2026-05-11
+### Fixed — Run Doctor: empty styled box appearing between run header and KPIs
+Run Doctor's panel container was pre-rendered as
+`<section class="run-doctor-panel" hidden></section>` inside the
+run-detail layout so the click handler could just flip
+`hidden = false`. On some pages it surfaced as a thin empty
+styled box between the header and the KPI tiles — the section's
+`border` / `padding` / `background` CSS combined with the
+`hidden` attribute not being respected (a layout artefact on
+legacy runs whose meta lacks `target_host`).
+
+The container is now created on demand inside the click handler
+(append a freshly-built `<section>` into a marker `<div>` slot
+only when the operator presses Run Doctor) and reused on
+subsequent clicks. A brief "Loading Run Doctor…" placeholder
+shows during the dynamic-import + initial fetch round-trip, so
+there's no perceived blank panel between click and content.
+
+Defensive CSS rule added — `.run-doctor-panel[hidden] { display:
+none !important; }` (plus the same for the other hidden slots in
+the panel) — so any future regression of the same shape can't
+re-surface the empty box.
+
+
 ## [v0.20.6] — 2026-05-10
 ### Added — Run Doctor: persistent history, follow-up Q&A, comparison strip, model picker, cost estimate, retry
 The single-shot diagnosis from 0.20.4 / 0.20.5 turns into an

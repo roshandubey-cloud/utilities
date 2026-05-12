@@ -183,9 +183,12 @@ function renderDetail(m) {
       </div>
     </header>
 
-    <!-- Run Doctor panel — populated lazily by rundoctor.js when the
-         "Run Doctor" button above is clicked. Hidden until then. -->
-    <section class="run-doctor-panel" data-role="run-doctor-panel" data-run-id="${escapeAttr(m.id)}" hidden></section>
+    <!-- Run Doctor panel slot — empty marker only. The actual
+         <section class="run-doctor-panel"> is created and inserted
+         here on first click of the "Run Doctor" button so it never
+         shows up as a visible empty box on legacy runs or while the
+         lazy module is loading. -->
+    <div data-role="run-doctor-slot"></div>
 
     <div class="run-detail-kpis">
       ${kpi('Success rate', total > 0 ? successPct.toFixed(1) + '%' : '—', successPct >= 99 ? 'ok' : successPct >= 85 ? 'warn' : 'bad')}
@@ -311,18 +314,33 @@ function wireDetail(view, meta) {
     closeDetail();
   });
   // v0.20.4 — Run Doctor button. Lazy-imports rundoctor.js so the
-  // ~12 KB module + AI-call deps are only fetched when an operator
-  // actually wants the diagnosis. The module owns mounting, the
-  // compare-against picker, prompt preview, and the AI call.
+  // module + AI-call deps are only fetched when the operator
+  // actually wants the diagnosis. v0.20.6 — also creates the
+  // panel on demand (instead of pre-rendering an empty hidden
+  // <section>) so legacy runs / first-load delay don't surface
+  // an empty styled box between the header and the KPIs.
   const doctorBtn = view.querySelector('[data-role="run-doctor"]');
-  const doctorPanel = view.querySelector('[data-role="run-doctor-panel"]');
-  if (doctorBtn && doctorPanel) {
+  const doctorSlot = view.querySelector('[data-role="run-doctor-slot"]');
+  if (doctorBtn && doctorSlot) {
     doctorBtn.addEventListener('click', async () => {
       doctorBtn.disabled = true;
-      doctorPanel.hidden = false;
+      // Reuse a previously-created panel on subsequent clicks; the
+      // module's mountRunDoctor is idempotent on the same run id.
+      let panel = doctorSlot.querySelector('section.run-doctor-panel');
+      if (!panel) {
+        panel = document.createElement('section');
+        panel.className = 'run-doctor-panel';
+        panel.dataset.role = 'run-doctor-panel';
+        panel.dataset.runId = meta.id;
+        // Loading placeholder — replaced by mountRunDoctor's first
+        // renderShell call. Visible only for the duration of the
+        // dynamic import + initial fetches.
+        panel.innerHTML = '<div class="run-doctor-loading">Loading Run Doctor…</div>';
+        doctorSlot.appendChild(panel);
+      }
       try {
         const mod = await import('./rundoctor.js');
-        await mod.mountRunDoctor(doctorPanel, meta);
+        await mod.mountRunDoctor(panel, meta);
       } finally {
         doctorBtn.disabled = false;
       }

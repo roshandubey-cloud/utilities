@@ -4400,3 +4400,21 @@ body:not([data-active-view="configure"]) .cfg-summary-bar {
   display: flex; align-items: center; gap: 8px;
   margin-top: var(--sp-2);
 }
+
+/* v0.20.6 fix — Run Doctor panel is now created on demand, but the
+   defensive [hidden] rule still applies in case any descendant
+   element relies on it. Plus a brief loading placeholder shown
+   during the dynamic import / initial fetch round-trip. */
+.run-doctor-panel[hidden],
+.run-doctor-history[hidden],
+.run-doctor-followup[hidden],
+.run-doctor-preview[hidden],
+.run-doctor-result[hidden],
+.run-doctor-setup[hidden] { display: none !important; }
+
+.run-doctor-loading {
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-12);
+  color: var(--text-tertiary);
+  font-style: italic;
+}
