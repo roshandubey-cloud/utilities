@@ -94,6 +94,7 @@ export function mountConnectionCard(rootSelector) {
 
   function setProtocol(proto) {
     if (!['sftp', 'ftp', 'ftps'].includes(proto)) proto = 'sftp';
+    const prevProto = protoValueEl ? protoValueEl.value : '';
     if (protoValueEl) {
       protoValueEl.value = proto;
       protoValueEl.dispatchEvent(new Event('input', { bubbles: true }));
@@ -103,6 +104,17 @@ export function mountConnectionCard(rootSelector) {
       protoPickerEl.querySelectorAll('button').forEach((b) => {
         b.setAttribute('aria-pressed', b.dataset.value === proto ? 'true' : 'false');
       });
+    }
+    // v0.20.9 — clear any prior Test connection result when the
+    // protocol actually changes. Without this, an operator who
+    // probes SFTP and then clicks the FTPS tab sees the SFTP
+    // result lingering under a now-mismatched protocol and is
+    // tempted to interpret it as "FTPS works". The clear runs
+    // ONLY on a real change so re-clicking the already-active
+    // tab doesn't wipe a fresh result the operator is reading.
+    if (prevProto && prevProto !== proto && resultEl) {
+      resultEl.innerHTML = '';
+      resultEl.dataset.state = 'idle';
     }
     syncProtocolUI();
     // Notify any listeners (configure-redesign chip, saved-configs).

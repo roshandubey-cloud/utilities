@@ -478,7 +478,12 @@ func (c *RunConfig) Validate() error {
 	if c.Port <= 0 || c.Port > 65535 {
 		return errors.New("port must be 1-65535")
 	}
-	if c.UploadFolder == "" {
+	// v0.20.9 — only enforce UploadFolder when an upload-side load
+	// (Normal or LargeFile) is actually enabled. Download-only runs
+	// don't upload anything; requiring the operator to fill an
+	// irrelevant folder was a stale rule from when every run had
+	// an upload phase.
+	if c.UploadFolder == "" && (c.Normal != nil || c.LargeFile != nil) {
 		return errors.New("upload folder is required")
 	}
 	if c.ParallelStreams < 1 {
@@ -487,8 +492,16 @@ func (c *RunConfig) Validate() error {
 	if c.DurationHours <= 0 {
 		return errors.New("duration must be > 0")
 	}
-	if c.Normal == nil && c.LargeFile == nil {
-		return errors.New("enable at least one of normal-load or large-file-load")
+	// v0.20.9 — pull-only load tests are valid. An operator may want
+	// to measure download throughput against pre-staged files
+	// (server already has data; no upload phase needed). Pre-v0.20.9
+	// validation rejected this with "enable at least one of
+	// normal-load or large-file-load", which surprised operators
+	// coming from 3rd-party tools that allow download-only runs.
+	// Now the rule is: at least one of normal-load, large-file-load,
+	// or download must be enabled.
+	if c.Normal == nil && c.LargeFile == nil && c.Download == nil {
+		return errors.New("enable at least one load: normal, large-file, or download")
 	}
 	if c.Normal != nil {
 		if len(c.NormalUsers) == 0 {

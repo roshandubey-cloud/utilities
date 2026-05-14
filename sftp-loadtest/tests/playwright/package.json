@@ -1,0 +1,15 @@
+{
+  "name": "sftp-loadtest-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Playwright end-to-end tests for sftp-loadtest. Each spec drives the real Wails/web UI against a fresh server binary and asserts user-visible behaviour — not internal implementation. New bugs land here BEFORE they get a fix in the Go/JS so the suite genuinely guards against regressions.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "PWDEBUG=1 playwright test",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

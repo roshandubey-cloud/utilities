@@ -2321,3 +2321,15 @@ button.shell-sidebar-section-header:hover { color: var(--sidebar-fg); }
   display: flex; justify-content: flex-end; gap: var(--sp-2);
   margin-top: var(--sp-2);
 }
+
+/* v0.20.9 — defensive [hidden] enforcement for vault-trust panels.
+   The base .vault-trust-migration / .vault-trust-secrets rules set
+   display:flex / display:block, which override the user-agent
+   [hidden] { display: none } rule (same specificity, later wins).
+   Without these explicit rules, panels with `hidden` attribute
+   still surface — including the "Move to vault" / "Not now"
+   migration banner showing up on a fresh trust view. */
+.vault-trust-migration[hidden],
+.vault-trust-secrets[hidden],
+.vault-trust-status[hidden],
+.vault-trust-foot[hidden] { display: none !important; }

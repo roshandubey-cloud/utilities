@@ -11,6 +11,78 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.20.9] — 2026-05-13
+### Fixed — three operator-reported regressions + a real e2e test suite to stop them recurring
+Operator feedback after v0.20.8: "i have download users in the list
+with passwords, the loadtest never runs"; "test connection result
+lingers when i switch protocol tabs"; "i can expand probe details
+but i have no way to minimize it back". All three traced to
+different root causes; all three are fixed and locked in with
+Playwright tests that run in CI.
+
+  * **Download-only runs were rejected by the validator.**
+    `RunConfig.Validate` required `Normal` or `LargeFile` even
+    when only `Download` was set — and it required `UploadFolder`
+    on the same blanket basis. Both rules were anachronisms from
+    when every run had an upload phase. Pull-only load tests
+    (measure throughput against pre-staged files) are now
+    accepted: a config that enables only download passes
+    validation. Internal unit tests in
+    `internal/config/validate_test.go` lock both behaviours in —
+    download-only accepted, no-load-at-all still rejected.
+
+  * **Protocol-tab switch left stale probe results visible.**
+    `connection.js setProtocol` now clears the `[data-role="result"]`
+    block when the protocol value actually changes (no clear on
+    re-clicking the already-active tab). Operators no longer see
+    a green "SFTP OK" tile underneath a now-active FTPS tab.
+
+  * **Probe details disclosure had no visible collapse affordance.**
+    The native `<summary>` marker was hidden by a sibling
+    stylesheet rule; without a visible chevron, operators had no
+    cue that the row was clickable. Added a CSS `::before`
+    chevron in the accent colour that rotates 90° when open,
+    enlarged the click target via padding, and added a hover
+    background — so the affordance reads at a glance.
+
+### Added — Playwright end-to-end test suite (`tests/playwright/`)
+A committed, repo-resident e2e suite replaces the throw-away
+`/tmp/slt-click-validate.mjs` script. Specs assert *user-visible*
+behaviour, not internals:
+
+  * `01-boot-smoke` — healthz + SPA hydrates without JS errors.
+  * `02-probe-result-clears-on-protocol-switch` — exact regression
+    guard for the lingering-result bug.
+  * `03-probe-details-collapse` — collapse toggle works AND the
+    chevron affordance is visibly painted.
+  * `04-download-only-run` — `/api/start` accepts a download-only
+    payload; still rejects no-load-at-all.
+  * `05-wide-click-sweep` — drives every visible clickable surface
+    across all six views, asserts each produces an observable DOM
+    response. Promotes the ad-hoc click validator into a
+    committed regression test.
+
+`playwright.config.ts` builds the server binary fresh before each
+run and serves it on port 18290 against a temp reports dir —
+every test starts with clean state.
+
+A new `e2e` job in `.github/workflows/test.yml` runs the suite on
+every push to `main` (after the existing `test` job's Go unit
+tests pass). Failure uploads the Playwright HTML report as a
+build artifact so regressions are debuggable from the run page.
+
+### Fixed — vault-trust migration banner leaking through `hidden`
+While auditing for the probe-details bug class (CSS rules
+overriding `[hidden]`), found the same pattern on
+`.vault-trust-migration { display: flex }` — the banner appeared
+on Trust view even with `hidden` attribute set, because
+specificity ties go to the later rule and the base rule lacked an
+`[hidden]` opt-out. Added explicit
+`.vault-trust-migration[hidden] { display: none !important; }`
+(and the same for `.vault-trust-secrets`, `.vault-trust-status`,
+`.vault-trust-foot`).
+
+
 ## [v0.20.8] — 2026-05-12
 ### Fixed — Test connection failed against MoveIT-style gateways (auth method mismatch)
 Test connection against enterprise SFTP gateways

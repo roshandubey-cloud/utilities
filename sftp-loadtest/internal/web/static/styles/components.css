@@ -614,7 +614,32 @@
   font-size: var(--fs-12);
   color: var(--text-secondary);
   user-select: none;
+  /* v0.20.9 — visible chevron + larger click target. The native
+     marker on <summary> was hidden by an earlier rule (the
+     descendant default in some browsers renders as a tiny black
+     triangle that was easy to miss), so operators couldn't tell
+     where to click to collapse. ::before paints a rotation-driven
+     chevron in the accent colour; the surrounding padding makes
+     the entire summary row clickable, not just the text. */
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: var(--r-1);
+  transition: background var(--t-fast) var(--ease-out);
 }
+.probe-details > summary::-webkit-details-marker { display: none; }
+.probe-details > summary::before {
+  content: '▸';
+  color: var(--accent);
+  font-size: 10px;
+  width: 10px;
+  display: inline-block;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+.probe-details[open] > summary::before { transform: rotate(90deg); }
+.probe-details > summary:hover { background: var(--action-hover); color: var(--text-primary); }
 .probe-details[open] > summary { color: var(--text-primary); margin-bottom: var(--sp-2); }
 .probe-detail-grid {
   display: grid;

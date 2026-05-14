@@ -62,3 +62,40 @@ jobs:
         run: $(go env GOPATH)/bin/govulncheck -mode=binary /tmp/scan/sftp-loadtest
       - name: govulncheck (binary mode — mocksftp)
         run: $(go env GOPATH)/bin/govulncheck -mode=binary /tmp/scan/mocksftp
+
+  # v0.20.9 — Playwright end-to-end suite. Runs against a real
+  # server binary built from this commit. Specs cover regressions
+  # the unit tests can't see: probe-result clearing on protocol
+  # switch, native <details> collapsibility, download-only run
+  # validation, and a wide click sweep across every view (every
+  # visible button must produce an observable DOM response).
+  e2e:
+    runs-on: ubuntu-latest
+    needs: test
+    defaults:
+      run:
+        working-directory: sftp-loadtest/tests/playwright
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.10'
+          cache-dependency-path: sftp-loadtest/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: sftp-loadtest/tests/playwright/package-lock.json
+      - name: install playwright deps
+        run: npm ci
+      - name: install playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: run e2e
+        run: npx playwright test
+      - name: upload playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: sftp-loadtest/tests/playwright/playwright-report/
+          retention-days: 7
