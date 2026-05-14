@@ -23,7 +23,7 @@ jobs:
       run:
         working-directory: sftp-loadtest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
           go-version: '1.25.10'
@@ -76,7 +76,7 @@ jobs:
       run:
         working-directory: sftp-loadtest/tests/playwright
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
           go-version: '1.25.10'
