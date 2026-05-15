@@ -20,11 +20,20 @@ const BIN = path.join(REPO_ROOT, 'tests', 'playwright', 'tmp', 'sftp-loadtest-e2
 
 export default defineConfig({
   testDir: './specs',
+  // v0.20.10 — globalSetup boots the mock SFTP + FTP servers so
+  // per-protocol probe and run specs can drive REAL servers without
+  // every spec re-spawning them. Teardown kills the spawned pids.
+  globalSetup: require.resolve('./global-setup'),
+  globalTeardown: require.resolve('./global-teardown'),
   // Bug regressions are easier to read when failures keep going,
   // so we run sequentially. Tests are fast enough.
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
+  // Reasonable ceiling per test — runs that drive a real load test
+  // (specs 07-09) can take a few seconds to settle, plus the
+  // wide-click-sweep can take 20-30s on a slow runner.
+  timeout: 90_000,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
@@ -53,7 +62,14 @@ export default defineConfig({
       `go build -o ${BIN} .`,
       `rm -rf ${REPORTS_DIR}`,
       `mkdir -p ${REPORTS_DIR}`,
-      `${BIN} -addr 127.0.0.1:${PORT} -reports-dir ${REPORTS_DIR}`,
+      // -insecure-host-key tells the SFTP layer to accept any
+      // host key without consulting the global trust store. The
+      // mock SFTP server generates a fresh key on each boot; the
+      // store would flag it as a mismatch against any previously
+      // stored fingerprint, blocking probes and runs. Tests do
+      // their own integration coverage; production runs still
+      // pin keys via the UI flow.
+      `${BIN} -addr 127.0.0.1:${PORT} -reports-dir ${REPORTS_DIR} -insecure-host-key`,
     ].join(' && '),
     cwd: REPO_ROOT,
     url: `http://127.0.0.1:${PORT}/healthz`,
