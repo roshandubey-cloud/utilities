@@ -31,16 +31,24 @@ import { apiFetch, apiJSON } from './api.js';
 import { confirm as confirmModal, prompt as promptModal } from './modal.js';
 import { pushToast } from './toast.js';
 
-const MOUNT_FLAG = 'run-doctor-mounted-id';
+// MOUNT_FLAG is the data-attribute we stamp on the panel to remember
+// which run id it's currently mounted for.  v0.20.6–v0.20.9 used
+// `dataset['run-doctor-mounted-id']`, which throws a SyntaxError at
+// runtime — DOMStringMap rejects keys with hyphens; only camelCase
+// is allowed. The bug left the panel stuck on "Loading Run Doctor…"
+// forever on every operator's first click. Fixed in v0.20.10 by
+// using setAttribute / getAttribute, which accept the kebab-case
+// data-attribute name directly and have no such restriction.
+const MOUNT_FLAG = 'data-run-doctor-mounted-id';
 
 export async function mountRunDoctor(panel, meta) {
   // Idempotent — clicking the button twice on the same run reuses
   // the already-rendered panel. New run id ⇒ rebuild from scratch.
-  if (panel.dataset[MOUNT_FLAG] === meta.id) {
+  if (panel.getAttribute(MOUNT_FLAG) === meta.id) {
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
-  panel.dataset[MOUNT_FLAG] = meta.id;
+  panel.setAttribute(MOUNT_FLAG, meta.id);
   panel.innerHTML = renderShell(meta);
 
   const peersList = panel.querySelector('[data-role="peers-list"]');

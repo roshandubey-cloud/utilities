@@ -156,7 +156,17 @@ func (s *Server) handleRunDoctorPeers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !found {
-		http.Error(w, "run not found", http.StatusNotFound)
+		// v0.20.10 — instead of a hard 404, return an empty
+		// payload so the Run Doctor UI can render "no comparable
+		// history yet" for runs that exist in memory but haven't
+		// sealed to disk yet (e.g. operator opens Run Doctor on
+		// a long-running active run). The 404 produced a noisy
+		// console error AND left the UI in a half-loaded state.
+		writeJSON(w, map[string]any{
+			"focal_run": map[string]any{"id": id},
+			"peers":     []map[string]any{},
+			"not_yet_sealed": true,
+		})
 		return
 	}
 	peers := rundoctor.ComparablePeers(focal, all)

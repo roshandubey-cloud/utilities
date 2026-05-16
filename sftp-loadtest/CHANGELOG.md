@@ -11,6 +11,79 @@ follow the `releases/latest/download/<asset>` pattern so README links
 self-update.
 
 
+## [v0.20.10] — 2026-05-15
+### Fixed — four new bugs surfaced by the v0.20.9 e2e bug-hunt pass
+The new tests/playwright/specs/09-bug-hunt suite probed each
+class of bug the targeted v0.20.9 specs couldn't reach. Four
+distinct real bugs found; all four fixed; each pinned by a
+spec so it can't recur.
+
+  1. **CRITICAL — Run Doctor stuck on "Loading Run Doctor…"
+     forever on every click since v0.20.6.** The mount-flag
+     stash used `panel.dataset['run-doctor-mounted-id'] = id`
+     — but DOMStringMap rejects hyphenated keys with a
+     SyntaxError, so the very first line after the loading
+     placeholder threw, mountRunDoctor never replaced
+     innerHTML, and the operator's panel stayed on the
+     loading text forever. Every operator who clicked Run
+     Doctor since v0.20.6 hit this. Fixed by switching to
+     setAttribute / getAttribute, which accept the kebab-case
+     data-attribute name natively. Pinned by spec 09 D.
+
+  2. **Hidden-attribute leaks app-wide.** Multiple component
+     stylesheets set `display: flex/block/grid` on classes
+     like `.vault-trust-migration`, `.row`, `.badge-mini`,
+     `.host-bar-cell`, and several `.btn-ghost.btn-sm` buttons
+     without an `[hidden]` opt-out. Because `[hidden]`'s
+     user-agent rule has the same specificity as a single
+     class selector, the author rule wins on cascade order
+     and the element renders even with the hidden attribute
+     set. Vault migration banner + several buttons surfaced
+     when they shouldn't. Fixed with one universal rule in
+     base.css: `[hidden] { display: none !important; }`.
+     Matches every modern CSS reset; nothing in the app needs
+     `[hidden]` to mean "show anyway." Pinned by spec 09 A
+     (asserts zero elements have [hidden] with computed
+     display ≠ none after touring every view).
+
+  3. **No CLI override for the FTPS leaf-cert trust store.**
+     Operators (and the e2e suite) had no way to point the
+     FTPS cert store at a custom path — the default
+     `<user-config-dir>/sftp-loadtest/tls-hosts.json` was the
+     only choice. The store-was-stale problem manifested as
+     "ftps cert has changed; user consent required to
+     overwrite" errors when the server presented a
+     fresh-but-different cert. Added the `-tls-hosts <path>`
+     CLI flag, mirroring `-known-hosts` for SFTP. Operator
+     value: clean per-environment isolation in CI / fleet
+     setups. Test value: each suite run isolates its TLS
+     trust state.
+
+  4. **/api/run-doctor/peers returned 404 with noisy console
+     error for in-flight runs.** An operator who opened Run
+     Doctor on a live (not-yet-sealed) run got a 404 from
+     the peers endpoint because the focal meta wasn't yet on
+     disk. The UI logged "Failed to load resource: 404" and
+     stayed in a half-loaded state. Fixed: the handler now
+     returns `{ focal_run: { id }, peers: [], not_yet_sealed:
+     true }` so the Run Doctor panel renders cleanly with
+     "no comparable history yet."
+
+### Documented — known issue (not fixed this release)
+  * **Stop button drain latency > 60s.** Click Stop on a
+    running upload-only run with `track_id_timeout_seconds: 1`
+    and `poll_seconds: 1` and the run still reports active for
+    well over a minute even though the runner's stated
+    teardown phases should sum to ≤5s. The stop-progress
+    dialog (v0.19.19) keeps the operator informed during the
+    drain and offers a Force-close dialog affordance, so the
+    UX isn't a black box. But the wall-clock gap is larger
+    than expected. Spec 09 C is marked `test.skip` with a
+    TODO pointing at "instrument runner teardown with
+    structured timing logs and identify which phase
+    dominates" as the v0.20.11+ hunt target.
+
+
 ## [v0.20.9] — 2026-05-13
 ### Fixed — three operator-reported regressions + a real e2e test suite to stop them recurring
 Operator feedback after v0.20.8: "i have download users in the list

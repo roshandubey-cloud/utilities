@@ -66,10 +66,13 @@ export default defineConfig({
       // host key without consulting the global trust store. The
       // mock SFTP server generates a fresh key on each boot; the
       // store would flag it as a mismatch against any previously
-      // stored fingerprint, blocking probes and runs. Tests do
-      // their own integration coverage; production runs still
-      // pin keys via the UI flow.
-      `${BIN} -addr 127.0.0.1:${PORT} -reports-dir ${REPORTS_DIR} -insecure-host-key`,
+      // stored fingerprint, blocking probes and runs.
+      // -tls-hosts pins the FTPS leaf-cert store to a per-suite
+      // temp file so the mock FTPS server's fresh cert doesn't
+      // trip the "cert has changed" check against a stale entry
+      // in the global ~/Library/Application Support store.
+      // Both knobs combine to give the suite a clean trust state.
+      `${BIN} -addr 127.0.0.1:${PORT} -reports-dir ${REPORTS_DIR} -insecure-host-key -tls-hosts ${REPORTS_DIR}/tls-hosts.json`,
     ].join(' && '),
     cwd: REPO_ROOT,
     url: `http://127.0.0.1:${PORT}/healthz`,

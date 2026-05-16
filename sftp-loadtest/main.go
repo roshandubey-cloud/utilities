@@ -27,7 +27,7 @@ import (
 // freshness. Also surfaced via the `-version` flag — the SSH-bootstrap
 // smoke test on a remote host runs `<bin> -version` to confirm the
 // binary it just installed actually executes.
-const platformVersion = "0.20.9"
+const platformVersion = "0.20.10"
 
 func main() {
 	if len(os.Args) >= 2 && (os.Args[1] == "-version" || os.Args[1] == "--version") {
@@ -47,6 +47,12 @@ func main() {
 
 	knownHosts := flag.String("known-hosts", "", "OpenSSH-format known_hosts file used to verify SFTP server keys (default: <user-config-dir>/sftp-loadtest/known_hosts, auto-created and managed via the UI's trust-on-first-use flow)")
 	insecureHostKey := flag.Bool("insecure-host-key", false, "DANGEROUS: disable SSH host-key verification entirely (only for ephemeral lab tests)")
+	// v0.20.10 — let the operator (and the e2e suite) override the
+	// FTPS leaf-cert trust store path. Default still resolves to
+	// <user-config-dir>/sftp-loadtest/tls-hosts.json; empty string
+	// means "use the default". Mirrors the -known-hosts override
+	// for SFTP host keys.
+	tlsHostsPath := flag.String("tls-hosts", "", "JSON-format FTPS leaf-cert fingerprint store (default: <user-config-dir>/sftp-loadtest/tls-hosts.json, auto-created and managed via the UI's trust-on-first-use flow)")
 
 	trustProxy := flag.String("trust-proxy", "", "comma-separated CIDRs whose X-Forwarded-For header is honoured for rate-limit attribution; empty (default) ignores XFF entirely")
 
@@ -175,7 +181,15 @@ func main() {
 	// under the same OS config dir. Best-effort: a load error logs and
 	// keeps cert verification silently disabled (operator can still drive
 	// FTPS with the explicit "Trust self-signed cert" toggle).
-	if tlsPath, terr := defaultTLSStorePath(); terr == nil {
+	//
+	// v0.20.10 — honour -tls-hosts override (empty → default path).
+	resolveTLSPath := func() (string, error) {
+		if *tlsHostsPath != "" {
+			return *tlsHostsPath, nil
+		}
+		return defaultTLSStorePath()
+	}
+	if tlsPath, terr := resolveTLSPath(); terr == nil {
 		if tlsStore, terr := hostkeys.OpenTLS(tlsPath); terr == nil {
 			if err := tlsStore.Save(); err != nil {
 				log.Printf("init tls trust store %s: %v — FTPS cert TOFU disabled", tlsPath, err)

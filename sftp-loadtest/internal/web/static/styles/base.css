@@ -6,6 +6,18 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* v0.20.10 — universal [hidden] enforcement. The standard browser
+   rule is [hidden] { display: none }, but it has the lowest possible
+   specificity and ties with any author rule that sets `display` on
+   the same element. Many of our component rules set
+   `display: flex / block / grid` without an [hidden] opt-out, so
+   elements meant to be hidden still surface (vault-trust migration
+   banner, badge-mini, host-bar-cell, several btn-ghost buttons —
+   surfaced by tests/playwright/specs/09-bug-hunt.spec.ts).
+   `!important` here matches every modern CSS reset; nothing in
+   the app needs to override [hidden] meaning "yes show me anyway". */
+[hidden] { display: none !important; }
+
 html, body { height: 100%; }
 html {
   font-family: var(--font-sans);
