@@ -1,0 +1,108 @@
+# CI matrix for sftp-admin: builds the daemon on Linux (x64), macOS
+# (arm64), and Windows (MSVC x64) on every push touching that subtree,
+# and runs the test suite on each. Tagged pushes (sa-vX.Y.Z) also
+# package release artefacts and attach them to the GitHub Release.
+#
+# Artefact naming:
+#   sftpadmind-<version>-<os>-<arch>-cli.<ext>
+#
+# (Phase 1 ships the "cli" variant only — the daemon binary plus the
+# example config. The "webui" variant arrives in Phase 8 when the
+# embedded admin UI is wired; the "app" variant arrives alongside it
+# as the Go/Wails desktop frame wrapping the same binary.)
+
+name: sftp-admin build
+
+on:
+  push:
+    paths:
+      - "sftp-admin/**"
+      - ".github/workflows/sftp-admin-build.yml"
+    tags:
+      - "sa-v*"
+  pull_request:
+    paths:
+      - "sftp-admin/**"
+      - ".github/workflows/sftp-admin-build.yml"
+
+defaults:
+  run:
+    working-directory: sftp-admin
+
+jobs:
+  build:
+    name: ${{ matrix.os.label }}
+    runs-on: ${{ matrix.os.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - { label: "linux-x64",  runs_on: ubuntu-22.04, archive: tar.gz, arch: x64,  ext: "" }
+          - { label: "macos-arm64",runs_on: macos-14,     archive: tar.gz, arch: arm64,ext: "" }
+          - { label: "windows-x64",runs_on: windows-2022, archive: zip,    arch: x64,  ext: ".exe" }
+    steps:
+      - uses: actions/checkout@v4
+
+      # POSIX: rely on the shipped toolchain. Windows: rely on MSVC the
+      # runner already provides — no setup step needed.
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release -j
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package
+        id: pkg
+        shell: bash
+        run: |
+          set -e
+          ver="${GITHUB_REF_NAME#sa-v}"
+          # When this run is not a tag, fall back to a 'dev-<sha>' stub so
+          # PR artefacts are still uniquely named.
+          if [ "$ver" = "$GITHUB_REF_NAME" ]; then ver="dev-${GITHUB_SHA::8}"; fi
+          stage="staging-${{ matrix.os.label }}"
+          mkdir -p "$stage"
+          # Find the binary regardless of CMake's per-config subdirs.
+          bin="build/sftpadmind${{ matrix.os.ext }}"
+          if [ ! -f "$bin" ]; then bin="build/Release/sftpadmind${{ matrix.os.ext }}"; fi
+          cp "$bin" "$stage/"
+          cp examples/sftpadmin.conf "$stage/"
+          cp README.md SECURITY.md "$stage/"
+          name="sftpadmind-${ver}-${{ matrix.os.label }}-cli"
+          if [ "${{ matrix.os.archive }}" = "zip" ]; then
+            (cd "$stage" && 7z a -r "../${name}.zip" .) >/dev/null
+            echo "asset=${name}.zip" >>"$GITHUB_OUTPUT"
+          else
+            tar -C "$stage" -czf "${name}.tar.gz" .
+            echo "asset=${name}.tar.gz" >>"$GITHUB_OUTPUT"
+          fi
+          echo "version=${ver}" >>"$GITHUB_OUTPUT"
+
+      - name: Upload artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pkg.outputs.asset }}
+          path: sftp-admin/${{ steps.pkg.outputs.asset }}
+          if-no-files-found: error
+
+  release:
+    name: Attach to GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/sa-v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create / update release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true

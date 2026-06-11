@@ -6,7 +6,48 @@ entries go at the top.
 
 ---
 
-## 2026-06-11 · Phase 1
+## 2026-06-11 · Phase 1 — portability pivot
+
+### Cross-platform from day one (Linux + macOS + Windows)
+
+The original spec said "Linux target (systemd)". The product owner has
+since clarified the user experience: "the tool should be like an app
+that I can run on Windows, Linux, or any macOS directly … web page or
+app." That puts cross-platform in the foundation rather than as a
+later port.
+
+The backend stays in C (the spec's "Backend 100% C" constraint is
+intact). The desktop "app" variant gets a Go/Wails wrapper layered on
+top, talking to the same C daemon over localhost. CI builds for
+Linux x64, macOS arm64, and Windows x64 (MSVC) on every push.
+
+This is recorded in detail in CROSS_PLATFORM.md.
+
+### Two-line abstraction (`portable.h`/`portable.c`)
+
+Every divergence is funnelled through one tiny header. Five primitives
+total: mutex, getpid, ISO-8601 time, default-data-dir, signal handler
+install + wait. The rest of the codebase is identical across OSes.
+Adding a sixth would require a deliberate decision logged here.
+
+### MSVC + gcc/clang share one CMakeLists
+
+The strict-flag interface library detects MSVC and switches to
+`/W4 /WX /permissive- /sdl` instead of the gcc/clang set. Both gates
+are equally tight; neither is relaxed.
+
+### Phase 7 windows divergence is documented, not hidden
+
+Windows has no fork. The privilege-separation security model the spec
+demands relies on POSIX fork. On Windows we'll use one-process +
+thread-pool with per-listener Job Objects in Phase 7. The result is
+weaker isolation than the POSIX build. We log this as a known
+limitation rather than try to emulate fork on Windows (which is what
+Cygwin does, and it's terrible).
+
+---
+
+## 2026-06-11 · Phase 1 — earlier entries
 
 ### Build host = Windows; build path = gcc:13 Docker container
 

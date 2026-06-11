@@ -29,9 +29,12 @@ static void test_partial_overlay_keeps_defaults(void **state) {
     sa_config_t c;
     assert_int_equal(sa_config_load_buf(j, strlen(j), &c), SA_OK);
     assert_int_equal(c.admin_port, 1443);
-    // Defaults untouched.
+    // Defaults untouched. The exact db_path is platform-specific
+    // (Linux/Mac/Windows pick different default data dirs); we only
+    // assert that it was populated and ends in "sftpadmin.db".
     assert_non_null(c.db_path);
-    assert_string_equal(c.db_path, "/var/lib/sftpadmin/sftpadmin.db");
+    const char *tail = strstr(c.db_path, "sftpadmin.db");
+    assert_non_null(tail);
     sa_config_free(&c);
 }
 

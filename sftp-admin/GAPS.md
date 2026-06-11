@@ -6,14 +6,17 @@ leaf to either be implemented or appear in this file with rationale.
 
 ---
 
-## Phase 1 (current) — minimal scaffold
+## Phase 1 (current) — portable foundation
 
 | Leaf | Status | Note |
 |---|---|---|
-| Logger (JSON + syslog) | ✅ done | thread-safe, fork-safe via `sa_log_reset()` |
+| Logger (JSON + syslog) | ✅ done | thread-safe, fork-safe; syslog on POSIX, stderr+file everywhere |
 | Error subsystem | ✅ done | central enum, errno never leaks |
-| Config loader | ✅ done | cJSON, schema validation, 1 MiB cap |
-| Entrypoint (args, signals, banner) | ✅ done | minimal supervisor skeleton |
+| Config loader | ✅ done | cJSON, schema validation, 1 MiB cap, per-OS default paths |
+| Entrypoint (args, signals, banner) | ✅ done | portable wait loop; SIGTERM/SIGINT + Windows console-ctrl events |
+| Portable shim (`portable.h`) | ✅ done | mutex/time/pid/data-dir/signal install all behind one tiny header |
+| CMake cross-platform | ✅ done | strict flags branch on MSVC vs gcc/clang |
+| CI matrix (Linux x64, macOS arm64, Windows x64) | ✅ done | `.github/workflows/sftp-admin-build.yml` |
 
 ## Phase 2 — SQLite layer (NOT YET IMPLEMENTED)
 

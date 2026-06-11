@@ -1,14 +1,18 @@
 # sftpadmind
 
-Enterprise SFTP server administration suite. Single C daemon that
-supervises N independent SFTP listeners, manages users / SSH keys /
-security profiles centrally, and exposes everything through a
-self-contained admin web UI + REST API.
+Cross-platform enterprise SFTP server administration suite. A single
+C daemon that supervises N independent SFTP listeners, manages users /
+SSH keys / security profiles centrally, and ships in three UI flavours
+(headless `cli`, browser `webui`, native desktop `app`) on Linux,
+macOS, and Windows.
 
-**This is Phase 1 of 10.** Phase 1 brings the foundation online:
-logger, error subsystem, config loader, supervisor skeleton. Listener
-fork, auth, SFTP engine, admin UI etc. land in subsequent phases. See
-[GAPS.md](GAPS.md) for what's pending and which phase delivers it.
+**This is Phase 1 of 10** (portable foundation). Phase 1 brings the
+foundation online: logger, error subsystem, config loader, supervisor
+skeleton — all cross-platform. Listener fork, auth, SFTP engine,
+admin UI etc. land in subsequent phases. See [GAPS.md](GAPS.md) for
+what's pending and which phase delivers it. See
+[CROSS_PLATFORM.md](CROSS_PLATFORM.md) for how each OS / UI bundle is
+built and what diverges between them.
 
 ## Status
 
@@ -31,11 +35,11 @@ fork, auth, SFTP engine, admin UI etc. land in subsequent phases. See
 
 ## Build
 
-Target is Linux. The repo also builds inside a `gcc:13` container so
-development from a non-Linux box (e.g. Windows + Rancher Desktop) is
-practical.
+Cross-platform from day one. Same source tree builds on Linux, macOS,
+and Windows. See [CROSS_PLATFORM.md](CROSS_PLATFORM.md) for the full
+matrix and the per-OS build commands.
 
-### On a Linux host
+### Linux / macOS / BSD
 
 ```sh
 cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -43,14 +47,22 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-### In a Docker container (any host with Docker)
+### Windows (MSVC)
+
+```pwsh
+cmake -B build -DCMAKE_BUILD_TYPE=Release -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release -j
+ctest --test-dir build -C Release --output-on-failure
+```
+
+### Docker (any host without a local C toolchain)
 
 ```sh
 ./scripts/build-in-docker.sh
 ```
 
-This bind-mounts the repo at `/work`, runs cmake + ctest inside
-`gcc:13`, and writes build artefacts back to `./build/`.
+Bind-mounts the repo at `/work`, runs cmake + ctest inside `gcc:13`,
+writes build artefacts back to `./build/`.
 
 ### Build flags
 

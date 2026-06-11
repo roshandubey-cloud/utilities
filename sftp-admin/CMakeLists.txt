@@ -1,19 +1,13 @@
 # sftpadmind — enterprise SFTP server administration suite
 #
-# Phase 1: lays the foundation (logger, errors, config, entrypoint).
-# Later phases bring SQLite, libssh, libsodium, libmicrohttpd in under
-# conditional find_package() so the early build doesn't fight the whole
-# dependency chain — Phase 1 only needs a C compiler + cJSON + cmocka.
-#
-# Hardening flags are scoped to OUR targets only (sftpadmin_core,
-# sftpadmind, tests) via an INTERFACE library. We DELIBERATELY do not
-# pollute third-party builds (cJSON, cmocka) with our strict warnings —
-# they have their own conventions and would not clear -Werror -Wconversion.
+# Phase 1 portable build. Compiles on Linux, macOS, BSD, and Windows
+# (MSVC or MinGW). Strict warning + hardening flags scoped to OUR
+# targets only.
 cmake_minimum_required(VERSION 3.22)
 
 project(sftpadmin
     VERSION 0.1.0
-    DESCRIPTION "Enterprise SFTP server administration suite"
+    DESCRIPTION "Enterprise SFTP server administration suite (portable C)"
     LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
@@ -23,54 +17,72 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 include(FetchContent)
 
-# ----------------------------------------------------------------------------
-# Definitions that MUST be global: 64-bit file offsets and the modern-POSIX
-# feature macro. These are not warning flags so they don't break third-party
-# code; they enable required behaviour everywhere.
-# ----------------------------------------------------------------------------
-add_compile_definitions(_DEFAULT_SOURCE _FILE_OFFSET_BITS=64)
+# 64-bit file offsets on POSIX; harmless on Windows where the C library
+# is 64-bit-clean anyway. NOT a warning flag so it's safe for everyone.
+if(NOT WIN32)
+    add_compile_definitions(_DEFAULT_SOURCE _FILE_OFFSET_BITS=64)
+endif()
+if(APPLE)
+    add_compile_definitions(_DARWIN_C_SOURCE)
+endif()
 
-# ----------------------------------------------------------------------------
-# Toggles
-# ----------------------------------------------------------------------------
+# Cross-platform threads. On POSIX this resolves to -lpthread; on Windows
+# (MSVC) it's a no-op because the C runtime already provides what we need.
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
 option(SFTPADMIN_STRICT "Enable strict warning + hardening flags for our code (default ON)" ON)
 option(SFTPADMIN_ASAN   "Build with AddressSanitizer + UBSan" OFF)
 option(SFTPADMIN_BUILD_TESTS "Build the test suite" ON)
 
-# Strict / hardening flags packaged as an INTERFACE library. We link this
-# into OUR targets only — never globally — so cJSON / cmocka / future deps
-# keep their own warning conventions.
+# ----------------------------------------------------------------------------
+# Strict / hardening flags packaged as an INTERFACE library.  Linked into
+# OUR targets only — third-party (cJSON / cmocka) keep their own warning
+# conventions. The flag list is intentionally compiler-aware because MSVC
+# doesn't accept -Werror, -Wconversion, etc.
+# ----------------------------------------------------------------------------
 add_library(sftpadmin_strict INTERFACE)
 if(SFTPADMIN_STRICT)
-    target_compile_options(sftpadmin_strict INTERFACE
-        -Wall -Wextra -Werror -Wconversion -Wshadow -Wpointer-arith
-        -Wcast-qual -Wstrict-prototypes -Wmissing-prototypes
-        -Wformat=2 -Wformat-security
-        -fstack-protector-strong
-        -fno-common
-        -fPIE
-    )
-    target_compile_definitions(sftpadmin_strict INTERFACE _FORTIFY_SOURCE=2)
+    if(MSVC)
+        target_compile_options(sftpadmin_strict INTERFACE
+            /W4 /WX /permissive- /sdl
+        )
+        # Modern CRT functions like _CRT_SECURE_NO_WARNINGS are not the
+        # right answer; we use the _s variants explicitly via portable.c.
+    else()
+        target_compile_options(sftpadmin_strict INTERFACE
+            -Wall -Wextra -Werror -Wconversion -Wshadow -Wpointer-arith
+            -Wcast-qual -Wstrict-prototypes -Wmissing-prototypes
+            -Wformat=2 -Wformat-security
+            -fstack-protector-strong
+            -fno-common
+        )
+        target_compile_definitions(sftpadmin_strict INTERFACE _FORTIFY_SOURCE=2)
+        # PIE is a UNIX-toolchain concern; Windows handles ASLR
+        # differently and doesn't take -fPIE.
+        if(NOT WIN32)
+            target_compile_options(sftpadmin_strict INTERFACE -fPIE)
+        endif()
+    endif()
 endif()
 
-# Hardening link flags. These are safe globally — they only affect link
-# behaviour, not source semantics.
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    add_link_options(-Wl,-z,relro -Wl,-z,now -pie)
-else()
-    add_link_options(-pie)
+# Link-time hardening (POSIX toolchains only — MSVC has its own /GS /DYNAMICBASE).
+if(NOT WIN32 AND NOT MSVC)
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        add_link_options(-Wl,-z,relro -Wl,-z,now -pie)
+    else()
+        # PIE in debug too so behaviour matches release.
+        add_link_options(-pie)
+    endif()
 endif()
 
-if(SFTPADMIN_ASAN)
-    # ASan/UBSan instrumentation legitimately needs to cross third-party
-    # boundaries — link order issues otherwise — so this one goes global.
+if(SFTPADMIN_ASAN AND NOT MSVC)
     add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
 # ----------------------------------------------------------------------------
-# cJSON via FetchContent. We pin a tag for reproducibility. Tests + the
-# cJSON utils binary are turned off so the configure runs quietly.
+# cJSON via FetchContent
 # ----------------------------------------------------------------------------
 FetchContent_Declare(
     cjson
@@ -86,24 +98,28 @@ set(CJSON_OVERRIDE_BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(cjson)
 
 # ----------------------------------------------------------------------------
-# Core library
+# Core static library (everything except main())
 # ----------------------------------------------------------------------------
 add_library(sftpadmin_core STATIC
     src/err.c
     src/log.c
     src/config.c
+    src/portable.c
 )
 target_include_directories(sftpadmin_core
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+target_include_directories(sftpadmin_core PRIVATE ${cjson_SOURCE_DIR})
 target_link_libraries(sftpadmin_core
-    PUBLIC  cjson
+    PUBLIC  cjson Threads::Threads
     PRIVATE sftpadmin_strict
 )
-# cJSON's FetchContent target doesn't export its header dir cleanly for
-# consumers; pull it in explicitly so #include <cJSON.h> works without
-# relying on a system install.
-target_include_directories(sftpadmin_core PRIVATE ${cjson_SOURCE_DIR})
+if(WIN32)
+    # Windows: kernel32 (CreateProcess, console-ctrl, FILETIME, etc.)
+    # — usually linked implicitly, but be explicit so MinGW builds work
+    # without surprise.
+    target_link_libraries(sftpadmin_core PUBLIC kernel32)
+endif()
 
 # ----------------------------------------------------------------------------
 # Daemon binary
@@ -131,13 +147,14 @@ if(SFTPADMIN_BUILD_TESTS)
 endif()
 
 # ----------------------------------------------------------------------------
-# Install (placeholder; expanded in Phase 10)
+# Install
 # ----------------------------------------------------------------------------
 include(GNUInstallDirs)
 install(TARGETS sftpadmind
-        RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR})
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES examples/sftpadmin.conf
         DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/sftpadmin
         RENAME sftpadmin.conf.example)
 
 message(STATUS "sftpadmind ${PROJECT_VERSION}  strict=${SFTPADMIN_STRICT} asan=${SFTPADMIN_ASAN} tests=${SFTPADMIN_BUILD_TESTS}")
+message(STATUS "  platform: ${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR}  compiler: ${CMAKE_C_COMPILER_ID}")

@@ -1,124 +1,156 @@
-// Structured JSON-lines logger. See log.h for the contract.
+// Portable structured JSON-lines logger. See log.h for the contract.
 //
-// Implementation notes:
-//   * We write to a stack buffer first, then a single write(2) per record
-//     into each sink. That makes per-record output atomic at the kernel
-//     level even without the mutex on POSIX pipes; the mutex is still
-//     required for ordering on file fds, since write(2) can be split.
-//   * JSON escaping is restricted to the seven characters the spec
-//     requires (and "/" left unescaped). We do NOT depend on cJSON for
-//     emission — the logger needs to be available before cJSON is, and
-//     calling into a third-party allocator from a SIGTERM handler would
-//     be unsound.
-//   * We tolerate sinks dropping out (file unlink, syslog daemon gone)
-//     without crashing — failures decay to stderr-only.
+// Sinks (all optional, additive):
+//   * stderr   — always; the universally-available daemon log sink.
+//   * file     — via fopen("ab"); per-line atomicity comes from our
+//                mutex, not from O_APPEND alone (which doesn't guarantee
+//                atomicity across all platforms for our record sizes).
+//   * syslog   — POSIX only. The SA_HAVE_SYSLOG macro from portable.h
+//                gates inclusion; on Windows the call is a no-op.
+//
+// JSON escaping is handwritten (no allocator dependency) so the logger
+// is callable from signal-adjacent code on POSIX without invoking
+// async-unsafe APIs through cJSON.
 
 #include "sftpadmin/log.h"
+#include "sftpadmin/portable.h"
 
 #include <errno.h>
-#include <fcntl.h>
-#include <pthread.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
-#include <syslog.h>
-#include <time.h>
-#include <unistd.h>
+
+#if SA_HAVE_SYSLOG
+  #include <syslog.h>
+#endif
 
 static struct {
-    pthread_mutex_t mu;
-    sa_log_level_t  level;
-    int             file_fd;       // -1 when no file sink
-    bool            syslog_open;
-    bool            init_done;
+    sa_mutex_t    mu;
+    bool          mu_init;
+    sa_log_level_t level;
+    FILE         *file;
+    bool          syslog_open;
+    bool          init_done;
 } G = {
-    .mu          = PTHREAD_MUTEX_INITIALIZER,
+    // .mu intentionally left uninitialised — sa_mutex_init() lazily
+    // initialises on first sa_log_init() call. (POSIX accepts the
+    // static initializer PTHREAD_MUTEX_INITIALIZER, but Windows
+    // CRITICAL_SECTION cannot be statically initialised and pthread
+    // is itself an aggregate that trips -Wmissing-braces on some
+    // toolchains.)
+    .mu_init     = false,
     .level       = SA_LOG_INFO,
-    .file_fd     = -1,
+    .file        = NULL,
     .syslog_open = false,
     .init_done   = false,
 };
 
+// One-time init. Safe to call repeatedly; the inner guard prevents
+// double-init of the mutex on Windows (where InitializeCriticalSection
+// is NOT idempotent — it leaks if called twice).
 static void log_atexit(void) { sa_log_close(); }
 
 sa_err_t sa_log_init(void) {
-    pthread_mutex_lock(&G.mu);
     if (!G.init_done) {
+        if (!G.mu_init) {
+            sa_mutex_init(&G.mu);
+            G.mu_init = true;
+        }
         G.init_done = true;
         atexit(log_atexit);
     }
-    pthread_mutex_unlock(&G.mu);
     return SA_OK;
 }
 
 void sa_log_set_level(sa_log_level_t lvl) {
-    pthread_mutex_lock(&G.mu);
+    sa_log_init();
+    sa_mutex_lock(&G.mu);
     G.level = lvl;
-    pthread_mutex_unlock(&G.mu);
+    sa_mutex_unlock(&G.mu);
 }
 
 sa_log_level_t sa_log_level(void) {
-    pthread_mutex_lock(&G.mu);
+    sa_log_init();
+    sa_mutex_lock(&G.mu);
     sa_log_level_t l = G.level;
-    pthread_mutex_unlock(&G.mu);
+    sa_mutex_unlock(&G.mu);
     return l;
 }
 
 sa_err_t sa_log_open_file(const char *path) {
     if (!path || !*path) return SA_ERR_INVAL;
-    // O_CLOEXEC so a fork doesn't bleed the log fd into worker processes
-    // that should write through their own sa_log_reset(). 0640 because the
-    // log can contain audit data that's useful to a security group but
-    // shouldn't be world-readable.
-    int fd = open(path, O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC, 0640);
-    if (fd < 0) return sa_err_from_errno(errno);
+    sa_log_init();
+    // "ab" is portable: append + binary. Binary mode matters on Windows
+    // so the runtime doesn't translate '\n' to '\r\n' and double our
+    // record terminator.
+    FILE *f = fopen(path, "ab");
+    if (!f) return sa_err_from_errno(errno);
+    // Line-buffered isn't enforceable across all libc's; flush per
+    // record from the emit path instead.
+    setvbuf(f, NULL, _IONBF, 0);
 
-    pthread_mutex_lock(&G.mu);
-    int prev = G.file_fd;
-    G.file_fd = fd;
-    pthread_mutex_unlock(&G.mu);
-    if (prev >= 0) (void)close(prev);
+    sa_mutex_lock(&G.mu);
+    FILE *prev = G.file;
+    G.file = f;
+    sa_mutex_unlock(&G.mu);
+    if (prev) (void)fclose(prev);
     return SA_OK;
 }
 
 sa_err_t sa_log_open_syslog(const char *ident) {
     if (!ident) return SA_ERR_INVAL;
-    pthread_mutex_lock(&G.mu);
+    sa_log_init();
+#if SA_HAVE_SYSLOG
+    sa_mutex_lock(&G.mu);
     if (G.syslog_open) closelog();
     openlog(ident, LOG_PID | LOG_NDELAY | LOG_CONS, LOG_DAEMON);
     G.syslog_open = true;
-    pthread_mutex_unlock(&G.mu);
+    sa_mutex_unlock(&G.mu);
     return SA_OK;
+#else
+    (void)ident;
+    return SA_ERR_NOSYS;
+#endif
 }
 
 void sa_log_reset(void) {
-    pthread_mutex_init(&G.mu, NULL);
-    if (G.file_fd >= 0) {
-        (void)close(G.file_fd);
-        G.file_fd = -1;
+    // Post-fork reinit. Windows doesn't fork in Phase 1, but the call
+    // is still meaningful — it lets a subprocess clear inherited
+    // handles before logging on its own.
+    if (G.mu_init) sa_mutex_destroy(&G.mu);
+    sa_mutex_init(&G.mu);
+    G.mu_init = true;
+    if (G.file) {
+        (void)fclose(G.file);
+        G.file = NULL;
     }
+#if SA_HAVE_SYSLOG
     if (G.syslog_open) {
         closelog();
         G.syslog_open = false;
     }
+#endif
 }
 
 void sa_log_close(void) {
-    pthread_mutex_lock(&G.mu);
-    if (G.file_fd >= 0) {
-        (void)close(G.file_fd);
-        G.file_fd = -1;
+    if (!G.mu_init) return;
+    sa_mutex_lock(&G.mu);
+    if (G.file) {
+        (void)fclose(G.file);
+        G.file = NULL;
     }
+#if SA_HAVE_SYSLOG
     if (G.syslog_open) {
         closelog();
         G.syslog_open = false;
     }
-    pthread_mutex_unlock(&G.mu);
+#endif
+    sa_mutex_unlock(&G.mu);
 }
 
 // ---------------------------------------------------------------------------
-// JSON line construction.
+// JSON line construction. Hand-rolled; no allocator usage.
 // ---------------------------------------------------------------------------
 static const char *level_name(sa_log_level_t l) {
     switch (l) {
@@ -130,6 +162,7 @@ static const char *level_name(sa_log_level_t l) {
     return "info";
 }
 
+#if SA_HAVE_SYSLOG
 static int syslog_priority(sa_log_level_t l) {
     switch (l) {
         case SA_LOG_DEBUG: return LOG_DEBUG;
@@ -139,12 +172,8 @@ static int syslog_priority(sa_log_level_t l) {
     }
     return LOG_INFO;
 }
+#endif
 
-// Append a JSON-escaped string into buf[]. Returns bytes written. Will not
-// overflow `cap`; truncates with terminator. We escape: " \ \b \f \n \r \t
-// and any byte < 0x20 as \u00XX. UTF-8 bytes >= 0x80 pass through unchanged
-// — JSON-RFC requires that, and validating UTF-8 byte-by-byte here would
-// be a lot of cycles for log output.
 static size_t json_str(char *buf, size_t cap, const char *in) {
     if (cap == 0) return 0;
     size_t n = 0;
@@ -185,10 +214,10 @@ truncate:
     return n;
 }
 
-static size_t json_kv_str(char *buf, size_t cap, const char *k, const char *v, bool leading_comma) {
+static size_t json_kv_str(char *buf, size_t cap, const char *k, const char *v, bool comma) {
     if (cap == 0) return 0;
     size_t n = 0;
-    if (leading_comma && n < cap) buf[n++] = ',';
+    if (comma && n < cap) buf[n++] = ',';
     n += json_str(&buf[n], cap - n, k);
     if (n < cap) buf[n++] = ':';
     n += json_str(&buf[n], cap - n, v ? v : "");
@@ -196,80 +225,57 @@ static size_t json_kv_str(char *buf, size_t cap, const char *k, const char *v, b
     return n;
 }
 
-static size_t json_kv_int(char *buf, size_t cap, const char *k, long long v, bool leading_comma) {
+static size_t json_kv_int(char *buf, size_t cap, const char *k, long long v, bool comma) {
     if (cap == 0) return 0;
     size_t n = 0;
-    if (leading_comma && n < cap) buf[n++] = ',';
+    if (comma && n < cap) buf[n++] = ',';
     n += json_str(&buf[n], cap - n, k);
     if (n < cap) buf[n++] = ':';
     char num[32];
     int w = snprintf(num, sizeof(num), "%lld", v);
     if (w > 0) {
         size_t l = (size_t)w;
-        if (n + l < cap) {
-            memcpy(&buf[n], num, l);
-            n += l;
-        }
+        if (n + l < cap) { memcpy(&buf[n], num, l); n += l; }
     }
     if (n < cap) buf[n] = '\0';
     return n;
 }
 
-static size_t json_kv_bool(char *buf, size_t cap, const char *k, bool v, bool leading_comma) {
+static size_t json_kv_bool(char *buf, size_t cap, const char *k, bool v, bool comma) {
     if (cap == 0) return 0;
     size_t n = 0;
-    if (leading_comma && n < cap) buf[n++] = ',';
+    if (comma && n < cap) buf[n++] = ',';
     n += json_str(&buf[n], cap - n, k);
     if (n < cap) buf[n++] = ':';
     const char *t = v ? "true" : "false";
     size_t l = strlen(t);
-    if (n + l < cap) {
-        memcpy(&buf[n], t, l);
-        n += l;
-    }
+    if (n + l < cap) { memcpy(&buf[n], t, l); n += l; }
     if (n < cap) buf[n] = '\0';
     return n;
 }
 
-static size_t iso8601_now(char *buf, size_t cap) {
-    struct timeval tv;
-    if (gettimeofday(&tv, NULL) != 0) {
-        if (cap > 0) buf[0] = '\0';
-        return 0;
-    }
-    struct tm tm;
-    gmtime_r(&tv.tv_sec, &tm);
-    int w = snprintf(buf, cap,
-        "%04d-%02d-%02dT%02d:%02d:%02d.%03ldZ",
-        tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
-        tm.tm_hour, tm.tm_min, tm.tm_sec, (long)(tv.tv_usec / 1000));
-    return (w > 0 && (size_t)w < cap) ? (size_t)w : 0;
-}
-
 void sa_log_emit(sa_log_level_t lvl, const char *subsys, const char *msg, ...) {
-    // Fast path: level filter without any allocation/format work.
-    pthread_mutex_lock(&G.mu);
+    sa_log_init();
+    // Fast-path level filter; nothing else allocated if we drop.
+    sa_mutex_lock(&G.mu);
     sa_log_level_t cur = G.level;
-    int file_fd = G.file_fd;
+    FILE *file_sink = G.file;
     bool syslog_open = G.syslog_open;
-    pthread_mutex_unlock(&G.mu);
+    sa_mutex_unlock(&G.mu);
     if (lvl < cur) return;
 
-    // 4 KiB caps a single log record. The build spec prohibits unbounded
-    // log floods; if a caller hands us a 1 MB SQL string it gets truncated
-    // here rather than balloon the logs.
     char line[4096];
     size_t n = 0;
-
     if (n < sizeof(line)) line[n++] = '{';
+
     char ts[40];
-    iso8601_now(ts, sizeof(ts));
+    sa_time_iso8601_utc(ts, sizeof(ts));
 
     n += json_kv_str(&line[n], sizeof(line) - n, "ts",     ts,                       false);
     n += json_kv_str(&line[n], sizeof(line) - n, "level",  level_name(lvl),          true);
     n += json_kv_str(&line[n], sizeof(line) - n, "subsys", subsys ? subsys : "core", true);
     n += json_kv_str(&line[n], sizeof(line) - n, "msg",    msg    ? msg    : "",     true);
-    n += json_kv_int(&line[n], sizeof(line) - n, "pid",    (long long)getpid(),      true);
+    n += json_kv_int(&line[n], sizeof(line) - n, "pid",    sa_getpid(),              true);
 
     va_list ap;
     va_start(ap, msg);
@@ -292,26 +298,27 @@ void sa_log_emit(sa_log_level_t lvl, const char *subsys, const char *msg, ...) {
     }
     va_end(ap);
 
-    if (n + 2 >= sizeof(line)) {
-        // Out of space for the trailer; truncate-and-close so the line is
-        // still valid JSON.
-        n = sizeof(line) - 3;
-    }
+    if (n + 2 >= sizeof(line)) n = sizeof(line) - 3;
     line[n++] = '}';
     line[n++] = '\n';
-    line[n] = '\0';
+    line[n]   = '\0';
 
-    // Stable: try every sink, ignore individual failures so one bad sink
-    // doesn't take logging down entirely.
-    pthread_mutex_lock(&G.mu);
-    (void)!write(STDERR_FILENO, line, n);
-    if (file_fd >= 0) (void)!write(file_fd, line, n);
-    pthread_mutex_unlock(&G.mu);
+    sa_mutex_lock(&G.mu);
+    fwrite(line, 1, n, stderr);
+    fflush(stderr);
+    if (file_sink) {
+        fwrite(line, 1, n, file_sink);
+        fflush(file_sink);
+    }
+    sa_mutex_unlock(&G.mu);
 
+#if SA_HAVE_SYSLOG
     if (syslog_open) {
-        // syslog handles its own locking + framing; strip our trailing
-        // newline so it's not double-counted.
+        // strip the trailing newline; syslog frames its own records.
         if (n > 0 && line[n - 1] == '\n') line[n - 1] = '\0';
         syslog(syslog_priority(lvl), "%s", line);
     }
+#else
+    (void)syslog_open;
+#endif
 }
