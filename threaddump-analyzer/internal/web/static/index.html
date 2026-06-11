@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thread Dump Analyzer</title>
+<style>
+  :root {
+    --bg: #faf8f3; --fg: #1a1a1a; --muted: #6b7280;
+    --rule: #1a1a1a; --soft: #e7e3d6;
+    --crit: #b91c1c; --high: #c2410c; --med: #b45309; --info: #2563eb;
+    --ok: #166534;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#11140d; --fg:#e6e2d3; --muted:#9ca3af; --rule:#e6e2d3; --soft:#2a2a23; }
+  }
+  body { font-family: ui-sans-serif, system-ui, sans-serif; background: var(--bg); color: var(--fg);
+         margin: 0; padding: 24px; max-width: 1200px; }
+  h1 { font-family: "Iowan Old Style", Charter, Georgia, serif; font-weight: 700; margin: 0; font-size: 28px; }
+  .dek { color: var(--muted); margin: 4px 0 18px; }
+  .rule { border-top: 3px solid var(--rule); margin: 16px 0; }
+  .card { border: 1px solid var(--soft); padding: 12px 16px; margin: 12px 0; border-radius: 6px; background: rgba(0,0,0,0.02); }
+  .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  textarea { width: 100%; min-height: 200px; font-family: ui-monospace, monospace; font-size: 12px;
+             box-sizing: border-box; padding: 8px; border: 1px solid var(--soft); border-radius: 4px;
+             background: var(--bg); color: var(--fg); }
+  input[type=text] { padding: 6px 8px; border: 1px solid var(--soft); border-radius: 4px;
+                      background: var(--bg); color: var(--fg); }
+  button { padding: 6px 14px; border-radius: 4px; border: 1px solid var(--rule);
+           background: var(--rule); color: var(--bg); cursor: pointer; font-size: 13px; }
+  button.ghost { background: var(--bg); color: var(--fg); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .sev-critical { color: var(--crit); font-weight: 600; }
+  .sev-high { color: var(--high); font-weight: 600; }
+  .sev-medium { color: var(--med); font-weight: 600; }
+  .sev-info { color: var(--info); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--soft); }
+  th { font-weight: 600; }
+  .pill { display: inline-block; padding: 2px 8px; border: 1px solid var(--soft); border-radius: 10px;
+          font-size: 11px; margin-right: 4px; }
+  pre { font-family: ui-monospace, monospace; font-size: 12px; background: rgba(0,0,0,0.04);
+        padding: 6px 8px; border-radius: 4px; overflow-x: auto; }
+  .err { color: var(--crit); font-size: 13px; margin: 6px 0; }
+  .ok { color: var(--ok); font-size: 13px; margin: 6px 0; }
+  details > summary { cursor: pointer; user-select: none; }
+  code { font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+
+<h1>Thread Dump Analyzer</h1>
+<p class="dek">Multi-dump JVM hang &amp; deadlock detection. Upload one or more <code>jstack</code> outputs; we rank the findings and tell you what's actually wrong.</p>
+
+<div class="rule"></div>
+
+<section class="card">
+  <div class="head">
+    <strong>1. Start a session</strong>
+    <span class="meta">A session groups all the dumps for one incident.</span>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <input id="label" type="text" placeholder="incident label (optional)" style="flex:1; min-width:200px">
+    <button id="newSession">Create session</button>
+    <span id="sessLabel" class="meta"></span>
+  </div>
+</section>
+
+<section class="card" id="uploadCard" style="display:none">
+  <div class="head">
+    <strong>2. Upload thread dumps</strong>
+    <span class="meta">Add as many as you have. Order = chronological.</span>
+  </div>
+  <textarea id="dumpText" placeholder="paste jstack output, or use the file picker below…"></textarea>
+  <div class="row" style="margin-top:8px">
+    <button id="uploadText">Upload from textarea</button>
+    <input id="dumpFile" type="file" multiple accept=".txt,.log,.dump">
+    <button id="uploadFile" class="ghost">Upload selected files</button>
+    <span id="uploadMsg" class="meta"></span>
+  </div>
+</section>
+
+<section class="card" id="analyseCard" style="display:none">
+  <div class="head">
+    <strong>3. Findings</strong>
+    <span class="meta" id="dumpCount"></span>
+  </div>
+  <div id="findings"></div>
+  <details style="margin-top:10px">
+    <summary>Raw analysis (latest dump)</summary>
+    <div id="analysis" style="margin-top:8px"></div>
+  </details>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>
