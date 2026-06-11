@@ -9,6 +9,7 @@ set(SFTPADMIN_TESTS
     test_err
     test_log
     test_config
+    test_db
 )
 
 foreach(t ${SFTPADMIN_TESTS})

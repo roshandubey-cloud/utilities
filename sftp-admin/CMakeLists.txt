@@ -98,6 +98,51 @@ set(CJSON_OVERRIDE_BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(cjson)
 
 # ----------------------------------------------------------------------------
+# SQLite3.
+#
+# Strategy: prefer the system package (find_package SQLite3) — every
+# platform we target ships a recent libsqlite3-dev / sqlite-devel /
+# vcpkg sqlite3. Falls back to FetchContent-ing the official amalgamation
+# (a single sqlite3.c + sqlite3.h) so a sealed build environment with no
+# system sqlite still builds.
+# ----------------------------------------------------------------------------
+find_package(SQLite3)
+if(SQLite3_FOUND)
+    add_library(sftpadmin_sqlite INTERFACE)
+    target_link_libraries(sftpadmin_sqlite INTERFACE SQLite::SQLite3)
+    message(STATUS "  sqlite3: system (${SQLite3_VERSION})")
+else()
+    message(STATUS "  sqlite3: system not found, will fetch amalgamation")
+    FetchContent_Declare(
+        sqlite_amalgam
+        URL      https://sqlite.org/2024/sqlite-amalgamation-3460000.zip
+        URL_HASH SHA3_256=2c5dea207b7ddef9978fb7fbf8d4b8c12101bbab9802da8e3eb162e2b81fe171
+    )
+    FetchContent_MakeAvailable(sqlite_amalgam)
+    add_library(sftpadmin_sqlite_static STATIC
+        ${sqlite_amalgam_SOURCE_DIR}/sqlite3.c
+    )
+    target_include_directories(sftpadmin_sqlite_static
+        PUBLIC ${sqlite_amalgam_SOURCE_DIR}
+    )
+    # Tame sqlite warnings — its source is decades of optional-feature
+    # code that wouldn't clear our strict flags. Equivalent to how we
+    # handle cJSON / cmocka.
+    target_compile_options(sftpadmin_sqlite_static PRIVATE -w)
+    # Disable features we don't need — keeps the static lib small.
+    target_compile_definitions(sftpadmin_sqlite_static PRIVATE
+        SQLITE_OMIT_LOAD_EXTENSION SQLITE_OMIT_DEPRECATED
+        SQLITE_DQS=0 SQLITE_DEFAULT_FOREIGN_KEYS=1
+        SQLITE_THREADSAFE=1
+    )
+    if(NOT WIN32)
+        target_link_libraries(sftpadmin_sqlite_static PUBLIC Threads::Threads ${CMAKE_DL_LIBS} m)
+    endif()
+    add_library(sftpadmin_sqlite INTERFACE)
+    target_link_libraries(sftpadmin_sqlite INTERFACE sftpadmin_sqlite_static)
+endif()
+
+# ----------------------------------------------------------------------------
 # Core static library (everything except main())
 # ----------------------------------------------------------------------------
 add_library(sftpadmin_core STATIC
@@ -105,13 +150,15 @@ add_library(sftpadmin_core STATIC
     src/log.c
     src/config.c
     src/portable.c
+    src/db.c
+    src/db_schema.c
 )
 target_include_directories(sftpadmin_core
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 target_include_directories(sftpadmin_core PRIVATE ${cjson_SOURCE_DIR})
 target_link_libraries(sftpadmin_core
-    PUBLIC  cjson Threads::Threads
+    PUBLIC  cjson Threads::Threads sftpadmin_sqlite
     PRIVATE sftpadmin_strict
 )
 if(WIN32)
