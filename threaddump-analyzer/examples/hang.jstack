@@ -1,0 +1,59 @@
+2026-04-28 12:35:01
+Full thread dump OpenJDK 64-Bit Server VM (17.0.10+9 mixed mode, sharing):
+
+"http-nio-8080-exec-1" #45 daemon prio=5 os_prio=0 cpu=234.50ms tid=0x00007fab8c1a0000 nid=0xb801 runnable [0x00007faaaf77a000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.SocketChannelImpl.read(SocketChannelImpl.java:295)
+	at oracle.net.ns.Packet.receive(Packet.java:300)
+	at oracle.net.ns.NSProtocol.read(NSProtocol.java:486)
+	at oracle.jdbc.driver.T4CMAREngineStream.unmarshalUB1(T4CMAREngineStream.java:411)
+	at oracle.jdbc.driver.T4C8Oall.readRXH(T4C8Oall.java:778)
+	at oracle.jdbc.driver.T4CPreparedStatement.executeForRows(T4CPreparedStatement.java:998)
+	at com.acme.OrderService.placeOrder(OrderService.kt:148)
+	at java.lang.Thread.run(Thread.java:840)
+
+"http-nio-8080-exec-2" #46 daemon prio=5 os_prio=0 cpu=210.10ms tid=0x00007fab8c1a1000 nid=0xb802 runnable [0x00007faaaf779000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.SocketChannelImpl.read(SocketChannelImpl.java:295)
+	at oracle.net.ns.Packet.receive(Packet.java:300)
+	at oracle.net.ns.NSProtocol.read(NSProtocol.java:486)
+	at oracle.jdbc.driver.T4CMAREngineStream.unmarshalUB1(T4CMAREngineStream.java:411)
+	at oracle.jdbc.driver.T4C8Oall.readRXH(T4C8Oall.java:778)
+	at oracle.jdbc.driver.T4CPreparedStatement.executeForRows(T4CPreparedStatement.java:998)
+	at com.acme.OrderService.placeOrder(OrderService.kt:148)
+	at java.lang.Thread.run(Thread.java:840)
+
+"http-nio-8080-exec-3" #47 daemon prio=5 os_prio=0 cpu=190.55ms tid=0x00007fab8c1a2000 nid=0xb803 runnable [0x00007faaaf778000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.SocketChannelImpl.read(SocketChannelImpl.java:295)
+	at oracle.net.ns.Packet.receive(Packet.java:300)
+	at oracle.net.ns.NSProtocol.read(NSProtocol.java:486)
+	at oracle.jdbc.driver.T4CMAREngineStream.unmarshalUB1(T4CMAREngineStream.java:411)
+	at oracle.jdbc.driver.T4C8Oall.readRXH(T4C8Oall.java:778)
+	at oracle.jdbc.driver.T4CPreparedStatement.executeForRows(T4CPreparedStatement.java:998)
+	at com.acme.OrderService.placeOrder(OrderService.kt:148)
+	at java.lang.Thread.run(Thread.java:840)
+
+"http-nio-8080-exec-4" #48 daemon prio=5 os_prio=0 cpu=175.22ms tid=0x00007fab8c1a3000 nid=0xb804 runnable [0x00007faaaf777000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.SocketChannelImpl.read(SocketChannelImpl.java:295)
+	at oracle.net.ns.Packet.receive(Packet.java:300)
+	at oracle.net.ns.NSProtocol.read(NSProtocol.java:486)
+	at oracle.jdbc.driver.T4CMAREngineStream.unmarshalUB1(T4CMAREngineStream.java:411)
+	at oracle.jdbc.driver.T4C8Oall.readRXH(T4C8Oall.java:778)
+	at oracle.jdbc.driver.T4CPreparedStatement.executeForRows(T4CPreparedStatement.java:998)
+	at com.acme.OrderService.placeOrder(OrderService.kt:148)
+	at java.lang.Thread.run(Thread.java:840)
+
+"http-nio-8080-exec-5" #49 daemon prio=5 os_prio=0 cpu=145.10ms tid=0x00007fab8c1a4000 nid=0xb805 runnable [0x00007faaaf776000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.nio.ch.SocketChannelImpl.read(SocketChannelImpl.java:295)
+	at oracle.net.ns.Packet.receive(Packet.java:300)
+	at oracle.net.ns.NSProtocol.read(NSProtocol.java:486)
+	at oracle.jdbc.driver.T4CMAREngineStream.unmarshalUB1(T4CMAREngineStream.java:411)
+	at oracle.jdbc.driver.T4C8Oall.readRXH(T4C8Oall.java:778)
+	at oracle.jdbc.driver.T4CPreparedStatement.executeForRows(T4CPreparedStatement.java:998)
+	at com.acme.OrderService.placeOrder(OrderService.kt:148)
+	at java.lang.Thread.run(Thread.java:840)
+
+"VM Thread" os_prio=0 cpu=42.00ms tid=0x00007fab8c00f000 nid=0xb799 runnable

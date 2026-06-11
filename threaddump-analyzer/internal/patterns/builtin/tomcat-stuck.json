@@ -1,0 +1,16 @@
+{
+  "id": "tomcat-worker-stuck-on-io",
+  "kind": "WORKER_STALL",
+  "severity": "high",
+  "confidence": 80,
+  "headline": "{N} Tomcat workers stuck on socket I/O",
+  "detail": "These http-nio-* workers are blocked inside sun.nio.ch or java.net.SocketInputStream.read. The TCP read is waiting on bytes that haven't arrived — most often an upstream HTTP/database call that's slow or unreachable. The workers are holding their Tomcat thread until the read times out (which can be many minutes if the connector's connectionTimeout is high).",
+  "remediation": "Identify what these workers are calling: trace the stack down past sun.nio.ch into your code. Apply timeouts to whatever client library you use (RestTemplate.setReadTimeout, OkHttp.readTimeout, jdbc.url params, etc). A correctly-configured 5-second client timeout converts a hanging worker into a fast 500 response and frees the pool to handle the next request.",
+  "stack_includes_any": [
+    "sun\\.nio\\.ch\\.SocketChannelImpl\\.read",
+    "java\\.net\\.SocketInputStream\\.read",
+    "java\\.net\\.SocketInputStream\\.socketRead"
+  ],
+  "name_includes_any": ["^http-nio-", "^http-bio-"],
+  "min_threads": 5
+}

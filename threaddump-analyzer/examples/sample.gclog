@@ -1,0 +1,5 @@
+[2026-04-28T12:34:50.000+0000][info][gc] GC(40) Pause Young (Normal) (G1 Evacuation Pause) 200M->100M(512M) 28.0ms
+[2026-04-28T12:34:55.000+0000][info][gc] GC(41) Pause Young (Normal) (G1 Evacuation Pause) 210M->105M(512M) 33.5ms
+[2026-04-28T12:34:58.000+0000][info][gc] GC(42) Pause Remark 105M->105M(512M) 12.0ms
+[2026-04-28T12:35:00.500+0000][info][gc] GC(43) Pause Full (System.gc()) 480M->180M(512M) 1840.0ms
+[2026-04-28T12:35:02.500+0000][info][gc] GC(44) Pause Young (Normal) (G1 Evacuation Pause) 220M->110M(512M) 31.0ms

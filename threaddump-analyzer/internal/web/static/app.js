@@ -1,9 +1,8 @@
-// app.js — orchestrates the three steps of the UI: create session, upload
-// dumps, render findings. Everything goes through apiFetch() so the CSRF
-// header is consistent. No frameworks, no bundle step.
+// app.js — three-step UI: create session, upload artefacts (dumps + GC log
+// + CPU sample), render findings + raw analysis. Everything goes through
+// apiFetch() so the CSRF header is consistent. No frameworks.
 
 const $ = (id) => document.getElementById(id);
-
 let sessionID = null;
 
 async function apiFetch(url, init) {
@@ -15,6 +14,16 @@ async function apiFetch(url, init) {
   return fetch(url, init);
 }
 
+// Tab switcher (paste / file pickers for dumps / GC log / CPU)
+document.querySelectorAll('.tabs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b === btn));
+    document.querySelectorAll('[data-pane]').forEach(p => {
+      p.style.display = (p.getAttribute('data-pane') === btn.dataset.tab) ? '' : 'none';
+    });
+  });
+});
+
 $('newSession').addEventListener('click', async () => {
   const label = $('label').value.trim();
   const r = await apiFetch('/api/session', {
@@ -22,54 +31,84 @@ $('newSession').addEventListener('click', async () => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ label }),
   });
-  if (!r.ok) { showErr('newSession', `failed: ${await r.text()}`); return; }
+  if (!r.ok) { setMsg('uploadMsg', `failed: ${await r.text()}`, 'err'); return; }
   const j = await r.json();
   sessionID = j.id;
   $('sessLabel').textContent = `session ${j.label} (${j.id.slice(0, 8)}…)`;
   $('uploadCard').style.display = '';
 });
 
-$('uploadText').addEventListener('click', async () => {
+$('uploadText').addEventListener('click', () => uploadDumpText());
+$('uploadFile').addEventListener('click', () => uploadDumpFiles());
+$('uploadGclog').addEventListener('click', () => uploadAux('gclog', $('gclogText').value, 'gclogMsg'));
+$('uploadCpu').addEventListener('click', () => uploadAux('cpu', $('cpuText').value, 'cpuMsg'));
+$('uploadGclogFile').addEventListener('click', async () => {
+  const f = ($('gclogFile').files || [])[0];
+  if (!f) { setMsg('gclogMsg', 'pick a file first', 'err'); return; }
+  await uploadAux('gclog', await f.text(), 'gclogMsg');
+  $('gclogFile').value = '';
+});
+$('uploadCpuFile').addEventListener('click', async () => {
+  const f = ($('cpuFile').files || [])[0];
+  if (!f) { setMsg('cpuMsg', 'pick a file first', 'err'); return; }
+  await uploadAux('cpu', await f.text(), 'cpuMsg');
+  $('cpuFile').value = '';
+});
+
+async function uploadDumpText() {
   if (!sessionID) return;
   const text = $('dumpText').value;
-  if (!text.trim()) { setMsg('please paste a dump first', 'err'); return; }
-  await uploadOne(text);
+  if (!text.trim()) { setMsg('uploadMsg', 'paste a dump first', 'err'); return; }
+  await uploadDump(text);
   $('dumpText').value = '';
-});
+}
 
-$('uploadFile').addEventListener('click', async () => {
+async function uploadDumpFiles() {
   if (!sessionID) return;
   const files = Array.from($('dumpFile').files || []);
-  if (files.length === 0) { setMsg('please pick at least one file', 'err'); return; }
-  for (const f of files) {
-    const text = await f.text();
-    await uploadOne(text, f.name);
-  }
+  if (!files.length) { setMsg('uploadMsg', 'pick at least one file', 'err'); return; }
+  for (const f of files) await uploadDump(await f.text(), f.name);
   $('dumpFile').value = '';
-});
+}
 
-async function uploadOne(text, filename) {
-  setMsg(`uploading${filename ? ' ' + filename : ''}…`, 'meta');
+async function uploadDump(text, filename) {
+  setMsg('uploadMsg', `uploading${filename ? ' ' + filename : ''}…`, 'meta');
   const r = await apiFetch(`/api/session/${sessionID}/upload`, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
     body: text,
   });
-  if (!r.ok) { setMsg(`upload failed: ${await r.text()}`, 'err'); return; }
+  if (!r.ok) { setMsg('uploadMsg', `upload failed: ${await r.text()}`, 'err'); return; }
   const j = await r.json();
-  setMsg(`uploaded${filename ? ' ' + filename : ''}: ${j.threads} threads parsed (${j.dumps} dump(s) in session)`, 'ok');
+  setMsg('uploadMsg', `uploaded${filename ? ' ' + filename : ''}: ${j.threads} threads parsed (${j.dumps} dump(s) in session)`, 'ok');
   await refreshAnalysis();
 }
 
-function setMsg(text, kind) {
-  const el = $('uploadMsg');
-  el.textContent = text;
-  el.className = kind || 'meta';
+async function uploadAux(kind, text, msgId) {
+  if (!sessionID) return;
+  if (!text.trim()) { setMsg(msgId, 'nothing to upload', 'err'); return; }
+  setMsg(msgId, 'uploading…', 'meta');
+  const path = kind === 'gclog' ? 'upload-gclog' : 'upload-cpu';
+  const r = await apiFetch(`/api/session/${sessionID}/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: text,
+  });
+  if (!r.ok) { setMsg(msgId, `failed: ${await r.text()}`, 'err'); return; }
+  const j = await r.json();
+  if (kind === 'gclog') {
+    setMsg(msgId, `parsed ${j.stats.pauses} GC pauses; total ${(j.stats.total_duration/1e9).toFixed(2)}s; max ${(j.stats.max_duration/1e6).toFixed(1)}ms`, 'ok');
+  } else {
+    setMsg(msgId, `parsed ${j.rows} threads from ${j.source}`, 'ok');
+  }
+  await refreshAnalysis();
 }
 
-function showErr(scope, msg) {
-  console.error(scope, msg);
-  setMsg(msg, 'err');
+function setMsg(id, text, kind) {
+  const el = $(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = kind || 'meta';
 }
 
 async function refreshAnalysis() {
@@ -80,9 +119,6 @@ async function refreshAnalysis() {
   if (ar) renderAnalysis(ar);
 }
 
-// Findings are the headline. We render one card per finding, in the order the
-// server already sorted them — never re-sort in JS, so the operator always
-// sees the same priority the API would.
 function renderFindings(fs) {
   $('dumpCount').textContent = fs.length === 0 ? 'no findings yet' : '';
   const root = $('findings');
@@ -110,12 +146,9 @@ function renderAnalysis(a) {
   const root = $('analysis');
   root.innerHTML = '';
 
-  // States
   if (a.states && a.states.length) {
     root.appendChild(section('Thread state histogram', tableRows(['State', 'Count'], a.states.map(s => [s.state, s.count]))));
   }
-
-  // Deadlocks
   if (a.deadlocks && a.deadlocks.length) {
     const cards = a.deadlocks.map((c, i) => `
       <div class="card">
@@ -124,24 +157,47 @@ function renderAnalysis(a) {
       </div>`).join('');
     root.appendChild(section('Deadlocks', html(cards)));
   }
-
-  // Pools
+  if (a.predictions && a.predictions.length) {
+    const cards = a.predictions.map(p => `
+      <div class="card">
+        <strong>Chain:</strong> ${p.chain.map(escapeHTML).join(' → ')}
+        ${p.closer ? `<div class="meta">candidate closer thread: <b>${escapeHTML(p.closer)}</b></div>` : '<div class="meta">no closer candidate yet</div>'}
+        <pre>${p.locks.map(l => `${l.id}  (${l.class})`).map(escapeHTML).join('\n')}</pre>
+      </div>`).join('');
+    root.appendChild(section('Predicted deadlocks (partial chains)', html(cards)));
+  }
+  if (a.progressions && a.progressions.length) {
+    const top = a.progressions.slice(0, 10);
+    const rows = top.map(p => [p.lock_id, p.lock_class || '—', p.peak_waiters, p.holder_stable ? 'yes' : 'no', (p.holders || []).filter(Boolean).join(' → ') || '—']);
+    root.appendChild(section('Lock progression (top 10 by peak waiters)', tableRows(['Lock ID', 'Class', 'Peak waiters', 'Stable holder', 'Holders across dumps'], rows)));
+  }
   if (a.pools && a.pools.length) {
     const rows = a.pools.map(p => [p.pool, p.threads, p.blocked_pct.toFixed(1) + '%']);
     root.appendChild(section('Pools', tableRows(['Pool', 'Threads', 'Blocked %'], rows)));
   }
-
-  // Contention
   if (a.contention && a.contention.length) {
     const rows = a.contention.map(c => [c.lock.id, c.lock.class, c.holder || '—', c.waiters.length]);
     root.appendChild(section('Top contention', tableRows(['Lock ID', 'Class', 'Holder', '# Waiters'], rows)));
   }
-
-  // Lifelines: only relevant when there's more than one dump
-  if (a.lifelines && a.lifelines.length && a.lifelines.some(l => l.signature_run_max >= 2)) {
+  if (a.lifelines && a.lifelines.some(l => l.signature_run_max >= 2)) {
     const frozen = a.lifelines.filter(l => l.signature_run_max >= 2).slice(0, 20);
     const rows = frozen.map(l => [l.key.name, l.pool || '(unclassified)', l.signature_run_max]);
     root.appendChild(section('Frozen threads (top 20)', tableRows(['Thread', 'Pool', 'Consecutive frozen dumps'], rows)));
+  }
+  if (a.cpu_top && a.cpu_top.length) {
+    const rows = a.cpu_top.slice(0, 10).map(c => [c.name, c.nid, c.percent.toFixed(1) + '%']);
+    root.appendChild(section('Hot threads from CPU sample (top 10)', tableRows(['Thread', 'NID', '%CPU'], rows)));
+  }
+  if (a.gc_stats && a.gc_stats.pauses) {
+    const s = a.gc_stats;
+    root.appendChild(section('GC log', tableRows(['Metric', 'Value'], [
+      ['Pauses', s.pauses],
+      ['Total pause time', (s.total_duration/1e9).toFixed(2) + ' s'],
+      ['Max pause', (s.max_duration/1e6).toFixed(1) + ' ms'],
+      ['Full GC count', s.full_count],
+      ['Mixed GC count', s.mixed_count],
+      ['Young GC count', s.young_count],
+    ])));
   }
 }
 
@@ -155,9 +211,8 @@ function section(title, body) {
 
 function tableRows(headers, rows) {
   const t = document.createElement('table');
-  const thead = '<thead><tr>' + headers.map(h => `<th>${escapeHTML(h)}</th>`).join('') + '</tr></thead>';
-  const tbody = '<tbody>' + rows.map(r => '<tr>' + r.map(c => `<td>${escapeHTML(String(c))}</td>`).join('') + '</tr>').join('') + '</tbody>';
-  t.innerHTML = thead + tbody;
+  t.innerHTML = '<thead><tr>' + headers.map(h => `<th>${escapeHTML(h)}</th>`).join('') + '</tr></thead>' +
+    '<tbody>' + rows.map(r => '<tr>' + r.map(c => `<td>${escapeHTML(String(c))}</td>`).join('') + '</tr>').join('') + '</tbody>';
   return t;
 }
 

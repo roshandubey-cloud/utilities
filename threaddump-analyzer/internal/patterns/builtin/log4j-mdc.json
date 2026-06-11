@@ -1,0 +1,15 @@
+{
+  "id": "log4j-mdc-contention",
+  "kind": "LOG_CONTENTION",
+  "severity": "medium",
+  "confidence": 75,
+  "headline": "Log4j 1.x global appender contention: {N} threads BLOCKED in WriterAppender",
+  "detail": "Log4j 1.x synchronises log writes on the appender's monitor. Under high request rates, every logging worker contends for the same monitor and BLOCKS — converting a logging call from a few microseconds into hundreds of milliseconds. The application has no functional bug; logging itself is the bottleneck.",
+  "remediation": "Migrate to Log4j 2 / SLF4J with an async appender (DisruptorAppender, Log4j2 AsyncLogger). At minimum, downgrade log level on hot paths and stop logging at INFO for every request. Confirm with a follow-up dump that BLOCKED count drops.",
+  "stack_includes_any": [
+    "org\\.apache\\.log4j\\.WriterAppender\\.subAppend",
+    "org\\.apache\\.log4j\\.Category\\.callAppenders"
+  ],
+  "states": ["BLOCKED"],
+  "min_threads": 5
+}

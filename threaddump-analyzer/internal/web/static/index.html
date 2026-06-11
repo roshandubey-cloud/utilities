@@ -23,7 +23,7 @@
   .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
   .meta { color: var(--muted); font-size: 13px; }
   .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-  textarea { width: 100%; min-height: 200px; font-family: ui-monospace, monospace; font-size: 12px;
+  textarea { width: 100%; min-height: 160px; font-family: ui-monospace, monospace; font-size: 12px;
              box-sizing: border-box; padding: 8px; border: 1px solid var(--soft); border-radius: 4px;
              background: var(--bg); color: var(--fg); }
   input[type=text] { padding: 6px 8px; border: 1px solid var(--soft); border-radius: 4px;
@@ -47,19 +47,22 @@
   .ok { color: var(--ok); font-size: 13px; margin: 6px 0; }
   details > summary { cursor: pointer; user-select: none; }
   code { font-family: ui-monospace, monospace; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+  .tabs button { background: var(--bg); color: var(--fg); border: 1px solid var(--soft); }
+  .tabs button.on { background: var(--rule); color: var(--bg); }
 </style>
 </head>
 <body>
 
 <h1>Thread Dump Analyzer</h1>
-<p class="dek">Multi-dump JVM hang &amp; deadlock detection. Upload one or more <code>jstack</code> outputs; we rank the findings and tell you what's actually wrong.</p>
+<p class="dek">Multi-dump JVM hang &amp; deadlock detection. Upload one or more <code>jstack</code> outputs (HotSpot) or javacore files (OpenJ9), optionally a GC log and a <code>top -H</code> sample — we rank findings and tell you what's actually wrong.</p>
 
 <div class="rule"></div>
 
 <section class="card">
   <div class="head">
     <strong>1. Start a session</strong>
-    <span class="meta">A session groups all the dumps for one incident.</span>
+    <span class="meta">A session groups all artefacts for one incident.</span>
   </div>
   <div class="row" style="margin-top:8px">
     <input id="label" type="text" placeholder="incident label (optional)" style="flex:1; min-width:200px">
@@ -70,15 +73,43 @@
 
 <section class="card" id="uploadCard" style="display:none">
   <div class="head">
-    <strong>2. Upload thread dumps</strong>
-    <span class="meta">Add as many as you have. Order = chronological.</span>
+    <strong>2. Upload artefacts</strong>
+    <span class="meta">Dumps required, GC log and CPU sample optional.</span>
   </div>
-  <textarea id="dumpText" placeholder="paste jstack output, or use the file picker below…"></textarea>
-  <div class="row" style="margin-top:8px">
-    <button id="uploadText">Upload from textarea</button>
-    <input id="dumpFile" type="file" multiple accept=".txt,.log,.dump">
-    <button id="uploadFile" class="ghost">Upload selected files</button>
-    <span id="uploadMsg" class="meta"></span>
+  <div class="tabs">
+    <button data-tab="dumps" class="on">Thread dumps</button>
+    <button data-tab="gclog">GC log</button>
+    <button data-tab="cpu">CPU (top -H / pidstat)</button>
+  </div>
+
+  <div data-pane="dumps">
+    <textarea id="dumpText" placeholder="paste jstack / javacore output, or use the file picker below…"></textarea>
+    <div class="row" style="margin-top:8px">
+      <button id="uploadText">Upload from textarea</button>
+      <input id="dumpFile" type="file" multiple accept=".txt,.log,.dump,.jstack,.javacore">
+      <button id="uploadFile" class="ghost">Upload selected files</button>
+      <span id="uploadMsg" class="meta"></span>
+    </div>
+  </div>
+
+  <div data-pane="gclog" style="display:none">
+    <textarea id="gclogText" placeholder="paste GC log (Unified Logging or pre-9 PrintGCDetails)"></textarea>
+    <div class="row" style="margin-top:8px">
+      <button id="uploadGclog">Upload GC log</button>
+      <input id="gclogFile" type="file" accept=".log,.txt">
+      <button id="uploadGclogFile" class="ghost">Upload selected file</button>
+      <span id="gclogMsg" class="meta"></span>
+    </div>
+  </div>
+
+  <div data-pane="cpu" style="display:none">
+    <textarea id="cpuText" placeholder="paste `top -H -p &lt;pid&gt;` or `pidstat -t -p &lt;pid&gt; 1 N` output"></textarea>
+    <div class="row" style="margin-top:8px">
+      <button id="uploadCpu">Upload CPU sample</button>
+      <input id="cpuFile" type="file" accept=".log,.txt">
+      <button id="uploadCpuFile" class="ghost">Upload selected file</button>
+      <span id="cpuMsg" class="meta"></span>
+    </div>
   </div>
 </section>
 
@@ -89,7 +120,7 @@
   </div>
   <div id="findings"></div>
   <details style="margin-top:10px">
-    <summary>Raw analysis (latest dump)</summary>
+    <summary>Raw analysis (latest dump + cross-dump views)</summary>
     <div id="analysis" style="margin-top:8px"></div>
   </details>
 </section>

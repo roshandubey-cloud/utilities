@@ -1,0 +1,15 @@
+{
+  "id": "hikari-pool-saturated",
+  "kind": "POOL_SATURATION",
+  "severity": "high",
+  "confidence": 88,
+  "headline": "HikariCP pool exhausted: {N} threads parked in getConnection",
+  "detail": "Multiple threads are stuck inside com.zaxxer.hikari.pool.HikariPool.getConnection, parked on the ConcurrentBag condition. The pool has no idle connections; every requester waits until one is returned or the connectionTimeout fires. This is almost never a sizing problem — almost always a connection-leak (forgot try-with-resources) or a downstream-DB-stall problem.",
+  "remediation": "First, find a thread that owns a connection right now (look at threads inside JDBC reads / Statement.execute that AREN'T inside HikariPool.getConnection). If those are stuck on a network read, the database itself is the bottleneck and increasing the pool won't help. If you can't find an owner, you have a leak — enable leakDetectionThreshold in HikariCP config to surface where connections are checked out and never returned.",
+  "stack_includes_any": [
+    "com\\.zaxxer\\.hikari\\.pool\\.HikariPool\\.getConnection",
+    "com\\.zaxxer\\.hikari\\.util\\.ConcurrentBag\\.borrow"
+  ],
+  "states": ["WAITING", "TIMED_WAITING"],
+  "min_threads": 3
+}
