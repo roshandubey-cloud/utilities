@@ -1,0 +1,93 @@
+name: release-http-cmd-runner
+
+# Triggered when an http-cmd-runner release tag is pushed, e.g.
+# httprunner-v1.0.0. The prefix is deliberately NOT "v*" so this never
+# collides with the sftp-loadtest release.yml matrix (which triggers on
+# tags: v* and asserts its own exact asset set).
+#
+# http-cmd-runner is pure Go stdlib (CGO_ENABLED=0), so every OS/arch
+# cross-compiles from a single Linux runner. Each platform ships as its
+# own zip (one binary + config.json + README.txt), uploaded under two
+# names: versioned (httprunner ref) and an unversioned stable alias for
+# releases/latest/download/<asset> links.
+on:
+  push:
+    tags:
+      - 'httprunner-v*'
+
+permissions:
+  contents: write  # required to create the release and upload assets
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  build:
+    name: build all platforms + publish release
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.ref_name }}        # e.g. httprunner-v1.0.0
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.10'
+
+      - name: vet
+        working-directory: http-cmd-runner
+        run: go vet ./...
+
+      - name: build, package, and alias every platform
+        working-directory: http-cmd-runner
+        run: |
+          set -euo pipefail
+          # Strip the "httprunner-" prefix for use in filenames -> v1.0.0
+          VER="${TAG#httprunner-}"
+          OUT="$GITHUB_WORKSPACE/release-assets"
+          mkdir -p "$OUT"
+
+          # build GOOS GOARCH asset-suffix binary-name
+          build() {
+            goos="$1"; goarch="$2"; suffix="$3"; binname="$4"
+            echo "==> building $goos/$goarch -> $binname"
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+              go build -ldflags "-s -w" -o "stage/$binname" .
+
+            # Stage one binary + config + README per zip.
+            rm -rf stagedir && mkdir -p stagedir
+            cp "stage/$binname" stagedir/
+            cp config.example.json stagedir/config.json
+            cp release-readmes/README.txt stagedir/README.txt
+
+            versioned="$OUT/http-cmd-runner-${VER}-${suffix}.zip"
+            stable="$OUT/http-cmd-runner-${suffix}.zip"
+            (cd stagedir && zip -9 -r "$versioned" .)
+            cp "$versioned" "$stable"
+          }
+
+          build linux   amd64 linux-amd64       http-cmd-runner-linux-amd64
+          build linux   arm64 linux-arm64       http-cmd-runner-linux-arm64
+          build darwin  amd64 mac-intel         http-cmd-runner-mac-intel
+          build darwin  arm64 mac-apple-silicon http-cmd-runner-mac-apple-silicon
+          build windows amd64 windows-amd64     http-cmd-runner-windows-amd64.exe
+
+          echo "==> assets:"
+          ls -la "$OUT"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*.zip
+          fail_on_unmatched_files: true
+          body: |
+            http-cmd-runner ${{ github.ref_name }}
+
+            One static binary per platform. Unzip, run `./http-cmd-runner-* -config config.json`,
+            then POST commands to `/exec`. See the bundled README.txt.
+
+            Stable download links (always point at the latest release):
+            - Linux x86-64: `releases/latest/download/http-cmd-runner-linux-amd64.zip`
+            - Linux arm64:  `releases/latest/download/http-cmd-runner-linux-arm64.zip`
+            - macOS Apple Silicon: `releases/latest/download/http-cmd-runner-mac-apple-silicon.zip`
+            - macOS Intel:  `releases/latest/download/http-cmd-runner-mac-intel.zip`
+            - Windows x86-64: `releases/latest/download/http-cmd-runner-windows-amd64.zip`
