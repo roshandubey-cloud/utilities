@@ -1,0 +1,29 @@
+[Unit]
+Description=HTTP command runner
+After=network.target
+
+[Service]
+Type=simple
+# Dedicated unprivileged user — create with: sudo useradd -r -s /usr/sbin/nologin cmdrunner
+User=cmdrunner
+Group=cmdrunner
+
+# NOTE: there is no authentication. Keep "listen" bound to 127.0.0.1 (or a
+# trusted private interface) so only local/trusted clients can reach /exec.
+ExecStart=/usr/local/bin/http-cmd-runner -config /etc/http-cmd-runner/config.json
+Restart=on-failure
+RestartSec=2
+
+# --- Hardening: lock the service down to limit blast radius ---
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# If your allowlisted scripts need to write somewhere, list it here:
+# ReadWritePaths=/var/lib/cmdrunner
+
+[Install]
+WantedBy=multi-user.target

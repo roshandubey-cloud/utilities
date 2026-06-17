@@ -1,0 +1,12 @@
+{
+  "listen": "127.0.0.1:8080",
+  "allow_arbitrary": true,
+  "allowlist": [],
+  "default_timeout_sec": 30,
+  "max_timeout_sec": 300,
+  "working_dir": "",
+  "max_output_bytes": 1048576,
+  "tls_cert_file": "",
+  "tls_key_file": "",
+  "log_file": ""
+}

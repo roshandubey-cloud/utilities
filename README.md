@@ -153,6 +153,7 @@ filename marker) so per-file latency is computed end-to-end.
 | Tool | What it does | Languages |
 |---|---|---|
 | [**sftp-loadtest/**](./sftp-loadtest) | Production-grade SFTP / FTP / FTPS load tester. Wails desktop app + CLI/server SKU sharing one engine. Real-file uploads + byte-faithful round-trip downloads. Multi-worker fan-out via SSH with cumulative reporting. ~10 MB binary, sub-15 MB RSS at idle. | Go |
+| [**http-cmd-runner/**](./http-cmd-runner) | Tiny HTTP wrapper that executes Linux commands/scripts on the host and returns stdout/stderr/exit-code as JSON. Single static binary, stdlib only, no dependencies. Allowlist or arbitrary-command modes; optional systemd unit and Docker image. | Go |
 
 ## 6 video tutorials
 
