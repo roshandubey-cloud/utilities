@@ -5,9 +5,9 @@ go 1.25.0
 require (
 	github.com/jlaffaye/ftp v0.2.0
 	github.com/pkg/sftp v1.13.7
-	github.com/wailsapp/wails/v2 v2.12.0
-	golang.org/x/crypto v0.50.0
-	golang.org/x/sys v0.43.0
+	github.com/wailsapp/wails/v2 v2.13.0
+	golang.org/x/crypto v0.51.0
+	golang.org/x/sys v0.44.0
 )
 
 require (
@@ -38,6 +38,6 @@ require (
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/wailsapp/go-webview2 v1.0.22 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect
-	golang.org/x/net v0.52.0 // indirect
-	golang.org/x/text v0.36.0 // indirect
+	golang.org/x/net v0.54.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 )
